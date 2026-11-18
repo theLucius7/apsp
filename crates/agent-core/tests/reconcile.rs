@@ -722,3 +722,111 @@ async fn dependency_barrier_survives_reopen_and_blocks_apply_restart_and_recover
     assert!(restarted.restart_applied(1).await.is_err());
     assert_eq!(*test.services.actions.lock().unwrap(), actions);
 }
+
+#[tokio::test]
+async fn startup_desired_runtime_respects_three_state_panel_intent_and_bundled_identity() {
+    use apsp_agent_core::bundled::{BundledItem, BundledPayload};
+    use flate2::{Compression, write::GzEncoder};
+    use sha2::{Digest, Sha256};
+    use std::{borrow::Cow, io::Write};
+
+    let test = Fixture::new();
+    let legacy = test.target(1, "1.0.0", &"a".repeat(64));
+    test.state
+        .lock()
+        .unwrap()
+        .set_json("applied:demo", &legacy)
+        .unwrap();
+
+    let mut raw_tar = Vec::new();
+    let body = b"bundled-demo-v2";
+    let mut header = tar::Header::new_gnu();
+    header.set_mode(0o755);
+    header.set_entry_type(tar::EntryType::Regular);
+    header.set_size(body.len() as u64);
+    header.set_path("demo").unwrap();
+    header.set_cksum();
+    raw_tar.extend_from_slice(header.as_bytes());
+    raw_tar.extend_from_slice(body);
+    raw_tar.resize(raw_tar.len().div_ceil(512) * 512, 0);
+    raw_tar.extend_from_slice(&[0; 1024]);
+    let mut gz = GzEncoder::new(Vec::new(), Compression::fast());
+    gz.write_all(&raw_tar).unwrap();
+    let archive_bytes = gz.finish().unwrap();
+    let archive_sha256 = format!("{:x}", Sha256::digest(&archive_bytes));
+
+    let bundled = Reconciler::new(
+        test.config.clone(),
+        test.state.clone(),
+        test.adapter.clone(),
+        Arc::new(SystemOps),
+        test.services.clone(),
+    )
+    .with_bundled_runtime(BundledItem {
+        component_name: "demo".into(),
+        binary_name: "demo".into(),
+        version: "2.0.0".into(),
+        payload: BundledPayload::TarGz {
+            archive_sha256,
+            bytes: Cow::Owned(archive_bytes),
+        },
+    });
+
+    // 1) `desired == None` (legacy DB without panel intent): never wakes a stopped runtime.
+    bundled.ensure_startup_desired_runtime().await.unwrap();
+    assert!(test.services.actions.lock().unwrap().is_empty());
+    assert!(!test.config.install_root.join("demo/2.0.0").exists());
+
+    // 2) `desired == Some(false)` (explicit panel disable): never revives.
+    test.state
+        .lock()
+        .unwrap()
+        .set_json("desired:demo", &false)
+        .unwrap();
+    bundled.ensure_startup_desired_runtime().await.unwrap();
+    assert!(test.services.actions.lock().unwrap().is_empty());
+
+    // 3) `desired == Some(true)`: materializes built-in runtime, switches links, restarts & verifies health.
+    test.state
+        .lock()
+        .unwrap()
+        .set_json("desired:demo", &true)
+        .unwrap();
+    bundled.ensure_startup_desired_runtime().await.unwrap();
+    let switched = test.applied().unwrap();
+    assert_eq!(switched.spec.kernel_version, "2.0.0");
+    assert_eq!(
+        switched.spec.binary_path,
+        test.config.install_root.join("demo/2.0.0/demo")
+    );
+    assert_eq!(
+        test.state
+            .lock()
+            .unwrap()
+            .get_json::<bool>("health:demo")
+            .unwrap(),
+        Some(true)
+    );
+    assert!(!test.services.actions.lock().unwrap().is_empty());
+
+    // 4) Empty panel manifest (`deactivate_if_active`) stops service, clears `applied`, and persists `desired = false`.
+    let actions_before_stop = test.services.actions.lock().unwrap().len();
+    assert!(bundled.deactivate_if_active().await.unwrap());
+    assert!(test.applied().is_none());
+    assert_eq!(
+        test.state
+            .lock()
+            .unwrap()
+            .get_json::<bool>("desired:demo")
+            .unwrap(),
+        Some(false)
+    );
+    assert!(!test.config.runtime_root.join("demo@main/current").exists());
+    let actions_after_stop = test.services.actions.lock().unwrap().len();
+    assert!(actions_after_stop > actions_before_stop);
+    bundled.ensure_startup_desired_runtime().await.unwrap();
+    assert_eq!(
+        test.services.actions.lock().unwrap().len(),
+        actions_after_stop
+    );
+}

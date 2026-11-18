@@ -16,12 +16,164 @@ pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = anyhow::Result<T>> + Sen
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Descriptor {
     pub module: String,
-    pub plugin_name: String,
+    // Serialized descriptors retain the installed Agent contract.
+    #[serde(rename = "plugin_name")]
+    pub artifact_name: String,
     pub binary_name: String,
     #[serde(default)]
     pub auxiliary_files: Vec<String>,
     pub service_unit: String,
     pub service_group: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct RuntimeServiceSpec {
+    pub descriptor: Descriptor,
+    pub agent_root: PathBuf,
+    pub install_root: PathBuf,
+    pub runtime_root: PathBuf,
+}
+
+pub const RUNTIME_JOURNALD_CONF: &str = "[Journal]\n\
+Storage=volatile\n\
+RuntimeMaxUse=64M\n\
+RuntimeMaxFileSize=8M\n\
+MaxRetentionSec=1h\n\
+RateLimitBurst=0\n\
+ForwardToSyslog=no\n\
+ForwardToKMsg=no\n\
+ForwardToConsole=no\n\
+ForwardToWall=no\n";
+
+impl Descriptor {
+    pub fn systemd_unit_definition_name(&self) -> String {
+        if let Some((prefix, _)) = self.service_unit.split_once('@') {
+            format!("{prefix}@.service")
+        } else if self.service_unit.ends_with(".service") {
+            self.service_unit.clone()
+        } else {
+            format!("{}.service", self.service_unit)
+        }
+    }
+
+    pub fn openrc_service_name(&self) -> &str {
+        self.service_unit
+            .strip_suffix(".service")
+            .unwrap_or(&self.service_unit)
+    }
+
+    pub fn systemd_unit_contents(&self, spec: &RuntimeServiceSpec) -> String {
+        let templated = self.service_unit.contains('@');
+        let instance_suffix = if templated { "@%i" } else { "@main" };
+        let install_bin = spec
+            .install_root
+            .join(&self.artifact_name)
+            .join("current")
+            .join(&self.binary_name);
+        let runtime_dir = format!(
+            "{}/{}{}",
+            spec.runtime_root.display(),
+            self.artifact_name,
+            instance_suffix
+        );
+        let agent_bin = spec.agent_root.join("current").join("apsp-agent");
+        let account_lines = if self.service_group.is_empty() {
+            String::new()
+        } else {
+            format!("User={0}\nGroup={0}\n", self.service_group)
+        };
+        let description_instance = if templated { " (%i)" } else { "" };
+        format!(
+            "[Unit]\n\
+Description=Apsp {artifact} runtime{description_instance}\n\
+After=network-online.target\n\
+Wants=network-online.target\n\
+ConditionPathExists={install_bin}\n\
+ConditionPathExists={runtime_dir}/current/config.json\n\
+\n\
+[Service]\n\
+OOMScoreAdjust=-500\n\
+CPUWeight=1000\n\
+{account_lines}\
+AmbientCapabilities=CAP_NET_BIND_SERVICE\n\
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE\n\
+NoNewPrivileges=true\n\
+LogNamespace=apsp-runtime\n\
+ExecStartPre=/usr/bin/test -f {runtime_dir}/current/config.json\n\
+ExecStartPre={agent_bin} verify-installed --binary {install_bin} --name {artifact} --format tar.gz\n\
+ExecStart={install_bin} run -c {runtime_dir}/current/config.json -D {runtime_dir}/data\n\
+ExecReload=/bin/kill -HUP $MAINPID\n\
+Restart=on-failure\n\
+RestartSec=5\n\
+\n\
+[Install]\n\
+WantedBy=multi-user.target\n",
+            artifact = self.artifact_name,
+            install_bin = install_bin.display(),
+            agent_bin = agent_bin.display(),
+        )
+    }
+
+    pub fn openrc_script_contents(&self, spec: &RuntimeServiceSpec) -> String {
+        let install_bin = spec
+            .install_root
+            .join(&self.artifact_name)
+            .join("current")
+            .join(&self.binary_name);
+        let runtime_dir = spec
+            .runtime_root
+            .join(format!("{}@main", self.artifact_name));
+        let agent_bin = spec.agent_root.join("current").join("apsp-agent");
+        let account = if self.service_group.is_empty() {
+            "root:root".to_owned()
+        } else {
+            format!("{0}:{0}", self.service_group)
+        };
+        format!(
+            "#!/sbin/openrc-run\n\
+\n\
+description=\"Apsp managed runtime\"\n\
+supervisor=\"supervise-daemon\"\n\
+command=\"{install_bin}\"\n\
+command_args=\"run -c {runtime_dir}/current/config.json -D {runtime_dir}/data\"\n\
+command_user=\"{account}\"\n\
+pidfile=\"/run/${{RC_SVCNAME}}.pid\"\n\
+required_files=\"$command {runtime_dir}/current/config.json\"\n\
+capabilities=\"^cap_net_bind_service\"\n\
+no_new_privs=\"yes\"\n\
+respawn_delay=5\n\
+respawn_max=0\n\
+retry=\"TERM/5/KILL/5\"\n\
+umask=\"0027\"\n\
+rc_ulimit=\"-c 0\"\n\
+# APSP_RUNTIME_LOG_V1=memory-socket\n\
+output_logger=\"{agent_bin} runtime-log --unit ${{RC_SVCNAME}}.service --stream stdout\"\n\
+error_logger=\"{agent_bin} runtime-log --unit ${{RC_SVCNAME}}.service --stream stderr\"\n\
+extra_started_commands=\"reload\"\n\
+description_reload=\"Reload runtime configuration\"\n\
+\n\
+depend() {{\n\
+    need net\n\
+}}\n\
+\n\
+start_pre() {{\n\
+    {agent_bin} verify-installed --binary {install_bin} --name {artifact} --format tar.gz || return 1\n\
+    {agent_bin} verify-installed --binary {agent_bin} --name agent --format raw || return 1\n\
+    checkpath --directory --mode 0755 --owner root:root /run/apsp /run/apsp/runtime-logs\n\
+    checkpath --directory --mode 0700 --owner {account} \"/run/apsp/runtime-logs/${{RC_SVCNAME}}.service\"\n\
+}}\n\
+\n\
+reload() {{\n\
+    ebegin \"Reload runtime configuration\"\n\
+    supervise-daemon \"$RC_SVCNAME\" --signal HUP\n\
+    eend $?\n\
+}}\n",
+            artifact = self.artifact_name,
+            install_bin = install_bin.display(),
+            runtime_dir = runtime_dir.display(),
+            agent_bin = agent_bin.display(),
+        )
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -405,6 +557,10 @@ pub struct ServiceLogs {
 }
 
 pub trait ServiceManager: Send + Sync {
+    fn ensure_runtime_service<'a>(&'a self, _spec: &'a RuntimeServiceSpec) -> BoxFuture<'a, ()> {
+        Box::pin(async { Ok(()) })
+    }
+
     fn retire_interactive_sessions(&self) -> BoxFuture<'_, ()> {
         Box::pin(async { Ok(()) })
     }
@@ -468,7 +624,9 @@ pub trait ServiceManager: Send + Sync {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DiagnosticDescriptor {
-    pub plugin_name: String,
+    // Serialized descriptors retain the installed Agent contract.
+    #[serde(rename = "plugin_name")]
+    pub artifact_name: String,
     pub binary_name: String,
 }
 
@@ -675,5 +833,35 @@ pub trait Adapter: Send + Sync {
     }
     fn session_source(&self) -> Option<&dyn SessionSource> {
         None
+    }
+}
+
+#[cfg(test)]
+mod serialization_tests {
+    use super::{Descriptor, DiagnosticDescriptor};
+    use serde_json::json;
+
+    #[test]
+    fn artifact_descriptors_preserve_published_serialized_names() {
+        let runtime_wire = json!({
+            "module": "runtime",
+            "plugin_name": "example-runtime",
+            "binary_name": "runtime",
+            "auxiliary_files": [],
+            "service_unit": "apsp-runtime@main.service",
+            "service_group": "runtime"
+        });
+        let descriptor: Descriptor = serde_json::from_value(runtime_wire.clone()).unwrap();
+        assert_eq!(descriptor.artifact_name, "example-runtime");
+        assert_eq!(serde_json::to_value(descriptor).unwrap(), runtime_wire);
+
+        let diagnostic_wire = json!({
+            "plugin_name": "diagnostic-fixture",
+            "binary_name": "runner"
+        });
+        let descriptor: DiagnosticDescriptor =
+            serde_json::from_value(diagnostic_wire.clone()).unwrap();
+        assert_eq!(descriptor.artifact_name, "diagnostic-fixture");
+        assert_eq!(serde_json::to_value(descriptor).unwrap(), diagnostic_wire);
     }
 }

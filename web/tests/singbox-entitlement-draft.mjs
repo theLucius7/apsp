@@ -4,7 +4,7 @@ import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { resolve, extname, sep } from 'node:path'
-import { proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
+import { proxyResourceFixtures, runtimeServerFixture } from './proxy-resource-fixtures.mjs'
 import { assertNativeSelectContrast } from './native-select-contrast.mjs'
 
 // TEST_ONLY read-only resources; no device execution or secret template content is claimed.
@@ -50,7 +50,7 @@ try {
       { id: 2, name: '新套餐', monthly_bytes: '2147483648', reset_day: 15, reset_hour: 8, reset_minute: 30, timezone: 'UTC', duration_days: 60 },
     ]
     const nodes = [1, 2].map(id => ({ id, name: `节点 ${id}`, server_id: id, protocol: 'vless-reality', public_host: 'proxy.example.com', port: 20000 + id, sni: 'www.example.com', public_key: 'TEST_ONLY', short_id: '0123abcd' }))
-    const servers = [1, 2].map(id => ({ id, name: `服务器 ${id}`, enabled: true, online: false, read_only: false }))
+    const servers = [1, 2].map(id => runtimeServerFixture(id, { online: false }))
     const proxyResources = () => {
       const missingIds = [...new Set(chainEntries.flatMap(chain => [chain.entry_node_id, chain.exit_node_id]))].filter(id => !nodes.some(node => node.id === id))
       const retired = missingIds.map((id, index) => ({ id, name: `已删除历史节点 ${id}`, server_id: index % 2 + 1, protocol: 'vless-reality', public_host: 'retired.example.com', port: 20000 + id, sni: 'www.example.com', node_deleted: true }))

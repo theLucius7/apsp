@@ -18,6 +18,7 @@ SPEC.loader.exec_module(BOOTSTRAP)
 AGENT = Path("/usr/local/bin/apsp-agent")
 RUNTIME = Path("/opt/apsp/plugins/sing-box/current/sing-box")
 DATABASE = Path("/var/lib/apsp/core/state.db")
+BUNDLED_MARKER = ".bundled.json"
 
 
 def ensure(condition, message):
@@ -28,6 +29,20 @@ def ensure(condition, message):
 def digest(path):
     with Path(path).open("rb") as source:
         return hashlib.file_digest(source, "sha256").hexdigest()
+
+
+def flipped_hex(value):
+    ensure(isinstance(value, str) and len(value) == 64, "expected 64-hex SHA256 digest")
+    return ("0" if value[0] != "0" else "1") + value[1:]
+
+
+def tampered_bundled_manifest(raw_bytes):
+    manifest = json.loads(raw_bytes.decode("utf-8"))
+    binary_name = manifest["binary_name"]
+    forged = flipped_hex(manifest["binary_sha256"])
+    manifest["binary_sha256"] = forged
+    manifest["files"][binary_name]["sha256"] = forged
+    return json.dumps(manifest, separators=(",", ":")).encode("utf-8")
 
 
 def snapshot():
@@ -97,10 +112,28 @@ def running_runtime_executable():
 def exercise(args):
     binary = RUNTIME.resolve(strict=True)
     directory = binary.parent
-    paths = [binary, *(directory / name for name in ("release.json", "SHA256SUMS", "SHA256SUMS.minisig", ".artifact.json"))]
+    marker_names = (BUNDLED_MARKER, "release.json", "SHA256SUMS", "SHA256SUMS.minisig", ".artifact.json")
+    paths = [binary, *(directory / name for name in marker_names)]
     original = {path: (path.read_bytes(), path.stat().st_mode & 0o777) if path.exists() else None for path in paths}
     executable = running_runtime_executable()
     ensure(not executable.endswith(" (deleted)"), "runtime must run from its installed executable")
+    bundled_manifest_path = directory / BUNDLED_MARKER
+    is_bundled = original[bundled_manifest_path] is not None
+    if is_bundled:
+        bundled_manifest = json.loads(original[bundled_manifest_path][0].decode("utf-8"))
+        ensure(
+            bundled_manifest.get("schema") == 1
+            and bundled_manifest.get("artifact_name") == "sing-box"
+            and bundled_manifest.get("binary_name") == binary.name,
+            "materialized runtime lacks a valid self-contained bundled manifest",
+        )
+        archive_hash = bundled_manifest["bundle_sha256"]
+    else:
+        ensure(original[directory / "release.json"] is not None, "installed runtime has neither .bundled.json nor release.json")
+        metadata = json.loads(original[directory / "release.json"][0])
+        entry = next(item for item in metadata["artifacts"] if item["name"] == "sing-box" and item["version"] == directory.name and item["arch"] == "amd64")
+        rows = dict((path, checksum) for checksum, path in (line.split("  ") for line in original[directory / "SHA256SUMS"][0].decode().splitlines()))
+        archive_hash = rows["/".join(entry[key] for key in ("name", "version", "arch"))]
     # Move originals aside and back by rename instead of rewriting their bytes.
     # Replacing the path under the running runtime leaves its executable
     # deleted, which the Agent's exact inspection rightly refuses; a rename
@@ -119,10 +152,7 @@ def exercise(args):
                 os.replace(moved.pop(path), path)
             elif saved is None:
                 path.unlink(missing_ok=True)
-    metadata = json.loads(original[directory / "release.json"][0])
-    entry = next(item for item in metadata["artifacts"] if item["name"] == "sing-box" and item["version"] == directory.name and item["arch"] == "amd64")
-    rows = dict((path, checksum) for checksum, path in (line.split("  ") for line in original[directory / "SHA256SUMS"][0].decode().splitlines()))
-    archive_hash = rows["/".join(entry[key] for key in ("name", "version", "arch"))]
+
     baseline = snapshot()
     results = []
     try:
@@ -132,17 +162,28 @@ def exercise(args):
                 move_aside(binary)
                 atomic_replace(binary, bytes([contents[0] ^ 1]) + contents[1:], mode)
             elif case == "cached-proof":
-                proof = directory / "SHA256SUMS"
-                contents, mode = original[proof]
-                move_aside(proof)
-                atomic_replace(proof, (b"0" if contents[:1] != b"0" else b"1") + contents[1:], mode)
+                if is_bundled:
+                    contents, mode = original[bundled_manifest_path]
+                    move_aside(bundled_manifest_path)
+                    atomic_replace(bundled_manifest_path, tampered_bundled_manifest(contents), mode)
+                else:
+                    proof = directory / "SHA256SUMS"
+                    contents, mode = original[proof]
+                    move_aside(proof)
+                    atomic_replace(proof, (b"0" if contents[:1] != b"0" else b"1") + contents[1:], mode)
             else:
-                for name in ("release.json", "SHA256SUMS", "SHA256SUMS.minisig"):
-                    move_aside(directory / name)
+                if is_bundled:
+                    move_aside(bundled_manifest_path)
+                else:
+                    for name in ("release.json", "SHA256SUMS", "SHA256SUMS.minisig"):
+                        move_aside(directory / name)
                 if original[directory / ".artifact.json"] is not None:
                     move_aside(directory / ".artifact.json")
-                atomic_replace(directory / ".artifact.json", json.dumps({"archive_sha256":archive_hash,
-                    "binary_sha256":digest(binary)}).encode(), 0o644)
+                atomic_replace(
+                    directory / ".artifact.json",
+                    json.dumps({"archive_sha256": archive_hash, "binary_sha256": digest(binary)}).encode(),
+                    0o644,
+                )
             result = subprocess.run([str(AGENT), "verify-cache"], check=False, capture_output=True, timeout=60)
             ensure(result.returncode != 0, "untrusted cache passed Agent preflight")
             probe(binary, args.log_directory, False)
@@ -164,7 +205,7 @@ def exercise(args):
         restore()
         aside.rmdir()
     ensure(running_runtime_executable() == executable, "runtime executable changed during cache rejection checks")
-    args.summary.write_text(json.dumps({"passed":True,"checks":results + ["restored-systemd-verifier"]}) + "\n")
+    args.summary.write_text(json.dumps({"passed": True, "checks": results + ["restored-systemd-verifier"]}) + "\n")
 
 
 def main():

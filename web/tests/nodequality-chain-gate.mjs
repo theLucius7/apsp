@@ -28,7 +28,7 @@ try {
   const reason = '完整验机已暂停：离线受控工具链尚未就绪，旧工具链仍会下载在线代码、上传内层报告或修改宿主 swap。'
   const id = '00000000-0000-0000-0000-000000000028'
   const old = { id, status: 'failed', agent_completed: false, cancel_requested_at: null, cancel_error: null,
-    job: { id, plugin: 'nodequality', options: { ip_version: 'both', network_mode: 'low', upload_report: 'false' } }, cleanup_pending: true,
+    job: { id, tool: 'nodequality', options: { ip_version: 'both', network_mode: 'low', upload_report: 'false' } }, cleanup_pending: true,
     report: null, error: reason, created_at: now, updated_at: now, expires_at: now + 1800,
     expected_sections: ['hardware_quality'], report_completeness: 'partial',
     sections: [{ name: 'hardware_quality', text: '旧完整任务已保存的硬件章节', complete: true, revision: 1, collected_at: now }] }
@@ -43,13 +43,13 @@ try {
     else if (path === '/api/servers/1/deployments') value = { status: null, history: [] }
     else if (path === '/api/servers/1/agent-settings') value = { sample_interval_secs: 1, upload_interval_secs: 3, discover_public_ips: false, auto_update: false }
     else if (path === '/api/servers/1/telemetry-settings') value = { persist_interval_secs: 60 }
-    else if (path === '/api/servers/1/node-quality/reports' && request.method() === 'GET') value = { plugin_ready: ready, plugin_reason: ready ? null : 'Agent 当前离线', full_ready: false, full_reason: reason, cancel_supported: true, reports: records, proxy_activity: { state: 'unknown', reason: '代理流量状态未知', checked_at: now, last_positive_at: null } }
+    else if (path === '/api/servers/1/node-quality/reports' && request.method() === 'GET') value = { tool_ready: ready, tool_reason: ready ? null : 'Agent 当前离线', full_ready: false, full_reason: reason, cancel_supported: true, reports: records, proxy_activity: { state: 'unknown', reason: '代理流量状态未知', checked_at: now, last_positive_at: null } }
     else if (path === '/api/servers/1/node-quality/reports') {
       const body = request.postDataJSON()
       if (body.mode !== 'daily') { fullPosts++; await route.fulfill({ status: 409, json: { error: reason } }); return }
       dailyPosts++
       assert.equal(body.network_mode, 'low'); assert.equal(body.upload_report, false)
-      value = { ...old, status: 'queued', error: null, job: { plugin: 'nodequality', options: { ...body } }, sections: [], expected_sections: ['net_quality', 'environment'] }
+      value = { ...old, status: 'queued', error: null, job: { tool: 'nodequality', options: { ...body } }, sections: [], expected_sections: ['net_quality', 'environment'] }
       records = [value]
     } else if (path === '/api/servers/1/ip-quality/refresh') {
       refreshPosts++; await route.fulfill({ status: 403, json: { error: 'IP 查询源返回 403；历史结果保留' } }); return

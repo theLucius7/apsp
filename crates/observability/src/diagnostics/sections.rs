@@ -6,8 +6,9 @@ pub async fn upload_section(
     Path(id): Path<Uuid>,
     Json(update): Json<DiagnosticSectionUpdate>,
 ) -> ApiResult<StatusCode> {
+    let now = now_timestamp();
     let server_id = crate::device_channel::require_agent(&state, &headers).await?;
-    if id != update.id || !update.valid() || update.collected_at > now_timestamp() + 300 {
+    if id != update.id || !update.valid() || update.collected_at > now + 300 {
         return Err(ApiError::BadRequest(
             "报告章节编号、内容、版本或时间无效".into(),
         ));
@@ -15,7 +16,14 @@ pub async fn upload_section(
     let mut tx = state.pool.begin().await?;
     // Projection may write server caches. Keep the same server -> job lock order
     // as creation, cancellation and terminal updates.
-    crate::servers::lock(&mut tx, server_id).await?;
+    let server_row = crate::servers::lock_row(
+        &mut tx,
+        server_id,
+        crate::servers::RowLock::Update,
+        "static_info,static_info_received_at,last_seen,capabilities",
+    )
+    .await?
+    .ok_or(ApiError::NotFound)?;
     let row = sqlx::query("SELECT j.expected_sections,j.job,j.created_at,j.expires_at,j.generation FROM diagnostic_jobs j WHERE j.id=$1 AND j.server_id=$2 FOR UPDATE")
         .bind(id).bind(server_id).fetch_optional(&mut *tx).await?.ok_or(ApiError::NotFound)?;
     let expected: Vec<String> = row.get("expected_sections");
@@ -23,8 +31,13 @@ pub async fn upload_section(
     {
         return Err(ApiError::BadRequest("任务没有登记此报告章节".into()));
     }
+    let job: Value = row.get("job");
+    let frozen = service::FrozenComponentIdentity::from_job(&job)?;
+    if let Some(frozen) = &frozen {
+        frozen.verify_live(&server_row, now)?;
+    }
     let node_results = crate::diagnostic_tools::nodequality::node_queries::parse_section(
-        &row.get::<Value, _>("job"),
+        &job,
         &update,
         row.get("created_at"),
         row.get("expires_at"),
@@ -47,13 +60,15 @@ pub async fn upload_section(
         if revision as u64 == update.revision {
             tx.commit().await?;
             // Replayed durable sections repair a cache write that failed after
-            // the chapter committed. Job locks are released before server locks.
-            crate::diagnostic_tools::nodequality::node_queries::persist_section(
-                &state,
-                server_id,
-                node_results,
-            )
-            .await?;
+            // the chapter committed. Historical unfrozen receipts remain read-only.
+            if frozen.is_some() {
+                crate::diagnostic_tools::nodequality::node_queries::persist_section(
+                    &state,
+                    server_id,
+                    node_results,
+                )
+                .await?;
+            }
             return Ok(StatusCode::NO_CONTENT);
         }
         if revision as u64 > update.revision
@@ -68,33 +83,34 @@ pub async fn upload_section(
     if total + update.text.len() as i64 > REPORT_LIMIT as i64 {
         return Err(ApiError::BadRequest("已保存报告章节超过 512 KiB".into()));
     }
-    let job: Value = row.get("job");
-    if let Some(plugin) = crate::diagnostic_tools::for_job(&job) {
-        plugin
-            .record_section(
-                service::SectionContext {
-                    server_id,
-                    job: &job,
-                    created_at: row.get("created_at"),
-                    expires_at: row.get("expires_at"),
-                    job_generation: row.get("generation"),
-                },
-                &update,
-                &mut tx,
-            )
-            .await?;
+    if let Some(tool) = crate::diagnostic_tools::for_job(&job) {
+        tool.record_section(
+            service::SectionContext {
+                server_id,
+                job: &job,
+                created_at: row.get("created_at"),
+                expires_at: row.get("expires_at"),
+                job_generation: row.get("generation"),
+                live_verified: frozen.is_some(),
+            },
+            &update,
+            &mut tx,
+        )
+        .await?;
     }
     sqlx::query("INSERT INTO diagnostic_report_sections(job_id,name,text,complete,revision,collected_at,received_at) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(job_id,name) DO UPDATE SET text=EXCLUDED.text,complete=EXCLUDED.complete,revision=EXCLUDED.revision,collected_at=EXCLUDED.collected_at,received_at=EXCLUDED.received_at")
-        .bind(id).bind(&update.name).bind(&update.text).bind(update.complete).bind(update.revision as i64).bind(update.collected_at).bind(now_timestamp()).execute(&mut *tx).await?;
+        .bind(id).bind(&update.name).bind(&update.text).bind(update.complete).bind(update.revision as i64).bind(update.collected_at).bind(now).execute(&mut *tx).await?;
     sqlx::query("UPDATE diagnostic_jobs j SET report_completeness=CASE WHEN (SELECT COUNT(*) FROM diagnostic_report_sections s WHERE s.job_id=j.id AND s.complete)=cardinality(j.expected_sections) THEN 'complete' ELSE 'partial' END WHERE j.id=$1")
         .bind(id).execute(&mut *tx).await?;
     // Execution status, terminal error and legacy text are deliberately preserved.
     tx.commit().await?;
-    crate::diagnostic_tools::nodequality::node_queries::persist_section(
-        &state,
-        server_id,
-        node_results,
-    )
-    .await?;
+    if frozen.is_some() {
+        crate::diagnostic_tools::nodequality::node_queries::persist_section(
+            &state,
+            server_id,
+            node_results,
+        )
+        .await?;
+    }
     Ok(StatusCode::NO_CONTENT)
 }

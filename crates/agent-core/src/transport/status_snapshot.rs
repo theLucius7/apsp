@@ -18,9 +18,19 @@ pub(super) fn snapshot(runtime: &Runtime) -> Result<Value> {
     }
     let telemetry = runtime.telemetry.borrow();
     let oversized_usage_batches = state.oversized_usage_count()?;
+    let bundle_ready = runtime.bundle.ready.load(Ordering::Acquire);
+    let bundle_error = runtime
+        .bundle
+        .error
+        .lock()
+        .map_err(|_| anyhow::anyhow!("bundle status mutex poisoned"))?
+        .clone();
     Ok(json!({
-        "agent_version": runtime.agent_version, "pid": std::process::id(),
+        "agent_version": bundle_ready.then_some(runtime.agent_version),
+        "pid": bundle_ready.then_some(std::process::id()),
         "connected": runtime.connected.load(Ordering::Relaxed),
+        "bundle_ready": bundle_ready,
+        "bundle_error": bundle_error,
         "applied": applied, "healthy": healthy,
         "pending_batches": state.pending_usage_count()?,
         "pending_telemetry": state.pending_telemetry_count()?,

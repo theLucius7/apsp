@@ -175,7 +175,6 @@ impl TestPanel {
     }
 
     pub async fn create_node(&self, cookie: &str, server_id: i64, name: &str) -> Result<Value> {
-        self.enable_runtime(cookie, server_id).await?;
         let response = self.admin(Method::POST, "/api/traffic/nodes", cookie, Some(json!({"name":name,"server_id":server_id,"public_host":"proxy.example.com","sni":"www.example.com"}))).await?;
         anyhow::ensure!(
             response.status() == StatusCode::CREATED,
@@ -217,18 +216,6 @@ impl TestPanel {
             .bind(vec![entry,exit]).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
         tx.commit().await?;
         Ok(json!({"id":chain,"name":name,"entry_node_id":entry}))
-    }
-
-    pub async fn enable_runtime(&self, cookie: &str, server_id: i64) -> Result<()> {
-        self.admin(
-            Method::POST,
-            &format!("/api/traffic/servers/{server_id}/enable"),
-            cookie,
-            Some(json!({})),
-        )
-        .await?
-        .error_for_status()?;
-        Ok(())
     }
 
     pub async fn create_user(&self, cookie: &str, name: &str) -> Result<Value> {
@@ -373,16 +360,46 @@ impl TestPanel {
     }
 
     pub async fn publish_now(&self) -> Result<()> {
-        self.prepare_deployment_preflights().await?;
         sqlx::query("UPDATE runtime_publications SET dirty_at=0 WHERE dirty_at IS NOT NULL")
             .execute(&self.state.pool)
             .await?;
         apsp_traffic::publisher::publish_due(&self.state, None).await
     }
 
-    /// Complete the normal deployment gate with controlled TEST_ONLY observations.
-    pub async fn prepare_deployment_preflights(&self) -> Result<()> {
-        deployment::prepare(self).await
+    /// Records a fresh observation of a verified `SignedTestAgent` on `server_id` for
+    /// positive tests that explicitly exercise self-contained runtime or diagnostic gates.
+    pub async fn observe_signed_agent(
+        &self,
+        server_id: i64,
+        signed: &release_fixture::SignedTestAgent,
+        extra_capabilities: &[&str],
+    ) -> Result<()> {
+        let (existing_info, existing_caps): (Value, Value) =
+            sqlx::query_as("SELECT static_info,capabilities FROM servers WHERE id=$1")
+                .bind(server_id)
+                .fetch_one(&self.state.pool)
+                .await?;
+        let info = signed.merge_static_info(&existing_info);
+        let mut capabilities: Vec<String> =
+            serde_json::from_value(existing_caps).unwrap_or_default();
+        for capability in std::iter::once(apsp_protocol::SELF_CONTAINED_AGENT_CAPABILITY)
+            .chain(extra_capabilities.iter().copied())
+        {
+            if !capabilities.iter().any(|item| item == capability) {
+                capabilities.push(capability.to_owned());
+            }
+        }
+        let now = apsp_protocol::now_timestamp();
+        sqlx::query(
+            "UPDATE servers SET static_info=$2,static_info_received_at=$3,last_seen=$3,capabilities=$4 WHERE id=$1",
+        )
+        .bind(server_id)
+        .bind(info)
+        .bind(now)
+        .bind(json!(capabilities))
+        .execute(&self.state.pool)
+        .await?;
+        Ok(())
     }
 
     pub async fn authenticated_device(

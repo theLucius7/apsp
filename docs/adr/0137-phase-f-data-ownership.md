@@ -1,6 +1,6 @@
 # ADR 0137：阶段 F 的数据收尾——哪些合并、哪些保留，第一步
 
-状态：已接受（2026-11-14）。延续 [ADR 0131](0131-one-model-per-object.md)（一类对象一套模型）与 [ADR 0133](0133-one-implementation-per-mechanism.md)–[ADR 0136](0136-server-state-and-small-mechanisms.md)；处理 [architecture.md §12](../architecture.md#12-扫描结论与余下工作2026-11-13) 中标为“阶段 F”的各项。
+状态：已接受（2026-11-14）。延续 [ADR 0131](0131-one-model-per-object.md)（一类对象一套模型）与 [ADR 0133](0133-one-implementation-per-mechanism.md)–[ADR 0136](0136-server-state-and-small-mechanisms.md)；处理 [architecture.md §12](../architecture.md#12-当前优化项) 中标为“阶段 F”的各项。
 
 2026-11-14 用户：“continue，依次”（按“阶段 F 的数据收尾 → 流量服务的作业胶水 → 前端重复”的顺序继续）。
 

@@ -6,11 +6,11 @@ pub(super) const SECTIONS_OUTBOX: &str = "diagnostics:sections:outbox";
 const MAX_CHAPTER_BYTES: usize = 512 * 1024;
 
 impl DiagnosticWorker {
-    pub(super) async fn capture_sections(&self, spec: &DiagnosticSpec, plugin: &str) -> Result<()> {
+    pub(super) async fn capture_sections(&self, spec: &DiagnosticSpec, tool: &str) -> Result<()> {
         let adapter = self
             .adapters
-            .get(plugin)
-            .context("diagnostic plugin is not registered")?;
+            .get(tool)
+            .context("diagnostic tool is not registered")?;
         let id = Uuid::parse_str(&spec.id)?;
         let chapters = self.bounded(adapter.collect_sections(spec)).await?;
         ensure!(

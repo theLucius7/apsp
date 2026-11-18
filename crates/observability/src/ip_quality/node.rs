@@ -31,12 +31,12 @@ pub struct NodeQualityView {
 
 pub(crate) async fn view(state: &AppState, server_id: i64) -> ApiResult<NodeQualityView> {
     let row = sqlx::query(
-        "SELECT static_info,last_seen,capabilities FROM servers WHERE id=$1 AND deleted_at IS NULL",
+        "SELECT static_info,static_info_received_at,last_seen,capabilities FROM servers WHERE id=$1 AND deleted_at IS NULL",
     )
     .bind(server_id)
     .fetch_one(&state.pool)
     .await?;
-    let mut readiness = service::readiness(state, &row, &IpQualityTool).await;
+    let mut readiness = service::readiness(state, server_id, &row, &IpQualityTool).await;
     let source_ready = readiness.ready;
     let source_reason = readiness.reason.clone();
     let reports = service::history(state, server_id, Some("ipquality")).await?;

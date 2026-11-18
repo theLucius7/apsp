@@ -9,10 +9,7 @@
 //! Revisions only grow: deployments are keyed by server, module and revision, and an Agent
 //! ignores a manifest whose revision is lower than one it has seen.
 
-use crate::{
-    servers::{self, RowLock},
-    settings::{ENABLEMENT_JOIN, SOURCE_SQL},
-};
+use crate::servers::{self, RowLock};
 use sqlx::{PgConnection, PgPool, Postgres, Transaction};
 use std::collections::HashMap;
 
@@ -96,26 +93,12 @@ pub(crate) async fn mark_pending_tx(
     Ok(())
 }
 
-/// Marks the first publication of `server` as pending when nothing was ever deployed to it,
-/// keeping an earlier mark. The caller holds the server row.
-pub(crate) async fn mark_first_pending_tx(
-    tx: &mut Transaction<'_, Postgres>,
-    server: i64,
-) -> sqlx::Result<()> {
-    sqlx::query(&format!(
-        "INSERT INTO runtime_publications(server_id,dirty_at) SELECT $1,{NOW_MS} WHERE NOT EXISTS(SELECT 1 FROM deployments WHERE server_id=$1 AND module='singbox') ON CONFLICT(server_id) DO UPDATE SET dirty_at=COALESCE(runtime_publications.dirty_at,EXCLUDED.dirty_at)"
-    ))
-    .bind(server)
-    .execute(&mut **tx)
-    .await?;
-    Ok(())
-}
-
-/// Servers whose pending change is due, that are not deleted and have an enabled runtime,
-/// in id order.
+/// Non-deleted servers whose pending change is due, in id order. Unconfigured servers are
+/// included so deleting or disabling the last service publishes an empty manifest revision and
+/// settles the dirty mark.
 pub(crate) async fn due(pool: &PgPool) -> sqlx::Result<Vec<i64>> {
     sqlx::query_scalar(&format!(
-        "SELECT s.id FROM runtime_publications p JOIN servers s ON s.id=p.server_id {ENABLEMENT_JOIN} WHERE s.deleted_at IS NULL AND {DUE} AND ({SOURCE_SQL}) IS NOT NULL ORDER BY s.id"
+        "SELECT s.id FROM runtime_publications p JOIN servers s ON s.id=p.server_id WHERE s.deleted_at IS NULL AND {DUE} ORDER BY s.id"
     ))
     .fetch_all(pool)
     .await
@@ -124,9 +107,8 @@ pub(crate) async fn due(pool: &PgPool) -> sqlx::Result<Vec<i64>> {
 /// Claims the publication of `server` in the caller's publication transaction and returns
 /// the revision last published. The server row is held FOR KEY SHARE (its deletion and
 /// retirement wait, its contact times are still written) and the publication row
-/// FOR UPDATE. `None` when the server is deleted, has no enabled runtime, has nothing due
-/// (unless `force`) or another transaction holds its publication row; it is left to a later
-/// pass.
+/// FOR UPDATE. `None` when the server is deleted, has nothing due (unless `force`) or
+/// another transaction holds its publication row; it is left to a later pass.
 pub(crate) async fn claim_tx(
     tx: &mut Transaction<'_, Postgres>,
     server: i64,
@@ -148,7 +130,7 @@ pub(crate) async fn claim_tx(
         .await?;
     }
     sqlx::query_scalar(&format!(
-        "SELECT p.manifest_rev FROM runtime_publications p JOIN servers s ON s.id=p.server_id {ENABLEMENT_JOIN} WHERE p.server_id=$1 AND ({DUE} OR $2) AND ({SOURCE_SQL}) IS NOT NULL FOR UPDATE OF p SKIP LOCKED"
+        "SELECT p.manifest_rev FROM runtime_publications p JOIN servers s ON s.id=p.server_id WHERE p.server_id=$1 AND s.deleted_at IS NULL AND ({DUE} OR $2) FOR UPDATE OF p SKIP LOCKED"
     ))
     .bind(server)
     .bind(force)
@@ -178,42 +160,6 @@ pub(crate) async fn record_tx(
     .bind(revision)
     .execute(&mut **tx)
     .await?;
-    match updated.rows_affected() {
-        1 => Ok(()),
-        _ => Err(sqlx::Error::RowNotFound),
-    }
-}
-
-/// Locks the publication state of `server` for a revision published outside the publication
-/// cycle (the empty first installation) and returns the revision last published. The
-/// caller holds the server row.
-pub(crate) async fn lock_tx(tx: &mut Transaction<'_, Postgres>, server: i64) -> sqlx::Result<i64> {
-    sqlx::query(
-        "INSERT INTO runtime_publications(server_id) VALUES($1) ON CONFLICT(server_id) DO NOTHING",
-    )
-    .bind(server)
-    .execute(&mut **tx)
-    .await?;
-    sqlx::query_scalar(
-        "SELECT manifest_rev FROM runtime_publications WHERE server_id=$1 FOR UPDATE",
-    )
-    .bind(server)
-    .fetch_one(&mut **tx)
-    .await
-}
-
-/// Records `revision` as the last one published to a server locked with [`lock_tx`]; a
-/// pending change stays pending.
-pub(crate) async fn advance_tx(
-    tx: &mut Transaction<'_, Postgres>,
-    server: i64,
-    revision: i64,
-) -> sqlx::Result<()> {
-    let updated = sqlx::query("UPDATE runtime_publications SET manifest_rev=$2 WHERE server_id=$1")
-        .bind(server)
-        .bind(revision)
-        .execute(&mut **tx)
-        .await?;
     match updated.rows_affected() {
         1 => Ok(()),
         _ => Err(sqlx::Error::RowNotFound),

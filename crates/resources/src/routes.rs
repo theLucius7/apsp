@@ -1,6 +1,6 @@
 //! The domain's routes: servers, enrollment and batch enrollment, what an installing
-//! machine asks, the device channel and the artifacts a device downloads, asset profiles,
-//! lifecycle and migration, cloud resources and retirement.
+//! machine asks, the device channel, asset profiles, lifecycle and migration, cloud
+//! resources and retirement.
 
 use axum::{
     Router,
@@ -8,8 +8,8 @@ use axum::{
 };
 
 use crate::{
-    AppState, batch_enrollment, bootstrap, cloud_resources, device_artifacts, device_channel,
-    retirement, server_lifecycle, servers,
+    AppState, batch_enrollment, bootstrap, cloud_resources, device_channel, retirement,
+    server_lifecycle, servers,
 };
 
 pub fn routes() -> Router<AppState> {
@@ -35,10 +35,6 @@ pub fn routes() -> Router<AppState> {
         .route("/install.sh", get(bootstrap::install_script))
         .route("/install.ps1", get(bootstrap::install_powershell))
         .merge(device_channel::routes())
-        .route(
-            "/api/agent/v1/artifacts/{name}/{version}/{arch}",
-            get(device_artifacts::download),
-        )
         .route(
             "/api/fleet/templates",
             get(batch_enrollment::templates).post(batch_enrollment::save_template),

@@ -42,6 +42,7 @@ async fn full_storage_retains_clock_and_unacked_usage_without_interrupting_authe
         connected: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         public_ips: Arc::new(vec![]),
         agent_version: "TEST_ONLY",
+        bundle: Default::default(),
         retirement: None,
         cancellation: None,
         runtime_control: None,

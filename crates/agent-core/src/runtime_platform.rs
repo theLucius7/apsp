@@ -209,7 +209,7 @@ mod tests {
             ("musl-and-legacy", musl.as_str()),
             ("musl-and-legacy", arch),
             ("agent", agent_target.as_str()),
-            ("legacy-plugin", arch),
+            ("legacy-artifact", arch),
         ] {
             let format = if name == "agent" { "raw" } else { "tar.gz" };
             let mut entry = support::entry(name, "0.3.0", name, format, b"bytes", b"bytes");
@@ -243,7 +243,7 @@ mod tests {
                 native_target().unwrap()
             );
             assert_eq!(
-                artifact_for_targets(&release, "legacy-plugin", "0.3.0", target, compiled)
+                artifact_for_targets(&release, "legacy-artifact", "0.3.0", target, compiled)
                     .unwrap()
                     .metadata()
                     .arch,

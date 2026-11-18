@@ -50,7 +50,7 @@ pub(super) async fn execute(
         }
         Operation::SetValidity { user_id, until } => {
             let servers = crate::proxy_users::lock_user_servers(tx, *user_id).await?;
-            let previous: i64 = sqlx::query_scalar("SELECT a.expires_at FROM singbox_user_packages p JOIN singbox_package_assignments a ON a.id=p.assignment_id WHERE p.user_id=$1")
+            let (previous_assignment, previous): (i64, i64) = sqlx::query_as("SELECT a.id,a.expires_at FROM singbox_user_packages p JOIN singbox_package_assignments a ON a.id=p.assignment_id WHERE p.user_id=$1")
                 .bind(user_id).fetch_one(&mut **tx).await?;
             let expires_at = match until {
                 Validity::At(at) => *at,
@@ -65,6 +65,11 @@ pub(super) async fn execute(
                 .bind(assignment)
                 .execute(&mut **tx)
                 .await?;
+            // Expiry alone changes no accounting terms. Keep the adopted cycle's
+            // meter/ledger anchor attached to this replacement snapshot.
+            sqlx::query("UPDATE singbox_native_adoptions SET assignment_id=$3 WHERE user_id=$1 AND assignment_id=$2")
+                .bind(user_id).bind(previous_assignment).bind(assignment)
+                .execute(&mut **tx).await?;
             apsp_traffic::business::mark_dirty(tx, &servers).await?;
             let shown = |at: i64| (at != NO_EXPIRY).then_some(at);
             json!({"status":"saved","assignment_id":assignment,"previous_expires_at":shown(previous),"expires_at":shown(expires_at),"quota_reset":false})

@@ -8,6 +8,7 @@
 
 use serde_json::Value;
 use sqlx::{Postgres, Transaction};
+use uuid::Uuid;
 
 use crate::{
     error::{ApiError, ApiResult},
@@ -47,6 +48,21 @@ pub trait Evidence: Send + Sync {
         evidence: Value,
         observed_at: i64,
         notify: bool,
+    ) -> BoxFuture<'a, ApiResult<()>>;
+
+    /// Ensures a one-shot incident exists for `report.key` without reopening a resolved one,
+    /// and returns its identifier.
+    fn ensure_incident_once_tx<'a, 't>(
+        &'a self,
+        tx: &'a mut Transaction<'t, Postgres>,
+        report: IncidentReport<'a>,
+    ) -> BoxFuture<'a, ApiResult<Uuid>>;
+
+    /// Cancels pending notifications of `incident` while keeping completed delivery history.
+    fn cancel_pending_incident_notifications_tx<'a, 't>(
+        &'a self,
+        tx: &'a mut Transaction<'t, Postgres>,
+        incident: Uuid,
     ) -> BoxFuture<'a, ApiResult<()>>;
 }
 
@@ -88,5 +104,21 @@ pub async fn recover_incident_tx(
 ) -> ApiResult<()> {
     required()?
         .recover_incident_tx(tx, key, evidence, observed_at, notify)
+        .await
+}
+
+pub async fn ensure_incident_once_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    report: IncidentReport<'_>,
+) -> ApiResult<Uuid> {
+    required()?.ensure_incident_once_tx(tx, report).await
+}
+
+pub async fn cancel_pending_incident_notifications_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    incident: Uuid,
+) -> ApiResult<()> {
+    required()?
+        .cancel_pending_incident_notifications_tx(tx, incident)
         .await
 }

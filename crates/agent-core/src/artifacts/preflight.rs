@@ -16,7 +16,7 @@ use std::{
 struct Reference {
     binary: PathBuf,
     version: String,
-    plugin: Option<String>,
+    artifact_name: Option<String>,
 }
 
 impl From<Prepared> for Reference {
@@ -24,7 +24,7 @@ impl From<Prepared> for Reference {
         Self {
             binary: prepared.spec.binary_path,
             version: prepared.spec.kernel_version,
-            plugin: None,
+            artifact_name: None,
         }
     }
 }
@@ -35,7 +35,9 @@ enum DiagnosticCheckpoint {
     Started {
         spec: DiagnosticSpec,
         service: ServiceJob,
-        plugin: String,
+        // The persisted diagnostic checkpoint predates the internal tool terminology.
+        #[serde(rename = "plugin")]
+        tool: String,
     },
 }
 
@@ -102,51 +104,66 @@ fn saved_references(config: &Config, keys: &TrustedKeys) -> Result<Vec<Reference
             Some(DiagnosticCheckpoint::Started {
                 spec,
                 service,
-                plugin,
+                tool,
             }) => {
                 ensure!(
                     service.program == spec.binary_path,
                     "diagnostic checkpoint executes an unexpected binary"
                 );
-                references.push(Reference {
-                    binary: spec.binary_path,
-                    version: spec.version,
-                    plugin: Some(plugin),
-                });
+                let self_exe = crate::bundled::current_agent_binary().ok();
+                if spec.binary_path.starts_with(&config.agent_root)
+                    || self_exe.as_ref() == Some(&spec.binary_path)
+                {
+                    if spec.binary_path.starts_with(&config.agent_root) {
+                        references.push(Reference {
+                            binary: spec.binary_path,
+                            version: spec.version,
+                            artifact_name: Some("agent".into()),
+                        });
+                    }
+                } else {
+                    references.push(Reference {
+                        binary: spec.binary_path,
+                        version: spec.version,
+                        artifact_name: Some(tool),
+                    });
+                }
             }
             Some(DiagnosticCheckpoint::Preparing(job)) => {
-                let release = verification::signed_release(
-                    job.artifact
-                        .proof
-                        .as_ref()
-                        .context("pending diagnostic artifact has no signed proof")?,
-                    keys,
-                )?;
-                let artifact =
-                    crate::runtime_platform::artifact(&release, &job.plugin, &job.version)?;
-                ensure!(
-                    artifact.metadata().format == "tar.gz",
-                    "pending diagnostic artifact has an unsupported format"
-                );
-                ensure!(
-                    artifact.sha256() == job.artifact.sha256,
-                    "pending diagnostic checksum differs from its signed release"
-                );
-                let binary = config
-                    .install_root
-                    .join(&job.plugin)
-                    .join(&job.version)
-                    .join(&artifact.metadata().binary_name);
-                if std::fs::symlink_metadata(
-                    binary.parent().context("diagnostic binary has no parent")?,
-                )
-                .is_ok()
-                {
-                    references.push(Reference {
-                        binary,
-                        version: job.version,
-                        plugin: Some(job.plugin),
-                    });
+                if let Some(job_artifact) = &job.artifact {
+                    let release = verification::signed_release(
+                        job_artifact
+                            .proof
+                            .as_ref()
+                            .context("pending diagnostic artifact has no signed proof")?,
+                        keys,
+                    )?;
+                    let artifact =
+                        crate::runtime_platform::artifact(&release, &job.tool, &job.version)?;
+                    ensure!(
+                        artifact.metadata().format == "tar.gz",
+                        "pending diagnostic artifact has an unsupported format"
+                    );
+                    ensure!(
+                        artifact.sha256() == job_artifact.sha256,
+                        "pending diagnostic checksum differs from its signed release"
+                    );
+                    let binary = config
+                        .install_root
+                        .join(&job.tool)
+                        .join(&job.version)
+                        .join(&artifact.metadata().binary_name);
+                    if std::fs::symlink_metadata(
+                        binary.parent().context("diagnostic binary has no parent")?,
+                    )
+                    .is_ok()
+                    {
+                        references.push(Reference {
+                            binary,
+                            version: job.version,
+                            artifact_name: Some(job.tool),
+                        });
+                    }
                 }
             }
             None => {}
@@ -161,36 +178,64 @@ async fn verify_reference(
     reference: &Reference,
     keys: &TrustedKeys,
 ) -> Result<()> {
+    if reference.artifact_name.as_deref() == Some("agent")
+        && reference.binary.starts_with(&config.agent_root)
+    {
+        return verification::verify_binary_with_keys(&reference.binary, "agent", "raw", keys)
+            .await;
+    }
     let version_dir = reference
         .binary
         .parent()
         .context("cached binary has no version directory")?;
-    let plugin_dir = version_dir
+    let artifact_dir = version_dir
         .parent()
-        .context("cached binary has no plugin directory")?;
-    let plugin = plugin_dir
+        .context("cached binary has no artifact directory")?;
+    let artifact_name = artifact_dir
         .file_name()
         .and_then(|name| name.to_str())
-        .context("invalid cached plugin path")?;
+        .context("invalid cached artifact path")?;
+    let dir_name = version_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .context("invalid cached version directory")?;
+    if let Some(manifest) = crate::bundled::read_bundled_manifest(version_dir).await? {
+        ensure!(
+            reference.binary.is_absolute()
+                && artifact_dir.parent() == Some(config.install_root.as_path())
+                && safe_component(artifact_name)
+                && apsp_protocol::bundled::valid_version_segment(&reference.version)
+                && manifest.component_name == artifact_name
+                && manifest.version == reference.version
+                && crate::bundled::matches_version_directory_name(dir_name, &reference.version)
+                && reference.binary.file_name().and_then(|name| name.to_str())
+                    == Some(manifest.binary_name.as_str())
+                && reference
+                    .artifact_name
+                    .as_ref()
+                    .is_none_or(|expected| expected == artifact_name),
+            "cached bundled component path differs from its saved identity"
+        );
+        return crate::bundled::verify_manifest_files(version_dir, &manifest).await;
+    }
     ensure!(
         reference.binary.is_absolute()
-            && plugin_dir.parent() == Some(config.install_root.as_path())
-            && safe_component(plugin)
+            && artifact_dir.parent() == Some(config.install_root.as_path())
+            && safe_component(artifact_name)
             && safe_component(&reference.version)
-            && version_dir.file_name().and_then(|name| name.to_str())
-                == Some(reference.version.as_str())
+            && dir_name == reference.version
             && reference
-                .plugin
+                .artifact_name
                 .as_ref()
-                .is_none_or(|expected| expected == plugin),
+                .is_none_or(|expected| expected == artifact_name),
         "cached artifact path differs from its saved identity"
     );
     let proof = verification::read_proof(version_dir).await?;
     let release = verification::signed_release(&proof, keys)?;
-    let artifact = crate::runtime_platform::artifact(&release, plugin, &reference.version)?;
+    let artifact = crate::runtime_platform::artifact(&release, artifact_name, &reference.version)?;
     ensure!(
         artifact.metadata().format == "tar.gz",
-        "cached plugin artifact has an unsupported format"
+        "cached artifact has an unsupported format"
     );
     ensure!(
         reference.binary.file_name().and_then(|name| name.to_str())
@@ -202,20 +247,20 @@ async fn verify_reference(
 
 async fn current_references(config: &Config, keys: &TrustedKeys) -> Result<Vec<Reference>> {
     let mut references = Vec::new();
-    let mut plugins = match tokio::fs::read_dir(&config.install_root).await {
+    let mut artifacts = match tokio::fs::read_dir(&config.install_root).await {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(references),
         result => result?,
     };
-    while let Some(plugin) = plugins.next_entry().await? {
-        let kind = plugin.file_type().await?;
+    while let Some(artifact_dir) = artifacts.next_entry().await? {
+        let kind = artifact_dir.file_type().await?;
         ensure!(
             !kind.is_symlink(),
-            "cached plugin directory cannot be a symlink"
+            "cached artifact directory cannot be a symlink"
         );
         if !kind.is_dir() {
             continue;
         }
-        let current = plugin.path().join("current");
+        let current = artifact_dir.path().join("current");
         match tokio::fs::symlink_metadata(&current).await {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
             result => {
@@ -234,27 +279,43 @@ async fn current_references(config: &Config, keys: &TrustedKeys) -> Result<Vec<R
         }
         let resolved = tokio::fs::canonicalize(crate::system::deploy::reference(&current)?).await?;
         ensure!(
-            resolved.parent() == Some(tokio::fs::canonicalize(plugin.path()).await?.as_path()),
+            resolved.parent()
+                == Some(
+                    tokio::fs::canonicalize(artifact_dir.path())
+                        .await?
+                        .as_path()
+                ),
             "current artifact link escapes its installation directory"
         );
         let version = resolved
             .file_name()
             .and_then(|name| name.to_str())
             .context("invalid current artifact version")?;
-        let plugin_name = plugin
+        let artifact_name = artifact_dir
             .file_name()
             .into_string()
-            .map_err(|_| anyhow::anyhow!("invalid current artifact plugin"))?;
+            .map_err(|_| anyhow::anyhow!("invalid current artifact name"))?;
+        if let Some(manifest) = crate::bundled::read_bundled_manifest(&resolved).await? {
+            references.push(Reference {
+                binary: artifact_dir
+                    .path()
+                    .join(version)
+                    .join(&manifest.binary_name),
+                version: manifest.version,
+                artifact_name: Some(artifact_name),
+            });
+            continue;
+        }
         let proof = verification::read_proof(&resolved).await?;
         let release = verification::signed_release(&proof, keys)?;
-        let artifact = crate::runtime_platform::artifact(&release, &plugin_name, version)?;
+        let artifact = crate::runtime_platform::artifact(&release, &artifact_name, version)?;
         references.push(Reference {
-            binary: plugin
+            binary: artifact_dir
                 .path()
                 .join(version)
                 .join(&artifact.metadata().binary_name),
             version: version.to_owned(),
-            plugin: Some(plugin_name),
+            artifact_name: Some(artifact_name),
         });
     }
     Ok(references)

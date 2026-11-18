@@ -274,7 +274,6 @@ async fn cloning_recreates_runtime_identities_and_never_copies_grants(pool: PgPo
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let server = panel.create_server(&cookie, "Host").await?;
-    panel.enable_runtime(&cookie, server).await?;
     let user = id(&panel.create_user(&cookie, "User").await?)?;
     for protocol in ["vless-reality", "shadowsocks2022", "snell-v6", "hysteria2"] {
         let mut config = json!({"type":protocol});

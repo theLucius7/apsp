@@ -18,20 +18,38 @@ pub(super) fn traffic() -> Reply {
 #[test]
 fn compatibility_traffic_validates_every_region_and_never_silently_invents_zero() {
     let value = traffic().value;
+    let details = &value["TrafficDetails"];
     let parsed = billing::parse_traffic(&value, 100).unwrap();
     assert_eq!(parsed.mainland_bytes, "1073741824");
     assert_eq!(parsed.overseas_bytes, "2147483648");
+    let empty = billing::parse_traffic(
+        &json!({"RequestId":"traffic","TrafficDetails":[],"TotalCount":0,"NextToken":""}),
+        105,
+    )
+    .unwrap();
+    assert_eq!(empty.queried_at, 105);
+    assert_eq!(empty.mainland_bytes, "0");
+    assert_eq!(empty.overseas_bytes, "0");
+    assert!(empty.regions.is_empty());
     for value in [
         json!({"TrafficDetails":[]}),
-        json!({"TrafficDetails":[{"Traffic":10}]}),
-        json!({"TrafficDetails":[{"BusinessRegionId":"cn-hangzhou","Traffic":-1}]}),
-        json!({"TrafficDetails":[{"BusinessRegionId":"cn-hangzhou","Traffic":"NaN"}]}),
-        json!({"NextToken":"more","TrafficDetails":value["TrafficDetails"]}),
-        json!({"Data":{"NextToken":"more","TrafficDetails":value["TrafficDetails"]}}),
-        json!({"Data":{"TotalCount":3,"TrafficDetails":value["TrafficDetails"]}}),
-        json!({"TotalCount":2,"Data":{"NextToken":"more","TrafficDetails":value["TrafficDetails"]}}),
+        json!({"RequestId":"","TrafficDetails":[]}),
+        json!({"RequestId":"t","Code":"InternalError","TrafficDetails":[]}),
+        json!({"RequestId":"t","Message":"failed","TrafficDetails":[]}),
+        json!({"RequestId":"t","TrafficDetails":[],"NextToken":"more"}),
+        json!({"RequestId":"t","TrafficDetails":[],"NextToken":1}),
+        json!({"RequestId":"t","TrafficDetails":[],"TotalCount":null}),
+        json!({"RequestId":"t","TrafficDetails":[],"TotalCount":2}),
+        json!({"RequestId":"t","TrafficDetails":[],"TotalCount":"0"}),
+        json!({"RequestId":"t","TrafficDetails":[{"Traffic":10}]}),
+        json!({"RequestId":"t","TrafficDetails":[{"BusinessRegionId":"cn-hangzhou","Traffic":-1}]}),
+        json!({"RequestId":"t","TrafficDetails":[{"BusinessRegionId":"cn-hangzhou","Traffic":"NaN"}]}),
+        json!({"RequestId":"t","NextToken":"more","TrafficDetails":details}),
+        json!({"RequestId":"t","Data":{"NextToken":"more","TrafficDetails":details}}),
+        json!({"RequestId":"t","Data":{"TotalCount":3,"TrafficDetails":details}}),
+        json!({"RequestId":"t","TotalCount":2,"Data":{"NextToken":"more","TrafficDetails":details}}),
     ] {
-        assert!(billing::parse_traffic(&value, 100).is_err());
+        assert!(billing::parse_traffic(&value, 100).is_err(), "{value}");
     }
 }
 #[sqlx::test(migrations = "../panel/migrations")]
@@ -432,4 +450,83 @@ async fn repeated_billing_dimensions_with_changed_values_are_not_additional_usag
         "billing_incomplete"
     );
     mock.exhausted();
+}
+
+#[sqlx::test(migrations = "../panel/migrations")]
+async fn valid_empty_cdt_traffic_clears_error_without_actions(pool: PgPool) {
+    let (account_id, id) = seed(&pool, "ecs").await;
+    sqlx::query("UPDATE cloud_account_automation SET auto_enabled=true WHERE account_id=$1")
+        .bind(account_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE cloud_resource_automation SET auto_enabled=true WHERE resource_id=$1")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE cloud_account_billing SET traffic_error='invalid_response' WHERE account_id=$1",
+    )
+    .bind(account_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let started = apsp_protocol::now_timestamp();
+    let empty = Reply::ok(
+        "ListCdtInternetTraffic",
+        json!({"RequestId":"rna-empty","TrafficDetails":[]}),
+    );
+    let mock = Mock::start(vec![bill(1, 0, vec![]), empty, snapshot("ecs", 10)]).await;
+    worker::refresh(&pool, account_id, &Cloud::local(&mock.endpoint))
+        .await
+        .unwrap();
+    mock.exhausted();
+    let c = costs(&pool, account_id).await;
+    assert!(c.billing_enabled);
+    assert!(c.balance_enabled);
+    assert!(c.traffic_error.is_none());
+    let recorded = c.traffic.as_ref().unwrap();
+    assert!(recorded.queried_at >= started);
+    assert_eq!(recorded.mainland_bytes, "0");
+    assert_eq!(recorded.overseas_bytes, "0");
+    assert!(recorded.regions.is_empty());
+    let history: Vec<(String, String)> = sqlx::query_as(
+        "SELECT mainland_bytes::text,overseas_bytes::text FROM alicloud_traffic_history WHERE account_id=$1",
+    )
+    .bind(account_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(history, vec![("0".into(), "0".into()); 2]);
+    let ops: i64 = sqlx::query_scalar("SELECT count(*) FROM alicloud_operations")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let power_jobs: i64 = sqlx::query_scalar("SELECT count(*) FROM alicloud_power_jobs")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!((ops, power_jobs), (0, 0));
+
+    sqlx::query("UPDATE alicloud_accounts SET next_run_at=0 WHERE id=$1")
+        .bind(account_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let broken = Reply::ok(
+        "ListCdtInternetTraffic",
+        json!({"RequestId":"rna-contradictory","TrafficDetails":[],"TotalCount":2}),
+    );
+    let mock = Mock::start(vec![bill(1, 0, vec![]), broken, snapshot("ecs", 10)]).await;
+    worker::refresh(&pool, account_id, &Cloud::local(&mock.endpoint))
+        .await
+        .unwrap();
+    mock.exhausted();
+    let after = costs(&pool, account_id).await;
+    assert_eq!(after.traffic_error.as_deref(), Some("invalid_response"));
+    assert_eq!(
+        after.traffic.as_ref().unwrap().queried_at,
+        recorded.queried_at
+    );
 }

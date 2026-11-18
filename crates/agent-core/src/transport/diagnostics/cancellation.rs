@@ -10,17 +10,17 @@ const RESULTS: &str = "diagnostics:cancellation-results";
 pub struct CancellationControl {
     state: SharedState,
     server_id: i64,
-    plugins: Vec<String>,
+    tools: Vec<String>,
     wake: watch::Sender<u64>,
     outgoing: Option<mpsc::Sender<Envelope>>,
 }
 
 impl CancellationControl {
-    pub fn new(state: SharedState, server_id: i64, plugins: Vec<String>) -> Self {
+    pub fn new(state: SharedState, server_id: i64, tools: Vec<String>) -> Self {
         Self {
             state,
             server_id,
-            plugins,
+            tools,
             wake: watch::channel(0).0,
             outgoing: None,
         }
@@ -36,11 +36,11 @@ impl CancellationControl {
     pub fn request(&self, request: DiagnosticCancelRequest) -> Result<()> {
         ensure!(
             request.server_id == self.server_id
-                && self.plugins.contains(&request.job.plugin)
+                && self.tools.contains(&request.job.tool)
                 && !request.job.id.is_nil()
                 && safe_component(&request.job.version)
                 && (1..=3600).contains(&request.job.timeout_secs),
-            "cancel request does not match this device or a registered plugin"
+            "cancel request does not match this device or a registered tool"
         );
         let mut state = self.state.locked()?;
         let results: Vec<DiagnosticCancelResult> = state.get_json(RESULTS)?.unwrap_or_default();
@@ -51,11 +51,11 @@ impl CancellationControl {
             return Ok(());
         }
         let active: Option<Checkpoint> = state.get_json::<Option<Checkpoint>>(ACTIVE)?.flatten();
-        if let Some(Checkpoint::Started { spec, plugin, .. }) = active
+        if let Some(Checkpoint::Started { spec, tool, .. }) = active
             && spec.id == request.job.id.to_string()
         {
             ensure!(
-                plugin == request.job.plugin && spec.version == request.job.version,
+                tool == request.job.tool && spec.version == request.job.version,
                 "cancel request differs from the known diagnostic identity"
             );
         }

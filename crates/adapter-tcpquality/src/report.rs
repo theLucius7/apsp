@@ -239,13 +239,21 @@ impl Report {
     pub fn parse(text: &str, input: &Validated<'_>) -> Result<Self> {
         let report: Self = serde_json::from_str(text).context("invalid TCP report JSON")?;
         let latest = now_millis()?.saturating_add(5_000);
+        let valid_source_commit = match input.source {
+            Some(pinned) => report.engine.source_commit.as_deref() == Some(pinned),
+            None => report
+                .engine
+                .source_commit
+                .as_deref()
+                .is_none_or(|commit| input::digest(commit, 40)),
+        };
         ensure!(
             report.schema == 1
                 && report.method == "tcp_connect"
                 && report.semantics == input::SEMANTICS
                 && report.engine.name == "apsp-native-tcp-connect-v1"
                 && report.engine.version == input::ENGINE_VERSION
-                && report.engine.source_commit.as_deref() == Some(input.source)
+                && valid_source_commit
                 && report.target_digest == input.digest
                 && !report.upload_enabled
                 && !report.ranking_enabled

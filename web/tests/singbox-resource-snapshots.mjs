@@ -1,5 +1,5 @@
 import { installControlCenterFixtures } from './control-center-fixtures.mjs'
-import { proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
+import { proxyResourceFixtures, runtimeServerFixture } from './proxy-resource-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
@@ -34,7 +34,7 @@ try {
     const fixture = async (hash, callback) => {
       const page = await browser.newPage({ viewport: { width, height: 1000 } }); page.setDefaultTimeout(10000)
       page.on('pageerror', error => totals.errors.push(error.message))
-      const hosts = [1, 2].map(id => ({ id, name: `TEST_ONLY 服务器 ${id}`, enabled: true, online: true, agent_supported: true, read_only: false }))
+      const hosts = [1, 2].map(id => runtimeServerFixture(id, { name: `TEST_ONLY 服务器 ${id}` }))
       const nodes = [1, 2].map(id => ({ id, name: `TEST_ONLY 节点 ${id}`, server_id: id, protocol: 'vless-reality', public_host: '127.0.0.1', port: 20000 + id, sni: 'localhost', enabled: true }))
       const direct = node => ({ ...node, kind: 'direct', server_name: `TEST_ONLY 服务器 ${node.server_id}`, role: 'direct', available: true, tcp: true, udp: true, entry_node_id: null, stage: 'direct', active_generation: null, pending_generation: null, minimum_generation: 0, reference_count: 0, entry_eligible: true, last_error: null, legacy: false })
       const resources = nodes.map(direct), ordered = proxyResourceFixtures(nodes, hosts)
@@ -57,14 +57,13 @@ try {
         }
         let value
         if (method !== 'GET') {
-          const allowed = method === 'POST' && [ `${trafficApi}/nodes`, `${trafficApi}/servers/1/enable`, `${trafficApi}/servers/1/deployments/check`, `${trafficApi}/servers/1/runtime-operations` ].includes(path)
+          const allowed = method === 'POST' && [ `${trafficApi}/nodes`, `${trafficApi}/servers/1/deployments/check`, `${trafficApi}/servers/1/runtime-operations` ].includes(path)
             || method === 'PATCH' && path === `${trafficApi}/nodes/1`
             || method === 'PATCH' && path === '/api/latency-tasks/00000000-0000-0000-0000-000000000001'
             || method === 'DELETE' && path === `${trafficApi}/nodes/1`
           assert(allowed, `${method} ${path}`)
           const body = request.postData() ? request.postDataJSON() : undefined; writes.push({ method, path, body }); value = {}
           if (path.endsWith('/deployments/check')) value = { ready: true, checks: [] }
-          if (path.endsWith('/enable')) hosts[0].enabled = true
           if (path.endsWith('/runtime-operations')) value = { id: 'TEST_ONLY', operation: body.operation, requested_at: 1, expires_at: 600 }
         } else if (['/api/me', '/api/dashboard/access'].includes(path)) value = { authenticated: true, public_dashboard: false }
         else if (path === `${trafficApi}/servers` || path === '/api/servers') value = hosts
@@ -109,7 +108,7 @@ try {
       await page.getByRole('button', { name: '创建节点', exact: true }).first().click()
       const dialog = page.getByRole('dialog'); await dialog.locator('[name=name]').fill('TEST_ONLY 固定服务器草稿')
       hosts.splice(0, 1); await nodesRefresh(page)
-      await dialog.getByText('已选节点所属服务器已不存在或未安装 sing-box；当前草稿已保留。', { exact: true }).waitFor()
+      await dialog.getByText('已选节点所属服务器不存在或为只读接管服务器；当前草稿已保留。', { exact: true }).waitFor()
       assert.equal(await dialog.locator('[name=server_id]').inputValue(), '1'); await forceForm(dialog.locator('form')); assert.equal(writes.length, 0)
       await dialog.locator('[name=server_id]').selectOption('2'); await dialog.locator('[name=public_host]').fill('127.0.0.1'); await dialog.locator('[name=sni]').fill('localhost'); await dialog.getByRole('button', { name: '创建目标节点', exact: true }).click()
       await wait(() => writes.length === 1, 'Explicit new server selection'); assert.equal(writes[0].body.server_id, 2)
@@ -167,9 +166,9 @@ try {
       assert.equal(writes[0].body.revision, 2)
     })
     await fixture('/servers/1/services', async control => {
-      const { page, hosts } = control; hosts[0].enabled = false
-      await servicesRefresh(page); const enable = page.getByRole('button', { name: '安装 sing-box', exact: true }); await wait(() => enable.isEnabled(), 'Enable snapshot')
-      await block(control, `${trafficApi}/servers/1`, () => servicesRefresh(page), () => forceClick(enable), () => enable.click())
+      const { page, hosts } = control; Object.assign(hosts[0], runtimeServerFixture(1, { name: hosts[0].name, configured: false }))
+      await servicesRefresh(page); const check = page.getByRole('button', { name: '检查运行条件', exact: true }); await wait(() => check.isEnabled(), 'Readiness check snapshot')
+      await block(control, `${trafficApi}/servers/1`, () => servicesRefresh(page), () => forceClick(check), () => check.click())
     })
   }
   assert.deepEqual(totals.external, []); assert.deepEqual(totals.unexpected, []); assert.deepEqual(totals.errors, [])

@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { smoothPath } from '../src/observability/display/Chart'
+import { smoothPath } from '../src/components/Chart'
 
 // Reads the cubic segments back from the path string.
 function segments(path: string) {

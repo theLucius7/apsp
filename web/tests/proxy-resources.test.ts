@@ -5,17 +5,17 @@ import { filterProxyResources, proxyResourceCounts, proxyResourceKey, validProxy
 import { validatedSnapshot } from '../src/lib/resource-snapshot'
 import type { ProxyResource, ResourceEndpoint } from '../src/access/groupTypes'
 import { nodeRoute } from '../src/traffic/nodeRoute'
-import { publicResourceFields } from './proxy-resource-fixtures.mjs'
+import { publicResourceFields, runtimeServerFixture } from './proxy-resource-fixtures.mjs'
 const requestId = '00000000-0000-4000-8000-000000000001'
 const nextId = '00000000-0000-4000-8000-000000000002'
-function endpoint(id: number, server = id): ResourceEndpoint { return { id, name: `节点 ${id}`, server_id: server, server_name: `服务器 ${server}`, protocol: 'vless-reality', port: 443, public_port: 8443, public_host: 'proxy.example.com', sni: 'www.example.com', enabled: true, node_deleted: false, server_deleted: false, plugin_enabled: true, online: false, desired_revision: null, applied_revision: null, applied_observed_at: null } }
+function endpoint(id: number, server = id): ResourceEndpoint { return { id, name: `节点 ${id}`, server_id: server, server_name: `服务器 ${server}`, protocol: 'vless-reality', port: 443, public_port: 8443, public_host: 'proxy.example.com', sni: 'www.example.com', enabled: true, node_deleted: false, server_deleted: false, online: false, desired_revision: null, applied_revision: null, applied_observed_at: null } }
 function resource(kind: 'direct' | 'chain', id: number, entry: ResourceEndpoint, exit: ResourceEndpoint | null = null): ProxyResource { return { kind, id, name: `资源 ${kind} ${id}`, entry, exit, available: true, unavailable_reasons: [], policy_group_ids: [], user_count: 0, chain_refs: [], ...publicResourceFields(kind, exit) } as ProxyResource }
 function snapshot(): ProxyWriteSnapshot {
   const direct1 = resource('direct', 1, endpoint(1)), direct2 = resource('direct', 2, endpoint(2)), chain1 = resource('chain', 1, endpoint(3), endpoint(2))
   direct2.chain_refs = [{ id: 1, name: chain1.name, role: 'exit', generation: 1, hop_position: 1, state: 'applied' }]
   return { resources: { data: [direct1, direct2, chain1], fresh: true, error: '' },
     nodes: { data: [1, 2, 3].map(id => ({ ...endpoint(id), public_key: 'TEST_ONLY', short_id: 'abcd' })), fresh: true, error: '' },
-    servers: { data: [1, 2, 3].map(id => ({ id, name: `服务器 ${id}`, enabled: true, online: false, read_only: false, agent_supported: true, source: 'administrator' })), fresh: true, error: '' } }
+    servers: { data: [1, 2, 3].map(id => runtimeServerFixture(id, { online: false })), fresh: true, error: '' } }
 }
 function draft(mode: 'new' | 'existing' = 'new'): ChainBatchDraft { return { mode, server_id: '1', public_host: 'entry.example.com', sni: 'www.example.com', entry_node_id: '1', exit_node_id: '2', rows: [{ name: ' 链路甲 ', port: '' }, ...(mode === 'new' ? [{ name: '链路乙', port: '24443' }] : [])] } }
 
@@ -72,11 +72,15 @@ test('malformed auxiliary node fields and legacy server metadata never establish
   const {read_only: omitted,...legacy} = current.servers.data![0]
   expect(omitted).toBe(false)
   expect(validServerList([legacy])).toBe(false)
-  expect(validServerList([{...current.servers.data![0],installation:{state:'ready',reason:'未知版本',target_rev:'1',applied_rev:1}}])).toBe(false)
+  expect(validServerList([{...current.servers.data![0],status:{...current.servers.data![0].status,target_rev:'1'}}])).toBe(false)
+  expect(validServerList([{...current.servers.data![0],status:undefined}])).toBe(false)
+  expect(validServerList([{ id: 1, name: '服务器 1', enabled: true, online: true, agent_supported: true, read_only: false, source: 'administrator', installation: { state: 'ready', reason: '', target_rev: 1, applied_rev: 1 } }])).toBe(false)
 })
 test('one batch contains independent new entry ports and a shared managed exit without grants', async () => {
-  const pending = prepareChainBatch(draft(), snapshot(), undefined, () => requestId), writes: unknown[] = []
-  await submitChainBatch(pending, snapshot(), async body => { writes.push(body) })
+  const unconfigured = snapshot()
+  unconfigured.servers.data![0] = runtimeServerFixture(1, { configured: false, online: false, agent_supported: false })
+  const pending = prepareChainBatch(draft(), unconfigured, undefined, () => requestId), writes: unknown[] = []
+  await submitChainBatch(pending, unconfigured, async body => { writes.push(body) })
   expect(writes).toEqual([{ request_id: requestId, items: [
     { name: '链路甲', entry: { mode: 'new', server_id: 1, public_host: 'entry.example.com', sni: 'www.example.com', port: null }, hops: [{ kind: 'managed', node_id: 2 }] },
     { name: '链路乙', entry: { mode: 'new', server_id: 1, public_host: 'entry.example.com', sni: 'www.example.com', port: 24443 }, hops: [{ kind: 'managed', node_id: 2 }] },
@@ -122,12 +126,12 @@ test('unchanged failed requests retain exact serialized body and changed drafts 
 test('lost-response existing-entry replay retains its body but rechecks current prerequisite eligibility', async () => {
   const value = draft('existing'), pending = prepareChainBatch(value, snapshot(), undefined, () => requestId), sent: string[] = []
   await expect(submitChainBatch(pending, snapshot(), async body => { sent.push(JSON.stringify(body)); throw new Error('response disappeared') })).rejects.toThrow()
-  for (const change of ['role', 'node', 'server', 'disabled', 'unavailable', 'grant', 'policy'] as const) {
+  for (const change of ['role', 'node', 'server', 'readonly', 'unavailable', 'grant', 'policy'] as const) {
     const current = snapshot()
     if (change === 'role') { current.resources.data = current.resources.data!.filter(item => proxyResourceKey(item) !== 'direct:1'); current.resources.data.push(resource('chain', 10, endpoint(1), endpoint(2))) }
     if (change === 'node') current.nodes.data = current.nodes.data!.filter(node => node.id !== 1)
     if (change === 'server') current.servers.data = current.servers.data!.filter(server => server.id !== 1)
-    if (change === 'disabled') current.servers.data![0].enabled = false
+    if (change === 'readonly') { current.servers.data![0].read_only = true; current.servers.data![0].source = 'nexus' }
     if (change === 'unavailable') current.resources.data![0].available = false
     if (change === 'grant') current.resources.data![0].user_count = 1
     if (change === 'policy') current.resources.data![0].policy_group_ids = [9]

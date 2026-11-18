@@ -23,10 +23,41 @@ pub struct PendingUpgrade {
     #[serde(default)]
     pub proof: Option<apsp_protocol::release::ReleaseProof>,
 }
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct TrialSnapshot {
+    #[serde(default)]
+    pub install_currents: std::collections::BTreeMap<String, String>,
+    #[serde(default)]
+    pub preexisting_install_links: BTreeSet<String>,
+    #[serde(default)]
+    pub runtime_currents: std::collections::BTreeMap<String, String>,
+    #[serde(default)]
+    pub preexisting_runtime_links: BTreeSet<String>,
+    #[serde(default)]
+    pub db_existed: bool,
+    #[serde(default)]
+    pub applied: std::collections::BTreeMap<String, Option<apsp_adapter_sdk::Prepared>>,
+    #[serde(default)]
+    pub desired: std::collections::BTreeMap<String, Option<bool>>,
+    #[serde(default)]
+    pub health: std::collections::BTreeMap<String, Option<bool>>,
+    #[serde(default)]
+    pub activations: std::collections::BTreeMap<String, Option<serde_json::Value>>,
+    #[serde(default)]
+    pub receipts: std::collections::BTreeMap<String, Option<serde_json::Value>>,
+    #[serde(default)]
+    pub preexisting_intents: BTreeSet<String>,
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct UpgradeState {
     pub current: String,
     pub previous: Option<String>,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub previous_installs: std::collections::BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trial_snapshot: Option<TrialSnapshot>,
     pub trial: Option<PendingUpgrade>,
     pub failed_versions: BTreeSet<String>,
     pub last_error: Option<String>,
@@ -214,7 +245,7 @@ async fn check_guarded(
 fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T> {
     let metadata = std::fs::symlink_metadata(path)?;
     ensure!(
-        metadata.is_file() && metadata.len() <= 128 * 1024,
+        metadata.is_file() && metadata.len() <= 4 * 1024 * 1024,
         "invalid update state file"
     );
     Ok(serde_json::from_slice(&std::fs::read(path)?)?)

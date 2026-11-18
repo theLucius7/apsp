@@ -5,7 +5,7 @@ import { createServer } from 'node:http'
 import { mkdir, readFile } from 'node:fs/promises'
 import { resolve, extname, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { catalogNodeFixtures, proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
+import { catalogNodeFixtures, proxyResourceFixtures, runtimeServerFixture } from './proxy-resource-fixtures.mjs'
 import { sourceJobFixture, sourceNodeFixture, sourceNodePageFixture, sourcePreviewFixture, sourceRevisionFixture, sourceUuid, subscriptionSourceFixture } from './subscription-source-fixtures.mjs'
 
 // Exercise the built UI, with strict owned fixtures. No upstream requests or parser execution.
@@ -30,7 +30,7 @@ try {
     // Dialogs finish closing on animation frames, which the page clock holds here; with reduced motion they close at once.
     await page.emulateMedia({ reducedMotion: 'reduce' })
     const errors = [], writes = [], receipts = new Map(), jobs = new Map()
-    const servers = [1, 2].map(id => ({ id, name: `受管服务器 ${id}`, enabled: true, online: false, agent_supported: true, read_only: false }))
+    const servers = [1, 2].map(id => runtimeServerFixture(id, { name: `受管服务器 ${id}`, online: false }))
     const nodes = [1, 2].map(id => ({ id, name: `受管监听 ${id}`, server_id: id, protocol: 'vless-reality', enabled: true, public_host: `managed${id}.example.com`, sni: 'www.example.com', port: 20000 + id }))
     const revision = sourceRevisionFixture(1, { counts: { supported: 2, unsupported: 1, ambiguous: 1, missing: 1 } }), olderRevision = sourceRevisionFixture(1, { id: sourceUuid(100), parsed_at: 1790860700 })
     const preview = [sourceNodeFixture(), sourceNodeFixture({ id: sourceUuid(302), version_id: sourceUuid(402), ordinal: 1, name: '不支持的示例', supported: false, selectable: false, identity_state: 'unresolved', parse_status: 'unsupported', protocol: null, server: null, server_port: null, sni: null, transport: null, capabilities: { tcp: false, udp: false }, unsupported_reasons: [{ code: 'unsupported_transport', message: '传输参数尚不支持' }] }), sourceNodeFixture({ id: sourceUuid(303), version_id: sourceUuid(403), ordinal: 2, name: '缺失的示例', present_in_latest: false, selectable: false, source_revision_id: olderRevision.id, reasons: ['当前成功批次缺失，保留历史版本'] }), sourceNodeFixture({ id: sourceUuid(304), version_id: sourceUuid(404), ordinal: 3, name: '不唯一的示例', identity_state: 'ambiguous', selectable: false, reasons: ['节点身份不唯一'] })]

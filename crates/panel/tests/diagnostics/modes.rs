@@ -129,9 +129,9 @@ async fn modes_require_admin_confirmation_gate_capability_and_bound_daily_target
         .error_for_status()?
         .json()
         .await?;
-    assert_eq!(view["plugin_ready"], false);
+    assert_eq!(view["tool_ready"], false);
     assert_eq!(view["proxy_activity"]["state"], "not_enabled");
-    assert!(view["plugin_reason"].as_str().unwrap().contains("Linux"));
+    assert!(view["tool_reason"].as_str().unwrap().contains("Linux"));
     capable(&panel, server).await?;
     for index in 0..8 {
         let mut spec = apsp_protocol::ProbeSpec {

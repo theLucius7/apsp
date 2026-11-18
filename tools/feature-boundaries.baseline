@@ -8,12 +8,9 @@ import	web/src/access/UserPortal.tsx	web/src/governance/passkeys.ts	access->gove
 import	web/src/access/accounts/AccountServices.tsx	web/src/governance/passkeys.ts	access->governance
 import	web/src/access/lines/MemberLines.tsx	web/src/observability/quality.ts	access->observability
 import	web/src/access/portalAccess.ts	web/src/governance/passkeys.ts	access->governance
-import	web/src/components.tsx	web/src/app/section.ts	platform->app
 import	web/src/costs/SupplierComparison.tsx	web/src/operations/types.ts	costs->operations
-import	web/src/costs/cloud/TrafficHistory.tsx	web/src/observability/display/Chart.tsx	costs->observability
 import	web/src/costs/cloud/TrafficHistory.tsx	web/src/resources/cloud/types.ts	costs->resources
 import	web/src/costs/cloud/history.ts	web/src/resources/cloud/types.ts	costs->resources
-import	web/src/costs/currency/CurrencyContext.tsx	web/src/observability/display/useDashboardPoll.ts	costs->observability
 import	web/src/governance/system/BackupRecovery.tsx	web/src/operations/types.ts	governance->operations
 import	web/src/governance/system/Settings.tsx	web/src/costs/currency/ExchangeRateSettings.tsx	governance->costs
 import	web/src/governance/system/Settings.tsx	web/src/observability/TelemetryPolicy.tsx	governance->observability
@@ -56,7 +53,6 @@ import	web/src/operations/fleet/FleetOperations.tsx	web/src/governance/control-c
 import	web/src/operations/fleet/FleetOperations.tsx	web/src/observability/display/data.ts	operations->observability
 import	web/src/resources/cloud/Accounts.tsx	web/src/costs/cloud/TrafficHistory.tsx	resources->costs
 import	web/src/resources/cloud/Accounts.tsx	web/src/costs/cloud/usageHistory.ts	resources->costs
-import	web/src/resources/cloud/Accounts.tsx	web/src/observability/display/useNow.ts	resources->observability
 import	web/src/resources/cloud/Accounts.tsx	web/src/operations/cloud/CdtGuard.tsx	resources->operations
 import	web/src/resources/cloud/Accounts.tsx	web/src/operations/cloud/guards.ts	resources->operations
 import	web/src/resources/cloud/Alicloud.tsx	web/src/observability/cloud/Activity.tsx	resources->observability
@@ -92,8 +88,6 @@ import	web/src/traffic/nodeRoute.ts	web/src/access/groupTypes.ts	traffic->access
 import	web/src/types.ts	web/src/traffic/NodeSettingsFields.tsx	platform->traffic
 sql	crates/access/src/external_access/model.rs	read	singbox_external_node_states	access->traffic
 sql	crates/access/src/external_access/model.rs	read	singbox_node_metadata	access->traffic
-sql	crates/access/src/nexus/sessions.rs	read	singbox_nexus_runtime_hosts	access->traffic
-sql	crates/access/src/nexus/sessions.rs	read	singbox_nexus_runtime_nodes	access->traffic
 sql	crates/access/src/operations_workflows/diagnosis.rs	read	deployments	access->traffic
 sql	crates/access/src/operations_workflows/diagnosis.rs	read	passkey_credentials	access->governance
 sql	crates/access/src/operations_workflows/diagnosis.rs	read	runtime_control_receipts	access->traffic
@@ -120,8 +114,6 @@ sql	crates/access/src/portal/administration.rs	write	passkey_accounts	access->go
 sql	crates/access/src/portal/administration.rs	write	passkey_credentials	access->governance
 sql	crates/access/src/portal/ceremonies.rs	read	passkey_credentials	access->governance
 sql	crates/access/src/portal/ceremonies.rs	write	passkey_credentials	access->governance
-sql	crates/access/src/portal/lines.rs	read	network_probes	access->observability
-sql	crates/access/src/portal/lines.rs	read	probe_results	access->observability
 sql	crates/access/src/portal/lines.rs	read	server_module_status	access->traffic
 sql	crates/access/src/portal/lines.rs	read	singbox_nexus_node_status	access->traffic
 sql	crates/access/src/portal/lines.rs	read	singbox_nexus_nodes	access->traffic
@@ -142,8 +134,6 @@ sql	crates/access/src/user_accounts/invitations.rs	write	passkey_accounts	access
 sql	crates/access/src/user_accounts/mod.rs	write	passkey_ceremonies	access->governance
 sql	crates/access/src/user_limits.rs	read	deployments	access->traffic
 sql	crates/access/src/user_limits.rs	read	server_module_status	access->traffic
-sql	crates/costs/src/cancellation_reminders.rs	read	operations_incidents	costs->observability
-sql	crates/costs/src/cancellation_reminders.rs	write	operations_incident_deliveries	costs->observability
 sql	crates/costs/src/suppliers.rs	read	diagnostic_jobs	costs->observability
 sql	crates/costs/src/suppliers.rs	read	diagnostic_report_sections	costs->observability
 sql	crates/costs/src/suppliers.rs	read	telemetry_history	costs->observability
@@ -194,13 +184,10 @@ sql	crates/observability/src/reachability/targets.rs	read	singbox_nexus_nodes	ob
 sql	crates/observability/src/server_monitoring.rs	read	fleet_operations	observability->operations
 sql	crates/observability/src/server_monitoring.rs	read	remote_commands	observability->operations
 sql	crates/observability/src/server_monitoring/service_events.rs	read	fleet_operations	observability->operations
-sql	crates/observability/src/statistics/proxy_usage.rs	read	singbox_usage_daily	observability->access
-sql	crates/observability/src/statistics/proxy_usage.rs	read	usage_records	observability->access
 sql	crates/operations/src/backups/executor.rs	read	credential_entries	operations->platform
 sql	crates/operations/src/cloud/eip_rotation.rs	read	alicloud_resources	operations->resources
 sql	crates/operations/src/cloud/eip_rotation/engine.rs	read	alicloud_resources	operations->resources
 sql	crates/operations/src/cloud/eip_rotation/engine.rs	write	alicloud_resources	operations->resources
-sql	crates/operations/src/fleet/mod.rs	read	fleet_profiles	operations->resources
 sql	crates/operations/src/fleet/operations.rs	read	diagnostic_jobs	operations->observability
 sql	crates/operations/src/fleet/terminal.rs	read	fleet_profiles	operations->resources
 sql	crates/operations/src/jobs/api.rs	read	fleet_profiles	operations->resources
@@ -226,8 +213,6 @@ sql	crates/panel/src/search.rs	read	operations_maintenance	app->operations
 sql	crates/panel/src/search.rs	read	probe_results	app->observability
 sql	crates/panel/src/search.rs	read	remote_commands	app->operations
 sql	crates/panel/src/search.rs	read	server_ip_quality	app->observability
-sql	crates/resources/src/batch_enrollment.rs	write	alert_rules	resources->observability
-sql	crates/resources/src/batch_enrollment.rs	write	network_probes	resources->observability
 sql	crates/resources/src/cloud/api.rs	read	credential_entries	resources->platform
 sql	crates/resources/src/cloud_resources.rs	read	alicloud_security_group_operations	resources->operations
 sql	crates/resources/src/cloud_resources/hetzner.rs	read	credential_entries	resources->platform
@@ -235,7 +220,6 @@ sql	crates/resources/src/retirement.rs	write	diagnostic_jobs	resources->observab
 sql	crates/resources/src/retirement.rs	write	fleet_terminal_sessions	resources->operations
 sql	crates/resources/src/server_lifecycle.rs	read	network_probes	resources->observability
 sql	crates/resources/src/server_lifecycle.rs	write	network_probes	resources->observability
-sql	crates/resources/src/servers.rs	write	network_probes	resources->observability
 sql	crates/resources/src/servers.rs	write	server_traffic_corrections	resources->observability
 sql	crates/traffic/src/activity.rs	read	usage_records	traffic->access
 sql	crates/traffic/src/catalog/mutation.rs	read	singbox_policy_external_nodes	traffic->access

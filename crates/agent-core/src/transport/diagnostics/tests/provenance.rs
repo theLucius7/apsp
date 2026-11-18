@@ -73,7 +73,7 @@ fn cached_provenance(directory: &Directory, id: Uuid) -> Result<DiagnosticJob> {
     }
     let proof = release_support::signed_release(vec![(entry, b"cached archive".to_vec())]);
     release_support::install_proof(&artifact, &proof);
-    job.artifact.proof = Some(proof);
+    job.artifact.as_mut().unwrap().proof = Some(proof);
     Ok(job)
 }
 
@@ -164,7 +164,7 @@ fn cached_versioned_provenance(
 ) -> Result<DiagnosticJob> {
     let mut job = job(Uuid::new_v4());
     job.version = version.into();
-    job.artifact.url = format!(
+    job.artifact.as_mut().unwrap().url = format!(
         "http://127.0.0.1:1/api/agent/v1/artifacts/diagnostic-fixture/{version}/{}",
         apsp_protocol::release::native_arch()?
     );
@@ -200,8 +200,9 @@ fn cached_versioned_provenance(
     }
     let proof = release_support::signed_release(vec![(entry, archive.to_vec())]);
     release_support::install_proof(&artifact, &proof);
-    job.artifact.sha256 = release_support::hash(archive);
-    job.artifact.proof = Some(proof);
+    let target_artifact = job.artifact.as_mut().unwrap();
+    target_artifact.sha256 = release_support::hash(archive);
+    target_artifact.proof = Some(proof);
     Ok(job)
 }
 

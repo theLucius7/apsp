@@ -27,7 +27,7 @@ try {
   const now = Math.floor(Date.now() / 1000)
   const id = '00000000-0000-0000-0000-000000000019'
   const report = '已完成的诊断报告片段'
-  const record = { id, status: 'running', agent_completed: false, cancel_requested_at: null, cancel_error: null, job: { plugin: 'nodequality', options: { ip_version: 'ipv4', network_mode: 'low', upload_report: 'false' } }, report: { text: report }, error: null, created_at: now, updated_at: now, expires_at: now + 1800 }
+  const record = { id, status: 'running', agent_completed: false, cancel_requested_at: null, cancel_error: null, job: { tool: 'nodequality', options: { ip_version: 'ipv4', network_mode: 'low', upload_report: 'false' } }, report: { text: report }, error: null, created_at: now, updated_at: now, expires_at: now + 1800 }
   let supported = true, cancelPosts = 0
   await page.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname
@@ -35,11 +35,11 @@ try {
     if (path === '/api/dashboard/access') return route.fulfill({ json: { authenticated: true, public_dashboard: false } })
       if (path === '/api/me') value = { authenticated: true }
     else if (path === '/api/servers/1') value = { id: 1, name: '取消验收夹具', online: true, device_public_key: 'test-only-key', static_info: {}, latest_metrics: {}, last_seen: now, manifest_rev: 0, capabilities: [] }
-    else if (path === '/api/traffic/servers/1') value = { id: 1, name: '取消验收夹具', enabled: true, source: 'administrator', read_only: false, online: true, agent_supported: true }
+    else if (path === '/api/traffic/servers/1') value = { id: 1, name: '取消验收夹具', configured: true, source: 'configured', read_only: false, online: true, agent_supported: true, runtime_version: '1.14.4-apsp.2', status: { state: 'ready', reason: '', target_rev: 1, applied_rev: 1, current_healthy: true } }
     else if (path === '/api/traffic/servers/1/deployments') value = { status: null, history: [] }
     else if (path === '/api/servers/1/agent-settings') value = { sample_interval_secs: 1, upload_interval_secs: 5, discover_public_ips: false, auto_update: false }
     else if (path === '/api/servers/1/telemetry-settings') value = { persist_interval_secs: 60 }
-    else if (path === '/api/servers/1/node-quality/reports') value = { plugin_ready: true, plugin_reason: null, full_ready: false, daily_ready: true, cancel_supported: supported, reports: [record] }
+    else if (path === '/api/servers/1/node-quality/reports') value = { tool_ready: true, tool_reason: null, full_ready: false, daily_ready: true, cancel_supported: supported, reports: [record] }
     else if (path === `/api/servers/1/diagnostics/${id}/cancel`) {
       assert.equal(route.request().method(), 'POST')
       cancelPosts++

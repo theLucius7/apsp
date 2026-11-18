@@ -8,6 +8,9 @@ pub(super) fn validate_saved_target(
 ) -> Result<Uuid> {
     let id = Uuid::parse_str(&spec.id)?;
     let directory = config.runtime_root.join("diagnostics").join(id.to_string());
+    let allowed_binary = spec.binary_path.starts_with(&config.install_root)
+        || spec.binary_path.starts_with(&config.agent_root)
+        || crate::bundled::current_agent_binary().ok().as_ref() == Some(&spec.binary_path);
     ensure!(
         !id.is_nil()
             && spec.id == id.to_string()
@@ -15,14 +18,17 @@ pub(super) fn validate_saved_target(
             && spec.job_dir == directory
             && service.working_directory == directory
             && spec.binary_path == service.program
-            && spec.binary_path.starts_with(&config.install_root)
+            && allowed_binary
             && service.timeout_secs == spec.timeout_secs
             && (1..=3600).contains(&spec.timeout_secs)
             && [&directory, &spec.binary_path].into_iter().all(|path| {
                 path.is_absolute()
-                    && path
-                        .components()
-                        .all(|part| matches!(part, Component::RootDir | Component::Normal(_)))
+                    && path.components().all(|part| {
+                        matches!(
+                            part,
+                            Component::RootDir | Component::Normal(_) | Component::Prefix(_)
+                        )
+                    })
             }),
         "saved diagnostic target differs from its owned task identity"
     );

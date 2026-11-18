@@ -170,7 +170,7 @@ impl Adapter for PanelAdapter {
     fn describe(&self) -> Descriptor {
         Descriptor {
             module: "singbox".into(),
-            plugin_name: "sing-box".into(),
+            artifact_name: "sing-box".into(),
             ..self.0.describe()
         }
     }

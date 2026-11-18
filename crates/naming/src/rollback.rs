@@ -165,7 +165,7 @@ async fn claim(
     target.normalize()?;
     let info = model::locked_observation(&mut tx, rule.config.server_id).await?;
     info.select(&target, None, apsp_protocol::now_timestamp())
-        .map_err(|_| ApiError::Conflict("服务器已退役或 DDNS 插件停用，不能回退".into()))?;
+        .map_err(|_| ApiError::Conflict("服务器已退役或此 DDNS 规则已停用，不能回退".into()))?;
     let lease = Uuid::new_v4();
     rule.config.enabled = false;
     rule.revision += 1;

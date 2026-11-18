@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { create } from 'zustand'
 import { currencyCode } from './currency'
 import type { ExchangeRates } from './currency'
-import { useDashboardPoll } from '../../observability/display/useDashboardPoll'
+import { useResourcePoll } from '@/lib/useResourcePoll'
 
 type Rates = { quote?: ExchangeRates; error: string; loading: boolean; reload: () => void }
 
@@ -26,7 +26,7 @@ export const useCurrency = () => ({ currency: useCurrencyStore(state => state.cu
 
 /** Reads the visitor's currency once and keeps the reference rates current. */
 export function CurrencyProvider({ children }: { children: ReactNode }) {
-  const rates = useDashboardPoll<ExchangeRates>('/api/dashboard/exchange-rates', 300_000, false)
+  const rates = useResourcePoll<ExchangeRates>('/api/dashboard/exchange-rates', 300_000, false)
   // The preference may have changed in the console since the last visit, so it is
   // read again whenever the dashboard mounts, before any card renders.
   useState(() => useCurrencyStore.setState({ currency: readCurrency() }))

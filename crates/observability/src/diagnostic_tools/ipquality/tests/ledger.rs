@@ -285,3 +285,157 @@ async fn later_partial_dataset_preserves_completed_siblings_and_success_times(
     assert_eq!(view.node_quality.reports[0].report_completeness, "partial");
     Ok(())
 }
+
+#[sqlx::test(migrations = "../panel/migrations")]
+async fn legacy_artifact_history_is_read_only_and_live_identity_drift_rejects_receipts(
+    pool: PgPool,
+) -> anyhow::Result<()> {
+    let state = state(pool).await?;
+    let server = server(&state, "TEST_ONLY drift and history device").await?;
+    let at = now_timestamp() - 100;
+    let v2_id = Uuid::new_v4();
+    saved_job(&state, server, v2_id, at).await?;
+    assert_eq!(
+        upload(
+            &state,
+            "TEST_ONLY drift and history device",
+            chapter(v2_id, body(v2_id, at), at, 1, false),
+        )
+        .await?,
+        StatusCode::NO_CONTENT
+    );
+
+    let baseline_info: Value = sqlx::query_scalar("SELECT static_info FROM servers WHERE id=$1")
+        .bind(server)
+        .fetch_one(&state.pool)
+        .await?;
+    for drifted_info in [
+        {
+            let mut info = baseline_info.clone();
+            info["component_digests"]["agent"] =
+                json!("2222222222222222222222222222222222222222222222222222222222222222");
+            info
+        },
+        {
+            let mut info = baseline_info.clone();
+            info["component_digests"]["ipquality"] =
+                json!("3333333333333333333333333333333333333333333333333333333333333333");
+            info
+        },
+    ] {
+        sqlx::query("UPDATE servers SET static_info=$2 WHERE id=$1")
+            .bind(server)
+            .bind(drifted_info)
+            .execute(&state.pool)
+            .await?;
+        assert!(matches!(
+            upload(
+                &state,
+                "TEST_ONLY drift and history device",
+                chapter(v2_id, body(v2_id, at + 5), at + 5, 2, true),
+            )
+            .await,
+            Err(ApiError::Conflict(_))
+        ));
+    }
+    sqlx::query("UPDATE servers SET static_info=$2,static_info_received_at=$3 WHERE id=$1")
+        .bind(server)
+        .bind(&baseline_info)
+        .bind(now_timestamp() - 601)
+        .execute(&state.pool)
+        .await?;
+    assert!(matches!(
+        upload(
+            &state,
+            "TEST_ONLY drift and history device",
+            chapter(v2_id, body(v2_id, at + 5), at + 5, 2, true),
+        )
+        .await,
+        Err(ApiError::Conflict(_))
+    ));
+    sqlx::query("UPDATE servers SET static_info_received_at=$2 WHERE id=$1")
+        .bind(server)
+        .bind(now_timestamp())
+        .execute(&state.pool)
+        .await?;
+
+    let hist_id = Uuid::new_v4();
+    let hist_at = at - 50;
+    let hist_body = body(hist_id, hist_at);
+    sqlx::query("INSERT INTO diagnostic_jobs(id,server_id,status,job,created_at,updated_at,expires_at,expected_sections,report_completeness,agent_completed) VALUES($1,$2,'succeeded',$3,$4,$4,$5,ARRAY['ipquality_result','environment'],'complete',TRUE)")
+        .bind(hist_id)
+        .bind(server)
+        .bind(super::fixtures::legacy_job(hist_id))
+        .bind(hist_at)
+        .bind(hist_at + 600)
+        .execute(&state.pool)
+        .await?;
+    sqlx::query("INSERT INTO diagnostic_report_sections(job_id,name,text,complete,revision,collected_at,received_at) VALUES($1,'ipquality_result',$2,TRUE,1,$3,$3)")
+        .bind(hist_id)
+        .bind(hist_body.to_string())
+        .bind(hist_at + 2)
+        .execute(&state.pool)
+        .await?;
+
+    let view = ip_quality::view(&state, server).await?;
+    assert!(view.node_quality.reports.iter().any(|r| r.id == hist_id));
+    assert!(view.node_quality.reports.iter().any(|r| r.id == v2_id));
+    let mut forged_legacy = body(hist_id, hist_at + 10);
+    forged_legacy["artifact_sha256"] =
+        json!("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+    assert!(matches!(
+        upload(
+            &state,
+            "TEST_ONLY drift and history device",
+            chapter(hist_id, forged_legacy, hist_at + 10, 2, true),
+        )
+        .await,
+        Err(ApiError::BadRequest(_))
+    ));
+    let legacy_ip = "2001:db9::cafe";
+    let mut late_legacy = body(hist_id, hist_at + 10);
+    late_legacy["egress_ip"] = json!(legacy_ip);
+    late_legacy["upstream"]["Head"]["IP"] = json!(legacy_ip);
+    late_legacy["attempts"][0]["target_ip"] = json!(legacy_ip);
+    late_legacy["attempts"][1]["target_ip"] = json!(legacy_ip);
+    assert_eq!(
+        upload(
+            &state,
+            "TEST_ONLY drift and history device",
+            chapter(hist_id, late_legacy, hist_at + 10, 2, true),
+        )
+        .await?,
+        StatusCode::NO_CONTENT
+    );
+    let saved_rev: i64 =
+        sqlx::query_scalar("SELECT revision FROM diagnostic_report_sections WHERE job_id=$1")
+            .bind(hist_id)
+            .fetch_one(&state.pool)
+            .await?;
+    assert_eq!(saved_rev, 2);
+    let after_legacy = ip_quality::view(&state, server).await?;
+    assert_eq!(after_legacy.node_quality.current_egress_ips, [IP]);
+    assert_eq!(after_legacy.node_quality.observed_egress_ips, [IP]);
+
+    let queued_legacy = Uuid::new_v4();
+    sqlx::query("INSERT INTO diagnostic_jobs(id,server_id,status,job,created_at,updated_at,expires_at,expected_sections,agent_completed) VALUES($1,$2,'queued',$3,$4,$4,$5,ARRAY['ipquality_result','environment'],FALSE)")
+        .bind(queued_legacy)
+        .bind(server)
+        .bind(super::fixtures::legacy_job(queued_legacy))
+        .bind(at)
+        .bind(at + 600)
+        .execute(&state.pool)
+        .await?;
+    let mut tx = state.pool.begin().await?;
+    crate::diagnostics::service::reject_queued(&mut tx, server).await?;
+    tx.commit().await?;
+    let rejected: (String, String, bool) =
+        sqlx::query_as("SELECT status,error,agent_completed FROM diagnostic_jobs WHERE id=$1")
+            .bind(queued_legacy)
+            .fetch_one(&state.pool)
+            .await?;
+    assert_eq!(rejected.0, "failed");
+    assert_eq!(rejected.1, super::super::LEGACY_PROOF_DENIAL);
+    assert!(!rejected.2);
+    Ok(())
+}

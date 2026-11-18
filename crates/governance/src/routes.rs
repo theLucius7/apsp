@@ -1,6 +1,6 @@
 //! The domain's routes: administrators and their sessions and sign-in factors, panel
-//! settings and notification channels, the control center, and the signed artifacts and
-//! Agent versions the panel has imported.
+//! settings and notification channels, the control center, and the signed Agent releases
+//! the panel has imported.
 
 use axum::{
     Router,
@@ -8,7 +8,7 @@ use axum::{
 };
 
 use crate::{
-    AppState, artifacts, auth,
+    AppState, auth,
     control_center::{self, panel_settings},
     releases,
 };
@@ -44,11 +44,13 @@ pub fn routes() -> Router<AppState> {
         .route("/api/security/totp/disable", post(auth::totp_disable))
         .route("/api/security/password", post(auth::password_change))
         .merge(control_center::router())
-        .route("/api/artifacts", get(artifacts::list))
-        .route("/api/artifacts/targets", get(releases::target_options))
         .route(
-            "/api/artifacts/agent-versions",
+            "/api/system/agent-releases",
             get(releases::list_agent_versions),
         )
-        .route("/api/artifacts/import-release", post(releases::import))
+        .route(
+            "/api/system/agent-releases/targets",
+            get(releases::target_options),
+        )
+        .route("/api/system/agent-releases/import", post(releases::import))
 }

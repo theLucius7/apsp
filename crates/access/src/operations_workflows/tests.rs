@@ -529,3 +529,47 @@ async fn rotation_requires_exact_new_applied_identity_and_recent_device_evidence
     tx.commit().await?;
     Ok(())
 }
+
+#[sqlx::test(migrations = "../panel/migrations")]
+async fn expiry_only_change_preserves_native_adoption_usage_anchor(pool: PgPool) -> Result<()> {
+    let (server, user, node, original) = fixture(&pool).await?;
+    let at = apsp_protocol::now_timestamp();
+    usage(&pool, server, user, node, 100, at).await?;
+    let (start, next): (i64, i64) = sqlx::query_as(
+        "SELECT cycle_start,next_reset FROM singbox_entitlements($1) WHERE user_id=$2",
+    )
+    .bind(at)
+    .bind(user)
+    .fetch_one(&pool)
+    .await?;
+    sqlx::query("INSERT INTO singbox_native_adoptions(user_id,assignment_id,adopted_at,cycle_start,next_reset,used_bytes,ledger_bytes,preview_digest) VALUES($1,$2,$3,$4,$5,700,100,$6)")
+        .bind(user).bind(original).bind(at).bind(start).bind(next).bind("a".repeat(64))
+        .execute(&pool).await?;
+    assert_eq!(used(&pool, user, at).await?, "700");
+    usage(&pool, server, user, node, 50, at).await?;
+    assert_eq!(used(&pool, user, at).await?, "750");
+    let mut tx = pool.begin().await?;
+    let operation = Operation::SetValidity {
+        user_id: user,
+        until: Validity::At(at + 3 * 86400),
+    };
+    snapshots::snapshot(&mut tx, &operation).await?;
+    let receipt = mutations::execute(&mut tx, 1, Uuid::new_v4(), &operation).await?;
+    tx.commit().await?;
+    assert_eq!(receipt["quota_reset"], false);
+    assert_ne!(receipt["assignment_id"], json!(original));
+    let (anchored_assignment, current_assignment): (i64, i64) = sqlx::query_as("SELECT a.assignment_id,p.assignment_id FROM singbox_native_adoptions a JOIN singbox_user_packages p ON p.user_id=a.user_id WHERE a.user_id=$1")
+        .bind(user).fetch_one(&pool).await?;
+    assert_eq!(anchored_assignment, current_assignment);
+    let entitlement: (i64, i64, String) = sqlx::query_as(
+        "SELECT cycle_start,next_reset,used_bytes FROM singbox_entitlements($1) WHERE user_id=$2",
+    )
+    .bind(at)
+    .bind(user)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(entitlement, (start, next, "750".into()));
+    usage(&pool, server, user, node, 40, at).await?;
+    assert_eq!(used(&pool, user, at).await?, "790");
+    Ok(())
+}

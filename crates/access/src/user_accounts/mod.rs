@@ -156,7 +156,7 @@ pub(crate) async fn require_compatible_package(
     package: i64,
 ) -> ApiResult<()> {
     let enrolled: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM singbox_members WHERE user_id=$1 AND state<>'staged')",
+        "SELECT EXISTS(SELECT 1 FROM singbox_members WHERE user_id=$1 AND state<>'staged') AND NOT EXISTS(SELECT 1 FROM singbox_native_adoptions WHERE user_id=$1)",
     )
     .bind(user)
     .fetch_one(&mut **tx)
@@ -260,4 +260,42 @@ async fn revoke_sessions(tx: &mut Tx<'_>, id: i64) -> ApiResult<()> {
     sqlx::query("DELETE FROM singbox_portal_sessions WHERE account_id IN(SELECT account_id FROM singbox_portal_accounts WHERE user_id=$1)").bind(id).execute(&mut **tx).await?;
     sqlx::query("DELETE FROM passkey_ceremonies WHERE account_id IN(SELECT account_id FROM singbox_portal_accounts WHERE user_id=$1)").bind(id).execute(&mut **tx).await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[sqlx::test(migrations = "../panel/migrations")]
+    async fn adopted_member_can_use_unmapped_package_while_other_members_remain_bridged(
+        pool: sqlx::PgPool,
+    ) -> anyhow::Result<()> {
+        let at = now_timestamp();
+        let user: i64 = sqlx::query_scalar("INSERT INTO users(name,subscription_token) VALUES('TEST_ONLY adopted package','TEST_ONLY native package token') RETURNING id")
+            .fetch_one(&pool).await?;
+        sqlx::query("INSERT INTO singbox_members(user_id,state,created_at) VALUES($1,'active',$2)")
+            .bind(user)
+            .bind(at)
+            .execute(&pool)
+            .await?;
+        let import = Uuid::new_v4();
+        sqlx::query("INSERT INTO singbox_nexus_imports(id,source_id,digest,counts,imported_at,administrator_id) VALUES($1,'TEST_ONLY package mapping',$2,'{}',$3,1)")
+            .bind(import).bind("b".repeat(64)).bind(at).execute(&pool).await?;
+        sqlx::query("INSERT INTO singbox_nexus_bridge(import_id,subscription_base,enabled,activated_at) VALUES($1,'https://subscriptions.example.invalid/sub/',true,$2)")
+            .bind(import).bind(at).execute(&pool).await?;
+        let package: i64 = sqlx::query_scalar("INSERT INTO singbox_package_groups(name,monthly_bytes,reset_day,reset_hour,reset_minute,timezone,duration_days) VALUES('TEST_ONLY native-only package',1000,1,0,0,'UTC',30) RETURNING id")
+            .fetch_one(&pool).await?;
+        let mut tx = pool.begin().await?;
+        assert!(
+            require_compatible_package(&mut tx, user, package)
+                .await
+                .is_err()
+        );
+        sqlx::query("INSERT INTO singbox_native_adoptions(user_id,adopted_at,used_bytes,ledger_bytes,preview_digest) VALUES($1,$2,0,0,$3)")
+            .bind(user).bind(at).bind("c".repeat(64)).execute(&mut *tx).await?;
+        require_compatible_package(&mut tx, user, package).await?;
+        assert!(crate::nexus::bridge::enabled(&mut tx).await?);
+        tx.commit().await?;
+        Ok(())
+    }
 }

@@ -13,9 +13,46 @@ use uuid::Uuid;
 // Synthetic scalar fixtures: no network requests or ownership assertions.
 pub(super) const IP: &str = "2001:db9::1";
 pub(super) const HASH: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+pub(super) const AGENT_HASH: &str =
+    "1111111111111111111111111111111111111111111111111111111111111111";
 
 pub(super) fn job(id: Uuid) -> Value {
-    json!({"id":id,"plugin":"ipquality","version":TOOL_VERSION,"timeout_secs":300,"artifact":{"sha256":HASH,"proof":{"TEST_ONLY":"synthetic bound descriptor"}},"options":{"ip_version":"6"}})
+    json!({
+        "id": id,
+        "plugin": "ipquality",
+        "version": TOOL_VERSION,
+        "timeout_secs": 300,
+        "agent_bundle": {
+            "schema": 1,
+            "agent_version": "0.4.0",
+            "release_tag": "agent-v0.4.0",
+            "target": "linux-musl-amd64",
+            "source_repo": apsp_protocol::release::RELEASE_SOURCE_REPO,
+            "agent_sha256": AGENT_HASH,
+            "agent_bytes": 1024,
+            "component": "ipquality",
+            "component_version": TOOL_VERSION,
+            "component_sha256": HASH
+        },
+        "options": {
+            "ip_version": "6",
+            "expected_component_sha256": HASH
+        }
+    })
+}
+
+pub(super) fn legacy_job(id: Uuid) -> Value {
+    json!({
+        "id": id,
+        "plugin": "ipquality",
+        "version": TOOL_VERSION,
+        "timeout_secs": 300,
+        "artifact": {
+            "sha256": HASH,
+            "proof": { "TEST_ONLY": "synthetic bound descriptor" }
+        },
+        "options": { "ip_version": "6" }
+    })
 }
 
 pub(super) fn body(id: Uuid, at: i64) -> Value {
@@ -61,6 +98,7 @@ pub(super) fn parse_body(
         created_at: at,
         expires_at: at + 600,
         job_generation: 1,
+        live_verified: true,
     };
     result::parse(&context, &chapter(id, value, at, 1, complete))
 }
@@ -81,10 +119,29 @@ pub(super) async fn state(pool: PgPool) -> anyhow::Result<AppState> {
 }
 
 pub(super) async fn server(state: &AppState, token: &str) -> anyhow::Result<i64> {
-    let id: i64 = sqlx::query_scalar("INSERT INTO servers(name,static_info,last_seen,capabilities) VALUES('TEST_ONLY node IP fixture',$1,$2,$3) RETURNING id")
-        .bind(json!({"os":"linux","arch":"amd64","ip_addresses":["192.0.2.1"]})).bind(now_timestamp())
-        .bind(json!([CAPABILITY,apsp_protocol::DIAGNOSTIC_SECTIONS_CAPABILITY,apsp_protocol::DIAGNOSTIC_SERVICE_CAPABILITY,apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY]))
-        .fetch_one(&state.pool).await?;
+    let now = now_timestamp();
+    let id: i64 = sqlx::query_scalar(
+        "INSERT INTO servers(name,static_info,static_info_received_at,last_seen,capabilities) VALUES('TEST_ONLY node IP fixture',$1,$2,$2,$3) RETURNING id",
+    )
+    .bind(json!({
+        "os": "linux",
+        "arch": "amd64",
+        "ip_addresses": ["192.0.2.1"],
+        "agent_version": "0.4.0",
+        "components": { "ipquality": TOOL_VERSION },
+        "component_digests": { "agent": AGENT_HASH, "ipquality": HASH }
+    }))
+    .bind(now)
+    .bind(json!([
+        CAPABILITY,
+        apsp_protocol::SELF_CONTAINED_AGENT_CAPABILITY,
+        apsp_protocol::DIAGNOSTIC_SECTIONS_CAPABILITY,
+        apsp_protocol::DIAGNOSTIC_SERVICE_CAPABILITY,
+        apsp_protocol::DIAGNOSTIC_CPU_CEILING_CAPABILITY,
+        apsp_protocol::DIAGNOSTIC_COMPLETION_CAPABILITY,
+    ]))
+    .fetch_one(&state.pool)
+    .await?;
     sqlx::query("INSERT INTO device_sessions(token_hash,server_id,expires_at) VALUES($1,$2,$3)")
         .bind(auth::hash_token(token))
         .bind(id)

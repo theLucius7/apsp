@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Real minisign interoperability and hostile-release contract tests."""
+"""Real minisign interoperability, self-contained assembly, and historical 0.3.x read-verification tests."""
 
 import argparse
 import base64
@@ -29,6 +29,110 @@ sys.path.insert(0, str(ROOT / "tools"))
 import release
 
 
+def build_embedded_agent_manifest(agent_version, target, *, commit="a" * 40, abi_override=None,
+                                  singbox_sha=None, omit_component=None, component_versions=None,
+                                  extra_components=None):
+    target_os, target_arch, target_env = abi_override or release.EXPECTED_EMBEDDED_ABI[target]
+    versions = {
+        "sing-box": release.SINGBOX_VERSION,
+        "nodequality": release.NODEQUALITY_VERSION,
+        "ipquality": release.IPQUALITY_DEFAULT_VERSION,
+        "network-workbench": release.WORKBENCH_VERSION,
+    }
+    if component_versions:
+        versions.update(component_versions)
+    raw = {}
+    if omit_component != "sing-box":
+        raw["sing-box"] = {
+            "format": "tar.gz",
+            "sha256": singbox_sha or release.digest(
+                f"sing-box:{target_os}:{target_arch}:{target_env}:{versions['sing-box']}".encode()
+            ),
+            "version": versions["sing-box"],
+        }
+    if target_os == "linux":
+        for name in ("nodequality", "ipquality", "network-workbench"):
+            if name != omit_component:
+                raw[name] = {
+                    "format": "tar.gz",
+                    "sha256": release.digest(f"{name}:{target_arch}:{versions[name]}".encode()),
+                    "version": versions[name],
+                }
+        if omit_component != "tcpquality":
+            tcp_ver = versions.get(
+                "tcpquality",
+                f"{release.TCPQUALITY_ENGINE_VERSION}-{commit}-r1" if commit else release.TCPQUALITY_ENGINE_VERSION,
+            )
+            raw["tcpquality"] = {"format": "agent_subcommand", "subcommand": "tcp-probe", "version": tcp_ver}
+    if extra_components:
+        raw.update(extra_components)
+    return {
+        "schema": 1,
+        "agent_version": agent_version,
+        "target_os": target_os,
+        "target_arch": target_arch,
+        "target_env": target_env,
+        "components": {k: raw[k] for k in sorted(raw)},
+    }
+
+
+def encode_embedded_agent_manifest_frame(manifest):
+    body = json.dumps(manifest, separators=(",", ":")).encode("utf-8")
+    return (release.EMBEDDED_FRAME_PREFIX + f"{len(body):08x}:{release.digest(body)}\n".encode("ascii")
+            + body + release.EMBEDDED_FRAME_SUFFIX)
+
+
+def stage_historical_0_3_bundle(source, output, installer, *, agent_version="0.3.0",
+                                runtime_version="1.14.0-apsp.1",
+                                nodequality_version=release.NODEQUALITY_VERSION,
+                                architectures=("amd64", "arm64"),
+                                include_musl_runtime=False, tcp_probe_version=None):
+    """Test-only constructor for historical 0.3.x multi-artifact bundles to exercise read-only verifiers."""
+    source, output, installer = Path(source), Path(output), Path(installer)
+    output.mkdir(parents=True)
+    modules = [
+        ("agent", agent_version, "raw", "apsp-agent"),
+        ("sing-box", runtime_version, "tar.gz", "sing-box"),
+        ("nodequality", nodequality_version, "tar.gz", "nodequality"),
+    ]
+    if tcp_probe_version is not None:
+        modules.append(("tcpquality", tcp_probe_version, "tar.gz", "apsp-tcp-probe"))
+    paths, artifacts = {}, []
+    for name, version, archive_format, binary_name in modules:
+        targets = list(architectures)
+        if name == "sing-box" and include_musl_runtime:
+            targets += ["linux-musl-" + arch for arch in architectures]
+        for arch in targets:
+            entry = {"name": name, "version": version, "arch": arch,
+                     "format": archive_format, "binary_name": binary_name}
+            path = release.canonical_path(entry)
+            data = release.read_regular(source / path)
+            auxiliary = {}
+            if name == "tcpquality":
+                import tcp_probe_artifact as tcp
+                files = tcp.archive_files(data)
+                tcp.validate_files(files, version, arch)
+                auxiliary = {fn: {"sha256": release.digest(c), "size": len(c)}
+                             for fn, c in files.items() if fn != binary_name}
+                entry["auxiliary_files"] = auxiliary
+            binary = release.binary_bytes(data, archive_format, binary_name, auxiliary)
+            entry.update(archive_size=len(data), binary_sha256=release.digest(binary),
+                         binary_size=len(binary), asset_name=release.asset_name(entry))
+            (output / entry["asset_name"]).write_bytes(data)
+            paths[path] = release.digest(data)
+            artifacts.append(entry)
+    artifacts.sort(key=release.canonical_path)
+    metadata = {"schema": 1, "source_repo": release.REPOSITORY, "tag": "agent-v" + agent_version,
+                "protocol_min": 1, "protocol_max": 1, "artifacts": artifacts}
+    encoded = (json.dumps(metadata, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+    inst_bytes = release.read_regular(installer, 256 * 1024)
+    (output / "release.json").write_bytes(encoded)
+    (output / "install.sh").write_bytes(inst_bytes)
+    paths.update({"release.json": release.digest(encoded), "install.sh": release.digest(inst_bytes)})
+    (output / "SHA256SUMS").write_text("".join(f"{paths[p]}  {p}\n" for p in sorted(paths)), encoding="utf-8")
+    return output
+
+
 class ReleaseTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="apsp-release-test-")
@@ -53,34 +157,50 @@ class ReleaseTests(unittest.TestCase):
         self.installer = self.directory / "installer.sh"
         self.installer.write_text("#!/bin/sh\nexit 0\n")
         self.bundle = self.directory / "release"
-        self.arguments = argparse.Namespace(source=str(self.source), output=str(self.bundle),
-                                             agent_version="0.3.0", runtime_version="1.14.0-apsp.1",
-                                             tag="agent-v0.3.0", installer=str(self.installer))
-        release.assemble(self.arguments)
+        stage_historical_0_3_bundle(self.source, self.bundle, self.installer)
         self.roots = release.load_roots(FIXTURES / "public-keys.json")
         self.sign()
 
     def tearDown(self):
         self.temporary.cleanup()
 
-    def sign(self):
-        result = subprocess.run(["minisign", "-S", "-m", str(self.bundle / "SHA256SUMS"),
+    def sign(self, bundle_dir=None):
+        target = bundle_dir or self.bundle
+        result = subprocess.run(["minisign", "-S", "-m", str(target / "SHA256SUMS"),
                                  "-s", str(FIXTURES / "TEST_ONLY.key"), "-x",
-                                 str(self.bundle / "SHA256SUMS.minisig"), "-t",
+                                 str(target / "SHA256SUMS.minisig"), "-t",
                                  "Apsp TEST ONLY automated fixture"], capture_output=True)
         self.assertEqual(result.returncode, 0, "fixture signing failed")
 
     def verify(self):
         return release.verify_bundle(self.bundle, self.roots, "minisign", "agent-v0.3.0")
 
+    def test_legacy_separate_runtime_assembly_arguments_are_rejected(self):
+        for extra in ({"runtime_version": "1.14.4-apsp.2"},
+                      {"include_musl_runtime": True},
+                      {"tcp_probe_version": "0.3.0-" + "a" * 40 + "-r1"}):
+            with self.subTest(extra=extra):
+                args = argparse.Namespace(
+                    source=str(self.source), output=str(self.directory / "rejected-legacy"),
+                    agent_version="0.4.0", tag="agent-v0.4.0", installer=str(self.installer), **extra
+                )
+                with self.assertRaisesRegex(ValueError, "legacy separate-runtime assembly"):
+                    release.assemble(args)
+        for removed_flag in ("--runtime-version", "--include-musl-runtime", "--tcp-probe-version",
+                             "--singbox-source-version", "--nodequality-version"):
+            proc = subprocess.run(
+                [sys.executable, str(ROOT / "tools/release.py"), "assemble", removed_flag, "1.0.0"],
+                capture_output=True, text=True,
+            )
+            self.assertNotEqual(proc.returncode, 0)
+
     def test_musl_runtime_has_a_separate_signed_identity_and_tampering_is_rejected(self):
         runtime = self.source / "sing-box" / "1.14.0-apsp.1"
         for arch in ("amd64", "arm64"):
             (runtime / ("linux-musl-" + arch)).write_bytes((runtime / arch).read_bytes())
-        self.bundle = self.directory / "release-musl"
-        self.arguments.output = str(self.bundle)
-        self.arguments.include_musl_runtime = True
-        release.assemble(self.arguments)
+        self.bundle = stage_historical_0_3_bundle(
+            self.source, self.directory / "release-musl", self.installer, include_musl_runtime=True
+        )
         self.sign()
         metadata = self.verify()
         entries = [entry for entry in metadata["artifacts"] if entry["name"] == "sing-box"]
@@ -92,21 +212,14 @@ class ReleaseTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.verify()
 
-    def test_requested_musl_runtime_cannot_be_silently_omitted(self):
-        self.arguments.output = str(self.directory / "release-missing-musl")
-        self.arguments.include_musl_runtime = True
-        with self.assertRaisesRegex(ValueError, "ordinary file"):
-            release.assemble(self.arguments)
-
     def rewrite_metadata(self, operation):
         path = self.bundle / "release.json"
         data = json.loads(path.read_text())
         operation(data)
         path.write_text(json.dumps(data, sort_keys=True, separators=(",", ":")) + "\n")
         manifest = self.bundle / "SHA256SUMS"
-        lines = manifest.read_text().splitlines()
         lines = [release.digest(path.read_bytes()) + "  release.json" if line.endswith("  release.json")
-                 else line for line in lines]
+                 else line for line in manifest.read_text().splitlines()]
         manifest.write_text("\n".join(lines) + "\n")
         self.sign()
 
@@ -294,7 +407,6 @@ class ReleaseTests(unittest.TestCase):
                 files = self.append_ipquality_fixture(mutate_notice=lambda notice: notice["source_offer"].update(asset=name))
                 with self.assertRaises(ValueError):
                     ipquality_artifact.source_offer(files, ipquality_artifact.VERSION, "amd64")
-                # Keep the next iteration's fixture identities unique.
                 self.rewrite_metadata(lambda metadata: metadata.update(artifacts=[
                     entry for entry in metadata["artifacts"] if entry["name"] != "ipquality"]))
                 sums = self.bundle / "SHA256SUMS"
@@ -302,32 +414,41 @@ class ReleaseTests(unittest.TestCase):
                                         if "  ipquality/" not in line))
                 self.sign()
 
-    def test_ipquality_assembly_copies_only_the_signed_paired_source_archive(self):
+    def test_ipquality_paired_source_validation_during_self_contained_assembly(self):
         import ipquality_artifact
         files = self.append_ipquality_fixture()
         offer = ipquality_artifact.source_offer(files, ipquality_artifact.VERSION, "amd64")
         original = (self.bundle / offer["asset"]).read_bytes()
         entry = next(item for item in json.loads((self.bundle / "release.json").read_text())["artifacts"]
                      if item["name"] == "ipquality")
-        directory = self.source / "ipquality" / ipquality_artifact.VERSION
-        directory.mkdir(parents=True)
-        (directory / "amd64").write_bytes((self.bundle / entry["asset_name"]).read_bytes())
-        paired = directory / "amd64.sources.tar.gz"
+        src, installer = self.write_self_contained_source("sc-ipq-source", targets=("amd64",))
+        ipq_dir = src / "ipquality" / ipquality_artifact.VERSION
+        ipq_dir.mkdir(parents=True, exist_ok=True)
+        (ipq_dir / "amd64").write_bytes((self.bundle / entry["asset_name"]).read_bytes())
+        paired = ipq_dir / "amd64.sources.tar.gz"
         paired.write_bytes(original)
-        self.arguments.ipquality_version = ipquality_artifact.VERSION
-        self.arguments.arch = ["amd64"]
-        self.arguments.output = str(self.directory / "paired-ipquality-release")
         with patch.object(ipquality_artifact, "validate_files"), \
                 patch.object(ipquality_artifact, "validate_source_offer") as validate:
-            release.assemble(self.arguments)
+            out = self.assemble_self_contained(
+                "paired-ipquality-release", src, installer, targets=("amd64",), require_paired=True
+            )
             validate.assert_called_once_with(paired, files, ipquality_artifact.VERSION, "amd64")
-            self.assertEqual((Path(self.arguments.output) / offer["asset"]).read_bytes(), original)
-            self.assertNotIn(offer["asset"], (Path(self.arguments.output) / "SHA256SUMS").read_text())
+            self.assertEqual((out / offer["asset"]).read_bytes(), original)
+            self.assertNotIn(offer["asset"], (out / "SHA256SUMS").read_text())
             paired.write_bytes(b"different source offer")
-            self.arguments.output = str(self.directory / "changed-ipquality-release")
             with self.assertRaisesRegex(ValueError, "signed declaration"):
-                release.assemble(self.arguments)
-            self.assertFalse((Path(self.arguments.output) / "release.json").exists())
+                self.assemble_self_contained(
+                    "changed-ipquality-release", src, installer, targets=("amd64",), require_paired=True
+                )
+            self.assertFalse((self.directory / "changed-ipquality-release").exists())
+        paired.write_bytes(original)
+        with patch.object(ipquality_artifact, "archive_files", return_value={"fixture": b"unapproved"}), \
+                patch.object(ipquality_artifact, "validate_files", side_effect=ValueError("unapproved IPQuality closure")):
+            with self.assertRaisesRegex(ValueError, "unapproved IPQuality closure"):
+                self.assemble_self_contained(
+                    "unapproved-ipquality-release", src, installer, targets=("amd64",), require_paired=True
+                )
+            self.assertFalse((self.directory / "unapproved-ipquality-release").exists())
 
     def test_paired_source_assets_are_streamed_and_reject_unsafe_or_oversized_files(self):
         paired = self.directory / "paired.tar.gz"
@@ -346,21 +467,6 @@ class ReleaseTests(unittest.TestCase):
         os.link(paired, linked)
         with self.assertRaises(ValueError):
             release.regular_file_proof(paired)
-
-    def test_ipquality_assembly_is_opt_in_and_refuses_an_unapproved_profile_before_signing(self):
-        import ipquality_artifact
-        self.assertFalse(any(entry["name"] == "ipquality" for entry in json.loads((self.bundle / "release.json").read_text())["artifacts"]))
-        self.arguments.ipquality_version = ipquality_artifact.VERSION
-        self.arguments.output = str(self.directory / "unapproved-ipquality-release")
-        directory = self.source / "ipquality" / ipquality_artifact.VERSION
-        directory.mkdir(parents=True)
-        (directory / "amd64").write_bytes(b"TEST ONLY unapproved input")
-        with patch.object(ipquality_artifact, "archive_files", return_value={"fixture": b"unapproved"}), \
-                patch.object(ipquality_artifact, "validate_files", side_effect=ValueError("unapproved IPQuality closure")) as validate:
-            with self.assertRaisesRegex(ValueError, "unapproved IPQuality closure"):
-                release.assemble(self.arguments)
-        validate.assert_called_once_with({"fixture": b"unapproved"}, ipquality_artifact.VERSION, "amd64")
-        self.assertFalse((Path(self.arguments.output) / "release.json").exists())
 
     def test_raw_artifact_cannot_claim_auxiliary_files(self):
         self.rewrite_metadata(lambda metadata: metadata["artifacts"][0].update(
@@ -421,21 +527,14 @@ class ReleaseTests(unittest.TestCase):
     def test_valid_complete_signature_and_every_asset(self):
         self.assertEqual(len(self.verify()["artifacts"]), 6)
 
-    def test_single_architecture_ci_bundle(self):
-        self.arguments.arch = ["amd64"]
-        self.arguments.output = str(self.directory / "single")
-        release.assemble(self.arguments)
-        data = json.loads((Path(self.arguments.output) / "release.json").read_text())
-        self.assertEqual({entry["arch"] for entry in data["artifacts"]}, {"amd64"})
-        self.assertEqual({entry["name"] for entry in data["artifacts"]},
-                         {"agent", "sing-box", "nodequality"})
-
-    def test_deterministic_manifests(self):
-        second = self.directory / "second"
-        self.arguments.output = str(second)
-        release.assemble(self.arguments)
-        for name in ("release.json", "SHA256SUMS"):
-            self.assertEqual((second / name).read_bytes(), (self.bundle / name).read_bytes())
+    def test_single_architecture_ci_bundle_and_deterministic_manifests(self):
+        src, installer = self.write_self_contained_source("sc-single", targets=("amd64",))
+        first = self.assemble_self_contained("single-1", src, installer, targets=("amd64",))
+        second = self.assemble_self_contained("single-2", src, installer, targets=("amd64",))
+        data = json.loads((first / "release.json").read_text(encoding="utf-8"))
+        self.assertEqual([(e["name"], e["arch"]) for e in data["artifacts"]], [("agent", "amd64")])
+        for name in ("release.json", "SHA256SUMS", "install.sh"):
+            self.assertEqual((first / name).read_bytes(), (second / name).read_bytes())
 
     def test_tampered_signed_checksum_file(self):
         with (self.bundle / "SHA256SUMS").open("a") as file:
@@ -564,7 +663,6 @@ class ReleaseTests(unittest.TestCase):
         bad_marker = self.directory / "untrusted-agent-executed"
 
         def executable(marker):
-            # A fake verifier must reject incorrect role-binding arguments too.
             return ("#!/bin/sh\n"
                     '[ "$#" = 7 ] && [ "$1" = verify-installed ] && [ "$2" = --binary ] && '
                     '[ "$3" = "$0" ] && [ "$4" = --name ] && [ "$5" = agent ] && '
@@ -584,8 +682,7 @@ class ReleaseTests(unittest.TestCase):
         self.rewrite_metadata(update)
         manifest = self.bundle / "SHA256SUMS"
         proof_identity = "  agent/0.3.0/" + self.installer_architecture
-        lines = [release.digest(good) + proof_identity if
-                 line.endswith(proof_identity) else line
+        lines = [release.digest(good) + proof_identity if line.endswith(proof_identity) else line
                  for line in manifest.read_text().splitlines()]
         manifest.write_text("\n".join(lines) + "\n")
         self.sign()
@@ -626,12 +723,9 @@ class ReleaseTests(unittest.TestCase):
     def installer_prefix(self, panel, forced_optimization=False, payload=None, target=None, core_root=None):
         if payload is not None:
             (self.bundle / self.installer_asset).write_bytes(payload)
-        # Execute the actual production path through its first Agent execution.
-        # Render it exactly as a release does so embedded preflight markers are expanded.
         text = release.installer_source(ROOT / "deploy/install.sh.tmpl", ROOT / "deploy/apsp-agent.service",
                                         ROOT / "deploy/apsp-singbox@.service", source_root=ROOT)
         text = text.split("# Reject unverifiable legacy caches", 1)[0] + "\nexit 0\n"
-        # Select systemd through a private marker instead of creating /run/systemd/system on the host.
         systemd_marker = self.directory / "run-systemd-system"
         systemd_marker.mkdir(exist_ok=True)
         self.assertEqual(text.count("[ -d /run/systemd/system ]"), 1)
@@ -639,7 +733,6 @@ class ReleaseTests(unittest.TestCase):
         if core_root:
             text = text.replace("/opt/apsp/core", str(core_root))
         if forced_optimization:
-            # Every embedded verifier, including the legacy preflight, must hold without assert statements.
             self.assertGreaterEqual(text.count("python3 -I - "), 2)
             text = text.replace("python3 -I - ", "python3 -I -O - ")
         script = self.directory / "verified-installer-prefix.sh"
@@ -665,8 +758,7 @@ class ReleaseTests(unittest.TestCase):
                      "--version", "0.3.0", "--panel", panel, "--token-file", str(token)]
         if target:
             arguments.extend(["--target", target])
-        result = subprocess.run(arguments, env=environment,
-                                capture_output=True, timeout=35)
+        result = subprocess.run(arguments, env=environment, capture_output=True, timeout=35)
         self.assertFalse(environment_marker.exists(), "installer imported an untrusted Python module")
         return result
 
@@ -770,6 +862,151 @@ class ReleaseTests(unittest.TestCase):
             self.assertIn("有界普通文件".encode(), result.stderr)
             self.assertFalse(good_marker.exists())
             self.assertFalse(bad_marker.exists())
+
+    def self_contained_agent_bytes(self, target="amd64", agent_version="0.4.0", **kwargs):
+        manifest = build_embedded_agent_manifest(agent_version, target, **kwargs)
+        return b"TEST ONLY self-contained apsp-agent " + target.encode() + encode_embedded_agent_manifest_frame(manifest)
+
+    def write_self_contained_source(self, name="sc-source", targets=("amd64", "arm64"), agent_version="0.4.0"):
+        src = self.directory / name
+        agent_dir = src / "agent" / agent_version
+        agent_dir.mkdir(parents=True, exist_ok=True)
+        for target in targets:
+            (agent_dir / target).write_bytes(self.self_contained_agent_bytes(target, agent_version))
+        sb_dir = src / "sing-box" / release.SINGBOX_VERSION
+        sb_dir.mkdir(parents=True, exist_ok=True)
+        (sb_dir / f"sing-box-{release.SINGBOX_VERSION}-sources.tar.gz").write_bytes(b"TEST ONLY sing-box source")
+        for arch in ("amd64", "arm64"):
+            for comp, ver in (("nodequality", release.NODEQUALITY_VERSION),
+                              ("network-workbench", release.WORKBENCH_VERSION),
+                              ("ipquality", release.IPQUALITY_DEFAULT_VERSION)):
+                comp_dir = src / comp / ver
+                comp_dir.mkdir(parents=True, exist_ok=True)
+                (comp_dir / f"{arch}.sources.tar.gz").write_bytes(f"TEST ONLY {comp} {arch} source".encode())
+        installer = self.directory / f"{name}-install.sh"
+        installer.write_text("#!/bin/sh\n# APSP_BOOTSTRAP_AGENT_SOURCE=preloaded-github-v1\nexit 0\n")
+        return src, installer
+
+    def assemble_self_contained(self, output_name, source, installer, targets=("amd64", "arm64"),
+                                agent_version="0.4.0", require_paired=False):
+        out = self.directory / output_name
+        args = argparse.Namespace(
+            source=str(source), output=str(out), agent_version=agent_version,
+            tag="agent-v" + agent_version, installer=str(installer), target=list(targets),
+            include_present_targets=False, paired_source=[],
+            no_auto_paired_sources=not require_paired, require_paired_sources=require_paired,
+        )
+        release.assemble(args)
+        return out
+
+    def test_self_contained_release_assembles_and_verifies_real_embedded_manifest_closure(self):
+        self.verify()
+        targets = ("amd64", "arm64", "linux-gnu-amd64", "linux-gnu-arm64", "macos-arm64", "windows-amd64")
+        src, installer = self.write_self_contained_source("sc-full", targets=targets)
+        out = self.assemble_self_contained("sc-full-bundle", src, installer, targets=targets, require_paired=True)
+        self.sign(out)
+        metadata = release.verify_bundle(out, self.roots, "minisign", "agent-v0.4.0")
+        self.assertEqual({entry["arch"] for entry in metadata["artifacts"]}, set(targets))
+        self.assertTrue(all(entry["name"] == "agent" for entry in metadata["artifacts"]))
+        self.assertEqual(len(release.bundle_source_offers(out, metadata)), 7)
+
+    def test_self_contained_assemble_rejects_missing_corrupted_or_duplicate_frames(self):
+        src, installer = self.write_self_contained_source("sc-frames", targets=("amd64",))
+        valid_frame = encode_embedded_agent_manifest_frame(build_embedded_agent_manifest("0.4.0", "amd64"))
+        bad_digest = valid_frame[:40] + (b"0" if valid_frame[40:41] != b"0" else b"1") + valid_frame[41:]
+        cases = {
+            "bare_dev_binary": b"TEST ONLY raw apsp-agent without embedded manifest frame",
+            "truncated_header": b"elf" + release.EMBEDDED_FRAME_PREFIX + b"00000010",
+            "bad_hex_length": b"elf" + release.EMBEDDED_FRAME_PREFIX + b"0000001G:" + b"a" * 64 + b"\n{}",
+            "missing_suffix": b"elf" + valid_frame[:-5],
+            "corrupted_digest": b"elf" + bad_digest,
+            "duplicate_valid_frames": b"elf" + valid_frame + b"mid" + valid_frame,
+            "valid_plus_corrupted_prefix": b"elf" + valid_frame + release.EMBEDDED_FRAME_PREFIX + b"broken",
+        }
+        for idx, (case_name, payload) in enumerate(cases.items()):
+            with self.subTest(case=case_name):
+                (src / "agent/0.4.0/amd64").write_bytes(payload)
+                with self.assertRaises(ValueError):
+                    self.assemble_self_contained(f"sc-bad-frame-{idx}", src, installer, targets=("amd64",))
+
+    def test_self_contained_assemble_rejects_missing_tools_abi_mismatch_and_schema_anomalies(self):
+        src, installer = self.write_self_contained_source("sc-schema", targets=("amd64", "macos-arm64"))
+        for missing in ("sing-box", "nodequality", "ipquality", "network-workbench", "tcpquality"):
+            with self.subTest(missing=missing):
+                (src / "agent/0.4.0/amd64").write_bytes(
+                    self.self_contained_agent_bytes("amd64", omit_component=missing)
+                )
+                with self.assertRaisesRegex(ValueError, missing):
+                    self.assemble_self_contained(f"sc-missing-{missing}", src, installer, targets=("amd64",))
+
+        dev_only = build_embedded_agent_manifest("0.4.0", "amd64")
+        dev_only["components"] = {k: dev_only["components"][k] for k in ("sing-box", "tcpquality")}
+        (src / "agent/0.4.0/amd64").write_bytes(b"dev" + encode_embedded_agent_manifest_frame(dev_only))
+        with self.assertRaisesRegex(ValueError, "lacks verified embedded"):
+            self.assemble_self_contained("sc-dev-partial", src, installer, targets=("amd64",))
+
+        dup_sha = build_embedded_agent_manifest("0.4.0", "amd64")
+        dup_sha["components"]["ipquality"]["sha256"] = dup_sha["components"]["sing-box"]["sha256"]
+        bad_record = build_embedded_agent_manifest("0.4.0", "amd64")
+        bad_record["components"]["sing-box"]["extra"] = "unexpected"
+        bad_manifests = [
+            ("wrong_agent_version", build_embedded_agent_manifest("0.3.9", "amd64")),
+            ("wrong_abi_env", build_embedded_agent_manifest("0.4.0", "amd64", abi_override=("linux", "x86_64", "gnu"))),
+            ("wrong_abi_arch", build_embedded_agent_manifest("0.4.0", "amd64", abi_override=("linux", "aarch64", "musl"))),
+            ("historical_nq_rootfs", build_embedded_agent_manifest(
+                "0.4.0", "amd64", component_versions={"nodequality": "a92fca6c0067df29ddd03fdc2fee6f3000f64545-offline-rootfs-r1"})),
+            ("wrong_ipq_version", build_embedded_agent_manifest("0.4.0", "amd64", component_versions={"ipquality": "1.0.0-wrong"})),
+            ("unpinned_tcp_probe", build_embedded_agent_manifest("0.4.0", "amd64", commit="")),
+            ("bool_schema", dict(build_embedded_agent_manifest("0.4.0", "amd64"), schema=True)),
+            ("unknown_top_field", dict(build_embedded_agent_manifest("0.4.0", "amd64"), extra=1)),
+            ("unknown_linux_tool", build_embedded_agent_manifest(
+                "0.4.0", "amd64", extra_components={"unexpected": {"format": "tar.gz", "sha256": "e" * 64, "version": "1.0.0"}})),
+            ("duplicate_component_sha256", dup_sha),
+            ("unknown_component_field", bad_record),
+        ]
+        for idx, (label, manifest) in enumerate(bad_manifests):
+            with self.subTest(anomaly=label):
+                (src / "agent/0.4.0/amd64").write_bytes(b"elf" + encode_embedded_agent_manifest_frame(manifest))
+                with self.assertRaises(ValueError):
+                    self.assemble_self_contained(f"sc-anomaly-{idx}", src, installer, targets=("amd64",))
+
+        base_json = json.dumps(build_embedded_agent_manifest("0.4.0", "amd64"), separators=(",", ":"))
+        dup_body = ('{"schema":1,' + base_json[1:]).encode("utf-8")
+        dup_frame = (release.EMBEDDED_FRAME_PREFIX
+                     + f"{len(dup_body):08x}:{release.digest(dup_body)}\n".encode("ascii")
+                     + dup_body + release.EMBEDDED_FRAME_SUFFIX)
+        (src / "agent/0.4.0/amd64").write_bytes(b"elf" + dup_frame)
+        with self.assertRaisesRegex(ValueError, "duplicate JSON key"):
+            self.assemble_self_contained("sc-dup-key", src, installer, targets=("amd64",))
+
+        bad_macos = build_embedded_agent_manifest(
+            "0.4.0", "macos-arm64",
+            extra_components={"tcpquality": {"format": "agent_subcommand", "subcommand": "tcp-probe",
+                                             "version": "0.3.0-" + "a" * 40 + "-r1"}},
+        )
+        (src / "agent/0.4.0/macos-arm64").write_bytes(b"macho" + encode_embedded_agent_manifest_frame(bad_macos))
+        with self.assertRaises(ValueError):
+            self.assemble_self_contained("sc-bad-macos", src, installer, targets=("macos-arm64",))
+
+    def test_verify_bundle_rejects_post_assembly_tampered_self_contained_agent(self):
+        src, installer = self.write_self_contained_source("sc-tamper", targets=("amd64",))
+        out = self.assemble_self_contained("sc-tamper-bundle", src, installer, targets=("amd64",))
+        bare = b"tampered raw agent without embedded manifest"
+        (out / "agent-0.4.0-linux-musl-amd64").write_bytes(bare)
+        metadata = json.loads((out / "release.json").read_text(encoding="utf-8"))
+        metadata["artifacts"][0].update(archive_size=len(bare), binary_size=len(bare),
+                                        binary_sha256=release.digest(bare))
+        encoded_meta = (json.dumps(metadata, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+        (out / "release.json").write_bytes(encoded_meta)
+        rows = {
+            "agent/0.4.0/amd64": release.digest(bare),
+            "install.sh": release.digest((out / "install.sh").read_bytes()),
+            "release.json": release.digest(encoded_meta),
+        }
+        (out / "SHA256SUMS").write_text("".join(f"{rows[k]}  {k}\n" for k in sorted(rows)), encoding="utf-8")
+        self.sign(out)
+        with self.assertRaisesRegex(ValueError, "embedded component manifest frame"):
+            release.verify_bundle(out, self.roots, "minisign", "agent-v0.4.0")
 
 
 if __name__ == "__main__":

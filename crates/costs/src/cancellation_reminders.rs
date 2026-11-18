@@ -87,10 +87,21 @@ pub async fn configure(
         ));
     }
     let mut tx = state.pool.begin().await?;
-    sqlx::query("INSERT INTO operations_cancellation_reminders(record_id,enabled,lead_secs,configured_by,configured_at) VALUES($1,$2,$3,$4,$5) ON CONFLICT(record_id) DO UPDATE SET enabled=$2,lead_secs=$3,configured_by=$4,configured_at=$5,last_error=NULL")
-        .bind(input.record_id).bind(input.enabled).bind(input.lead_secs).bind(actor).bind(now_timestamp()).execute(&mut *tx).await?;
-    if !input.enabled {
-        sqlx::query("UPDATE operations_incident_deliveries SET status='cancelled' WHERE status='pending' AND incident_id=(SELECT incident_id FROM operations_cancellation_reminders WHERE record_id=$1)").bind(input.record_id).execute(&mut *tx).await?;
+    let incident: Option<Uuid> = sqlx::query_scalar(
+        "INSERT INTO operations_cancellation_reminders(record_id,enabled,lead_secs,configured_by,configured_at) VALUES($1,$2,$3,$4,$5) ON CONFLICT(record_id) DO UPDATE SET enabled=$2,lead_secs=$3,configured_by=$4,configured_at=$5,last_error=NULL RETURNING incident_id",
+    )
+    .bind(input.record_id)
+    .bind(input.enabled)
+    .bind(input.lead_secs)
+    .bind(actor)
+    .bind(now_timestamp())
+    .fetch_one(&mut *tx)
+    .await?;
+    if !input.enabled
+        && let Some(incident) = incident
+    {
+        apsp_panel_host::evidence::cancel_pending_incident_notifications_tx(&mut tx, incident)
+            .await?;
     }
     tx.commit().await?;
     Ok(Json(
@@ -115,23 +126,30 @@ pub async fn tick(state: &AppState) -> ApiResult<()> {
             continue;
         }
         let source = format!("cancellation:{record}");
-        let existing: Option<Uuid> = sqlx::query_scalar(
-            "SELECT id FROM operations_incidents WHERE source_key=$1 ORDER BY opened_at LIMIT 1",
+        let title = format!(
+            "服务器 {} 的计划退订日期需要核对",
+            row.get::<String, _>("name")
+        );
+        let incident = apsp_panel_host::evidence::ensure_incident_once_tx(
+            &mut tx,
+            apsp_panel_host::evidence::IncidentReport {
+                key: &source,
+                server: Some(server),
+                title: &title,
+                severity: "info",
+                evidence: json!({
+                    "record_id": record,
+                    "valid_until": row.get::<i64, _>("valid_until"),
+                    "reference": row.get::<String, _>("reference"),
+                    "lead_secs": row.get::<i64, _>("lead_secs"),
+                    "source": "人工费用台账：计划退订生效日期",
+                    "action_executed": false,
+                    "observed_at": now,
+                }),
+                observed_at: now,
+            },
         )
-        .bind(&source)
-        .fetch_optional(&mut *tx)
         .await?;
-        let incident = if let Some(id) = existing {
-            id
-        } else {
-            apsp_panel_host::evidence::open_incident_tx(&mut tx, apsp_panel_host::evidence::IncidentReport { key: &source, server: Some(server), title: &format!("服务器 {} 的计划退订日期需要核对",row.get::<String,_>("name")), severity: "info", evidence: json!({"record_id":record,"valid_until":row.get::<i64,_>("valid_until"),"reference":row.get::<String,_>("reference"),"lead_secs":row.get::<i64,_>("lead_secs"),"source":"人工费用台账：计划退订生效日期","action_executed":false,"observed_at":now}), observed_at: now }).await?;
-            sqlx::query_scalar(
-                "SELECT id FROM operations_incidents WHERE source_key=$1 AND status<>'resolved'",
-            )
-            .bind(&source)
-            .fetch_one(&mut *tx)
-            .await?
-        };
         sqlx::query("UPDATE operations_cancellation_reminders SET notified_at=$2,incident_id=$3,last_error=NULL WHERE record_id=$1").bind(record).bind(now).bind(incident).execute(&mut *tx).await?;
     }
     tx.commit().await?;

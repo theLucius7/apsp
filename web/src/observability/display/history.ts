@@ -1,5 +1,6 @@
-import { number } from './data'
-import type { Point } from './data'
+import { nonnegativeNumber as number } from '@/lib/validate'
+
+import type { Point } from '@/lib/chart-data'
 
 export const historyWindows = [
   { value: '15m', minutes: 15, label: '15 分钟' }, { value: '1h', minutes: 60, label: '1 小时' },

@@ -5,7 +5,7 @@ import { BoxIcon, CheckIcon, CircleAlertIcon, CopyIcon, InfoIcon, RefreshCwIcon 
 import type { LucideIcon } from 'lucide-react'
 import { errorMessage } from './api'
 import { resourceRefreshingMessage } from './hooks'
-import { SectionContext } from './app/section'
+import { SectionContext } from './lib/section'
 import { tierDescriptions, tierLabels } from './lib/tiers'
 import type { Tier } from './lib/tiers'
 import { useI18n } from './i18n'

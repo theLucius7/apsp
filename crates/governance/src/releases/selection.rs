@@ -1,5 +1,8 @@
 use super::*;
-use apsp_protocol::{platform::ARTIFACT_TARGETS, platform::artifact_target};
+use apsp_protocol::{
+    platform::{ARTIFACT_TARGETS, artifact_target},
+    release::canonical_path,
+};
 
 pub(super) fn validate_targets(targets: &[String]) -> ApiResult<()> {
     if targets.is_empty()
@@ -57,32 +60,43 @@ pub(super) async fn default_targets(state: &AppState) -> ApiResult<Vec<String>> 
     Ok(targets.into_iter().collect())
 }
 
-pub(super) fn candidates(target: &str, format: &str) -> Vec<String> {
+pub(super) fn candidates(target: &str) -> Vec<String> {
     if matches!(target, "amd64" | "arm64") {
         // Architecture-only requests describe the original GNU host deployment.
-        return if format == "raw" {
-            vec![
-                format!("linux-musl-{target}"),
-                target.into(),
-                format!("linux-gnu-{target}"),
-            ]
-        } else {
-            vec![format!("linux-gnu-{target}"), target.into()]
-        };
+        return vec![
+            format!("linux-musl-{target}"),
+            target.into(),
+            format!("linux-gnu-{target}"),
+        ];
     }
     let mut candidates = vec![target.to_owned()];
     if let Some(arch) = target.strip_prefix("linux-gnu-") {
-        if format == "raw" {
-            candidates.push(format!("linux-musl-{arch}"));
-        }
+        candidates.push(format!("linux-musl-{arch}"));
         candidates.push(arch.into());
-    } else if let Some(arch) = target.strip_prefix("linux-musl-")
-        && format == "raw"
-    {
-        // Original raw Linux artifacts are statically linked musl executables.
+    } else if let Some(arch) = target.strip_prefix("linux-musl-") {
+        // Original raw Linux Agent binaries are statically linked musl executables.
         candidates.push(arch.into());
     }
     candidates
+}
+
+/// Signed Agent target candidates compatible with a device's reported `static_info`.
+/// Requires explicit `os` and `arch`, then expands `targets_from_info` through `candidates`.
+pub fn agent_targets(info: &Value) -> Vec<String> {
+    if info["os"].as_str().is_none_or(str::is_empty)
+        || info["arch"].as_str().is_none_or(str::is_empty)
+    {
+        return Vec::new();
+    }
+    let mut result = Vec::new();
+    for base in targets_from_info(info) {
+        for candidate in candidates(&base) {
+            if !result.contains(&candidate) {
+                result.push(candidate);
+            }
+        }
+    }
+    result
 }
 
 pub(super) fn selected_paths(
@@ -91,18 +105,20 @@ pub(super) fn selected_paths(
 ) -> ApiResult<BTreeSet<String>> {
     validate_targets(targets)?;
     let mut components: BTreeMap<_, Vec<_>> = BTreeMap::new();
-    for entry in &verified.metadata().artifacts {
-        components
-            .entry((&entry.name, &entry.version))
-            .or_default()
-            .push(entry);
+    for entry in verified
+        .metadata()
+        .artifacts
+        .iter()
+        .filter(|entry| entry.name == "agent")
+    {
+        components.entry(&entry.version).or_default().push(entry);
     }
     let mut paths = BTreeSet::new();
     for target in targets {
         let mut found = false;
         for entries in components.values() {
             let mut selected = None;
-            for candidate in candidates(target, &entries[0].format) {
+            for candidate in candidates(target) {
                 if let Some(entry) = entries.iter().find(|entry| entry.arch == candidate) {
                     selected = Some(entry);
                     break;
@@ -117,7 +133,7 @@ pub(super) fn selected_paths(
         }
         if !found {
             return Err(ApiError::BadRequest(format!(
-                "该发布不包含服务器平台架构 {target} 的兼容制品"
+                "该发布不包含服务器平台架构 {target} 的兼容 Agent"
             )));
         }
     }
@@ -142,5 +158,10 @@ mod tests {
             BTreeSet::from(["arm64".into()])
         );
         assert!(targets_from_info(&json!({})).is_empty());
+        assert_eq!(
+            agent_targets(&json!({"os": "linux", "arch": "aarch64", "libc": "gnu"})),
+            vec!["linux-gnu-arm64", "linux-musl-arm64", "arm64"]
+        );
+        assert!(agent_targets(&json!({"arch": "x86_64"})).is_empty());
     }
 }

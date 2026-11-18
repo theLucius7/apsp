@@ -48,6 +48,10 @@ try {
       panel_steps: [], history: [{ id: 1, action: 'uncertain', recorded_at: now - 30, details: { original_operation: original, outcome: 'unknown' } }] }
     const actor = { id: 1, role: 'operator', display_name: 'TEST_ONLY 限定运维管理员', all_servers: false,
       capabilities: ['operations:read', 'operations:write', 'servers:read'], token_capabilities: null, token_servers: null }
+    let currentActor = actor
+    let currentServers = [{ id: 7, name: 'TEST_ONLY 核对服务器', online: true, capabilities: ['fleet:operations:v1'], static_info: {}, latest_metrics: {} }]
+    let currentTemplates = []
+    const previews = []
     let inspections = 0, oldReads = 0, reauth = 0
     let heldOldRoute, signalHeld
     const oldHeld = new Promise(resolve => { signalHeld = resolve })
@@ -58,14 +62,55 @@ try {
       requests.push({ method, path })
       let value
       if (method === 'GET' && path === '/api/dashboard/access') value = { authenticated: true, public_dashboard: false }
-      else if (method === 'GET' && path === '/api/control-center/me') value = actor
+      else if (method === 'GET' && path === '/api/control-center/me') value = currentActor
       else if (method === 'GET' && path.startsWith('/api/control-center/preferences/')) value = { value: path.endsWith('/recent') || path.endsWith('/favorite') ? [] : null, revision: 0, updated_at: 0 }
       // The shared verification dialog offers Passkey only when the account has keys.
       else if (method === 'GET' && path === '/api/security/passkeys') value = { configuration: { enabled: true, reason: null, origin }, keys: [] }
-      else if (method === 'GET' && path === '/api/servers') value = [{ id: 7, name: 'TEST_ONLY 核对服务器', online: true, capabilities: ['fleet:operations:v1'], static_info: {}, latest_metrics: {} }]
+      else if (method === 'GET' && path === '/api/servers') value = currentServers
       else if (method === 'GET' && path === '/api/operations/jobs') value = [detail.job]
       else if (method === 'GET' && path === `/api/operations/jobs/${job}`) value = detail
-      else if (method === 'GET' && ['/api/operations/templates', '/api/operations/schedules', '/api/operations/maintenance', '/api/operations/remediation', '/api/operations/incidents', '/api/operations/cancellation-reminders'].includes(path)) value = []
+      else if (method === 'GET' && path === '/api/operations/templates') value = currentTemplates
+      else if (method === 'GET' && ['/api/operations/schedules', '/api/operations/maintenance', '/api/operations/remediation', '/api/operations/incidents', '/api/operations/cancellation-reminders'].includes(path)) value = []
+      else if (method === 'POST' && path === '/api/operations/preview') {
+        const body = request.postDataJSON(); previews.push(body)
+        value = {
+          id: '55555555-5555-4555-8555-555555555555',
+          digest: 'f'.repeat(64),
+          expires_at: now + 300,
+          spec: {
+            plan: body.plan,
+            target_snapshot: currentServers.filter(item => body.targets.includes(item.id)).map(item => ({ id: item.id, name: item.name })),
+            typed_steps: [{
+              position: 0,
+              kind: 'singbox_retry_deployment',
+              targets: {
+                '9': {
+                  kind: 'singbox_retry_deployment',
+                  module: 'singbox',
+                  binding: { deployment_id: 'dep-9', module: 'singbox', revision: 12, bundle_sha256: 'b'.repeat(64), binding_digest: 'c'.repeat(64) },
+                  expected_failure_revision: 12,
+                  target_status_updated_at: now - 10,
+                  changes_business_configuration: false,
+                  retry_unknown_result: false,
+                  observed_agent_version: '0.4.0',
+                  observed_runtime_version: '1.14.4-apsp.2',
+                },
+                '10': {
+                  kind: 'singbox_retry_deployment',
+                  module: 'singbox',
+                  binding: { deployment_id: 'dep-10', module: 'singbox', revision: 5, bundle_sha256: 'd'.repeat(64), binding_digest: 'e'.repeat(64) },
+                  expected_failure_revision: 5,
+                  target_status_updated_at: now - 15,
+                  changes_business_configuration: false,
+                  retry_unknown_result: false,
+                  observed_agent_version: null,
+                  observed_runtime_version: null,
+                },
+              },
+            }],
+          },
+        }
+      }
       else if (method === 'POST' && path === '/api/control-center/reauth') {
         const body = request.postDataJSON(); reauth++
         writes.push({ path, body })
@@ -186,10 +231,61 @@ try {
     assert.equal(writes.filter(write => !write.path.endsWith('/reconcile') && !write.path.endsWith('/inspection') && write.path !== '/api/control-center/reauth').length, 0)
     assert.equal(JSON.stringify(detail.steps[0].execution_result), originalBytes)
     await page.getByText('TEST_ONLY 原结果未知，等待实际清理核对', { exact: true }).first().waitFor()
+
+    // Verify `singbox_retry_deployment` v2 contract:
+    // 1) `agent:self-contained:v1` alone never substitutes for `runtime:operations:v1` + `runtime:checkpoint-v1`;
+    // 2) legacy templates and manual step selection strip `runtime_version` from preview requests;
+    // 3) preview renders v2 `RuntimeDeploymentCandidate` (`配置修订`, `observed_agent_version`, `observed_runtime_version` / `未上报`).
+    currentActor = { ...actor, capabilities: ['operations:read', 'operations:write', 'servers:read', 'proxy:read', 'proxy:write'] }
+    currentServers = [
+      { id: 8, name: 'TEST_ONLY 仅自带能力服务器', online: true, capabilities: ['agent:self-contained:v1'], static_info: { agent_version: '0.4.0', components: { 'sing-box': '1.14.4-apsp.2' } }, latest_metrics: {} },
+      { id: 9, name: 'TEST_ONLY 完整运维能力服务器', online: true, capabilities: ['agent:self-contained:v1', 'runtime:operations:v1', 'runtime:checkpoint-v1'], static_info: { agent_version: '0.4.0', components: { 'sing-box': '1.14.4-apsp.2' } }, latest_metrics: {} },
+      { id: 10, name: 'TEST_ONLY 未上报版本服务器', online: true, capabilities: ['runtime:operations:v1', 'runtime:checkpoint-v1'], static_info: {}, latest_metrics: {} },
+    ]
+    currentTemplates = [{ id: 'tpl-legacy', name: 'TEST_ONLY 历史失败部署模板', steps: [{ kind: 'singbox_retry_deployment', service: null, timeout_secs: 240, runtime_version: '1.14.2' }] }]
+    await page.reload(); await idle()
+
+    const targetCheckbox = name => page.locator('fieldset label').filter({ hasText: name }).getByRole('checkbox')
+    const stepSelect = page.getByLabel('步骤 1 类型', { exact: true })
+    const previewButton = page.getByRole('button', { name: '预览目标与影响', exact: true })
+    await targetCheckbox('TEST_ONLY 仅自带能力服务器').click()
+    assert.equal(await stepSelect.locator('option[value="singbox_retry_deployment"]').count(), 0, 'Self-contained capability alone must not unlock retry step')
+    await page.getByText('先选择在线且支持运行时运维与实际配置核对的目标，才可选择固定失败部署步骤。', { exact: true }).waitFor()
+
+    await page.getByLabel('套用模板').selectOption('tpl-legacy')
+    await page.getByRole('alert').filter({ hasText: '固定失败部署步骤的每个目标都须在线并声明运行时运维与精确配置核对能力。' }).waitFor()
+    await page.locator('fieldset label').filter({ hasText: 'TEST_ONLY 仅自带能力服务器' }).getByText('缺少运行时运维或精确核对能力', { exact: true }).waitFor()
+    assert.equal(await previewButton.isDisabled(), true)
+
+    await targetCheckbox('TEST_ONLY 仅自带能力服务器').click()
+    await targetCheckbox('TEST_ONLY 完整运维能力服务器').click()
+    await targetCheckbox('TEST_ONLY 未上报版本服务器').click()
+    assert.equal(await previewButton.isDisabled(), false)
+    await previewButton.click(); await idle()
+    assert.equal(previews.length, 1)
+    assert.equal('runtime_version' in previews[0].plan.steps[0], false, 'Template application must strip legacy Step.runtime_version')
+    assert.deepEqual(previews[0].plan.steps[0], { kind: 'singbox_retry_deployment', service: null, timeout_secs: 240 })
+
+    await stepSelect.selectOption('system_snapshot')
+    await stepSelect.selectOption('singbox_retry_deployment')
+    await previewButton.click(); await idle()
+    assert.equal(previews.length, 2)
+    assert.equal('runtime_version' in previews[1].plan.steps[0], false, 'Direct step selection must omit Step.runtime_version')
+    assert.deepEqual(previews[1].plan.steps[0], { kind: 'singbox_retry_deployment', service: null, timeout_secs: 240 })
+
+    const previewSection = page.locator('div').filter({ has: page.getByRole('heading', { name: '执行预览', exact: true }) }).first()
+    await previewSection.getByText('TEST_ONLY 完整运维能力服务器 · 配置修订 12 · 失败修订 12 · 不更改业务配置', { exact: false }).waitFor()
+    await previewSection.getByText('设备上报 Agent 版本：0.4.0 · 设备上报运行时版本：1.14.4-apsp.2', { exact: false }).waitFor()
+    await previewSection.getByText(`配置包摘要：${'b'.repeat(64)} · 绑定摘要：${'c'.repeat(64)}`, { exact: false }).waitFor()
+    await previewSection.getByText('TEST_ONLY 未上报版本服务器 · 配置修订 5 · 失败修订 5 · 不更改业务配置', { exact: false }).waitFor()
+    await previewSection.getByText('设备上报 Agent 版本：未上报 · 设备上报运行时版本：未上报', { exact: false }).waitFor()
+    const previewText = await previewSection.innerText()
+    for (const removed of ['升级目标', '签名制品', '执行归档摘要']) assert.equal(previewText.includes(removed), false, `Preview must not contain removed artifact copy: ${removed}`)
+
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     assert.deepEqual(external, []); assert.deepEqual(errors, [])
-    results.push({ width, inspection_requests: inspections, reconciliation_writes: 1, reauth_requests: reauth, private_api_requests: requests.length, external_requests: external.length, page_errors: errors.length, original_outcome_preserved: true })
+    results.push({ width, inspection_requests: inspections, reconciliation_writes: 1, preview_requests: previews.length, reauth_requests: reauth, private_api_requests: requests.length, external_requests: external.length, page_errors: errors.length, original_outcome_preserved: true })
     await context.close()
   }
-  console.log(JSON.stringify({ status: 'passed', scope: 'operations reconciliation full desktop/mobile, stale read identity and time gates, exact single write, original unknown preserved', results }))
+  console.log(JSON.stringify({ status: 'passed', scope: 'operations reconciliation full desktop/mobile, stale read identity and time gates, exact single write, original unknown preserved, singbox_retry_deployment v2 capability/step/candidate contract', results }))
 } finally { await browser.close(); await new Promise(resolve => server.close(resolve)) }

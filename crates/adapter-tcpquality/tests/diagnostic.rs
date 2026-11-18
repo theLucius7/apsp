@@ -38,7 +38,7 @@ async fn fixed_command_and_budget_use_only_bounded_identity_calls_and_private_fi
         adapter.capabilities(),
         vec![apsp_adapter_tcpquality::CAPABILITY]
     );
-    assert_eq!(adapter.describe().plugin_name, "tcpquality");
+    assert_eq!(adapter.describe().artifact_name, "tcpquality");
     assert_eq!(adapter.describe().binary_name, "apsp-tcp-probe");
     assert_eq!(
         adapter.auxiliary_files(),
@@ -145,4 +145,46 @@ async fn preparation_timeout_does_not_create_workspace_or_start_any_service() {
     assert!(started.elapsed() < std::time::Duration::from_secs(2));
     assert!(!spec.job_dir.exists());
     assert!(privileged.created.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn self_contained_agent_binary_dispatches_tcp_probe_subcommand_and_verifies_commit() {
+    use std::os::unix::fs::PermissionsExt;
+    let fixture = Fixture::new(1);
+    let agent_dir = fixture.root.join("agent-0.4.0");
+    std::fs::create_dir(&agent_dir).unwrap();
+    let agent_bin = agent_dir.join("apsp-agent");
+    std::fs::write(&agent_bin, b"fixture self-contained agent").unwrap();
+    std::fs::set_permissions(&agent_bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let mut spec = fixture.spec();
+    spec.binary_path = agent_bin.clone();
+    let privileged = Recorder::default();
+    let adapter = TcpQualityAdapter::new();
+    let job = adapter.prepare(&spec, &privileged).await.unwrap();
+    assert_eq!(job.program, agent_bin);
+    assert_eq!(job.args.first().map(String::as_str), Some("tcp-probe"));
+    assert_eq!(
+        *privileged.probes.lock().unwrap(),
+        vec!["tcp-probe --version", "tcp-probe --build-info"]
+    );
+
+    let mismatch_recorder = Recorder {
+        bad: Some(json!({
+            "version": "0.3.0",
+            "source_repo": "theLucius7/apsp",
+            "source_commit": "b".repeat(40)
+        })),
+        ..Default::default()
+    };
+    let mut mismatch_spec = fixture.spec();
+    mismatch_spec.binary_path = agent_bin;
+    mismatch_spec.id = "00000000-0000-4000-8000-ffffffffffff".into();
+    mismatch_spec.job_dir = fixture.root.join(&mismatch_spec.id);
+    assert!(
+        adapter
+            .prepare(&mismatch_spec, &mismatch_recorder)
+            .await
+            .is_err()
+    );
 }

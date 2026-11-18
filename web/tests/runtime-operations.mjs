@@ -22,7 +22,7 @@ try {
     const page = await browser.newPage({ viewport: { width, height: 1000 } })
     const errors = [], writes = [], now = Math.floor(Date.now() / 1000)
     page.on('pageerror', error => errors.push(error.message))
-    const metadata = { id:1,name:'运维夹具',enabled:true,source:'agent_capability',read_only:true,online:true,agent_supported:true }
+    const metadata = { id:1,name:'运维夹具',configured:true,source:'nexus',read_only:true,online:true,agent_supported:true,runtime_version:'1.14.4-apsp.2',status:{state:'ready',reason:'',target_rev:2,applied_rev:2,current_healthy:true} }
     const server = { id:1,name:metadata.name,online:true,device_public_key:'TEST_ONLY',static_info:{},latest_metrics:{},last_seen:now,manifest_rev:2,capabilities:[] }
     const status = { module:'singbox',target_rev:2,applied_rev:2,last_result_rev:2,healthy:true,last_error:null,updated_at:now }
     const view = { supported:true,online:true,retiring:false,operations:[] }

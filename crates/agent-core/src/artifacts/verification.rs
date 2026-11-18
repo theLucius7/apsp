@@ -120,6 +120,14 @@ fn verified_files() -> &'static Mutex<HashMap<PathBuf, Verified>> {
     VERIFIED.get_or_init(Mutex::default)
 }
 
+pub(crate) async fn verify_file_digest(
+    path: &Path,
+    expected_size: u64,
+    expected_sha256: &str,
+) -> Result<()> {
+    verify_digest(path, expected_size, expected_sha256).await
+}
+
 async fn verify_digest(path: &Path, expected_size: u64, expected_sha256: &str) -> Result<()> {
     let metadata = tokio::fs::symlink_metadata(path).await?;
     ensure!(
@@ -221,7 +229,7 @@ pub(super) fn signed_artifact(
     keys: &TrustedKeys,
 ) -> Result<VerifiedArtifact> {
     let release = signed_release(proof, keys)?;
-    let verified = crate::runtime_platform::artifact(&release, &descriptor.plugin_name, version)?;
+    let verified = crate::runtime_platform::artifact(&release, &descriptor.artifact_name, version)?;
     ensure!(
         verified.metadata().binary_name == descriptor.binary_name
             && verified.metadata().format == "tar.gz"
@@ -249,7 +257,7 @@ pub(crate) fn runtime_descriptor(
 ) -> Result<Descriptor> {
     let release = signed_release(proof, keys)?;
     let verified =
-        crate::runtime_platform::artifact(&release, &adapter.describe().plugin_name, version)?;
+        crate::runtime_platform::artifact(&release, &adapter.describe().artifact_name, version)?;
     Ok(adapter.describe_artifact(version, &verified.metadata().arch))
 }
 
@@ -286,6 +294,30 @@ pub(crate) async fn verify_expected(
     let proof = read_proof(directory).await?;
     let verified = signed_artifact(&proof, descriptor, version, keys)?;
     verify_file(binary, &verified).await
+}
+
+pub(crate) async fn verify_local_cached_artifact(
+    artifact: &apsp_protocol::Artifact,
+    version: &str,
+    descriptor: &Descriptor,
+    install_root: &Path,
+    keys: &TrustedKeys,
+) -> Result<PathBuf> {
+    let proof = artifact
+        .proof
+        .as_ref()
+        .context("artifact has no signed release proof")?;
+    let verified = signed_artifact(proof, descriptor, version, keys)?;
+    ensure!(
+        super::normalized_hash(&artifact.sha256)? == verified.sha256(),
+        "artifact digest differs from signed release"
+    );
+    let binary = install_root
+        .join(&descriptor.artifact_name)
+        .join(version)
+        .join(&descriptor.binary_name);
+    verify_expected(&binary, descriptor, version, keys).await?;
+    Ok(binary)
 }
 
 pub(super) async fn verify_binary_with_keys(
@@ -331,6 +363,16 @@ pub(super) async fn verify_binary_with_keys(
         .file_name()
         .and_then(|name| name.to_str())
         .context("invalid binary path")?;
+    if let Some(manifest) = crate::bundled::read_bundled_manifest(&resolved).await? {
+        ensure!(
+            manifest.component_name == expected_name
+                && manifest.binary_name == name
+                && expected_format == "tar.gz"
+                && crate::bundled::matches_version_directory_name(version, &manifest.version),
+            "installed bundled component role, format, or executable name differs from requested identity"
+        );
+        return crate::bundled::verify_manifest_files(&resolved, &manifest).await;
+    }
     let proof = read_proof(&resolved).await?;
     let release = signed_release(&proof, keys)?;
     let verified = crate::runtime_platform::artifact(&release, expected_name, version)?;

@@ -132,9 +132,9 @@ pub async fn record_result(
         super::service::validate_tool_report(&row.get::<Value, _>("job"), report)?;
     }
     let job = saved_job(row.get("job"), result.id)?;
-    if job.id != result.id || job.plugin != result.plugin {
+    if job.id != result.id || job.tool != result.tool {
         return Err(ApiError::BadRequest(
-            "取消确认与已知任务或插件不一致".into(),
+            "取消确认与已知任务或诊断工具不一致".into(),
         ));
     }
     let status: String = row.get("status");

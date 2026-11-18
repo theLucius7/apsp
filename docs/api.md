@@ -6,7 +6,7 @@
 
 中国可达性接口（`/api/observability/reachability`，仅所有者会话）见[监控文档](monitoring.md#中国可达性)。
 
-接口地址的第一段是对象所属的领域（[ADR 0132](adr/0132-platform-only-host-and-domain-addresses.md)）：节点、链路、外部来源与服务器上的运行时在 `/api/traffic/…`，代理用户、策略组与套餐组、用量和门户在 `/api/access/…`，DNS 账号与解析规则在 `/api/naming/…`，续费项目在 `/api/costs/…`，中国可达性与 TCP 质量在 `/api/observability/…`，阿里云的云账号与云资源在 `/api/resources/alicloud/…`；`/api/agent/v1/*`、`/sub/{token}` 与本页其余地址没有变。2026-11-13 之前这些接口在 `/api/plugins/{sing-box,ddns,expenses,tcpquality,alicloud}/…` 下；旧地址在一个发布版本内仍然应答，请求先被改写到现地址，再做权限检查，逐项对应见 ADR 0132 第 9 条；续费日历的旧订阅地址 `/api/plugins/expenses/calendar.ics` 长期保留。新写的脚本直接用现地址。
+接口地址的第一段是对象所属的领域（[ADR 0132](adr/0132-platform-only-host-and-domain-addresses.md)、[ADR 0140](adr/0140-domain-consolidation.md)）：节点、链路、外部来源与服务器上的运行时在 `/api/traffic/…`，代理用户、策略组与套餐组、用量和门户在 `/api/access/…`，DNS 账号与解析规则在 `/api/naming/…`，续费项目在 `/api/costs/…`，中国可达性与 TCP 质量在 `/api/observability/…`，阿里云的云账号与云资源在 `/api/resources/alicloud/…`；`/api/agent/v1/*`、`/sub/{token}` 与本页其余地址没有变。2026-11-13 过渡期的普通 `/api/plugins/*` 控制台接口改写已退役移除，`crates/panel/src/moved_paths.rs` 仅永久保留外部续费日历订阅契约 `/api/plugins/expenses/calendar.ics` → `/api/costs/calendar.ics`（保留查询参数与权限守卫）；脚本与控制台一律直接使用现行领域地址。
 
 ## 登录
 
@@ -55,7 +55,7 @@
 | `POST /api/control-center/reauth/passkey/finish` | 同一初始所有者会话完成验证；返回 `{verified_at,expires_at}`，证明有效五分钟，不替换或延长 `apsp_session`，无需额外 TOTP；API 令牌不可调用 |
 | `GET /api/access/users/{id}/portal` | 管理员；开通状态、密钥数量、账户登录 URL、开通链接过期时间，不返回开通秘密 |
 | `POST /api/access/users/{id}/portal/invitation` | 管理员；`{reset:false}`，需要五分钟内的再次验证；返回 `{url,expires_at}`，十五分钟、一次性。已有密钥时必须明确 `reset:true` |
-| `GET /api/access/portal/{account}` | 插件 UUID 入口；未认证返回 `{authenticated:false,configuration}`，已认证额外返回自身 `name,subscription_url,usage:{uplink,downlink},keys` |
+| `GET /api/access/portal/{account}` | 代理用户门户 UUID 入口；未认证返回 `{authenticated:false,configuration}`，已认证额外返回自身 `name,subscription_url,usage:{uplink,downlink},keys` |
 | `POST /api/access/portal/{account}/login/start` | 开始该代理账户的认证，无请求体 |
 | `POST /api/access/portal/{account}/login/finish` | 完成认证，签发独立 `apsp_proxy_session`，返回 `{ok:true}` |
 | `POST /api/access/portal/{account}/register/start` | 初次开通 `{name,activation_token}`；已认证添加 `{name}`，需五分钟内的 Passkey 验证 |
@@ -150,19 +150,18 @@
 
 `POST /api/agent/v1/retirement/receipt` 是无需 Cookie/Bearer 的设备恢复端点，请求 `{server_id,request_id,signature}`。它仅接受与持久退役请求、原注册公钥匹配的 Ed25519 签名，不能用任意请求触发删除；有效重复回执返回 204，错请求或签名返回 401，不存在的服务器返回 404。清凭据后的 Agent 可据本地保存的回执恢复提交，避免响应丢失后必须重新注册。签名格式与恢复边界见 [ADR 0019](adr/0019-server-retirement.md)。
 
-## 运行时安装
+## 服务器运行时状态
 
-运行时、节点、链路与外部来源的管理接口在 `/api/traffic/...`，代理用户、策略组与套餐组、门户的管理接口在 `/api/access/...`。更早的根路径管理地址（ADR 0030 之前）不保留别名，返回 404。已有 `/sub/{token}` 订阅地址永久保留，旧表、业务编号、令牌、密钥、授权和用量账本不重写，详见 [ADR 0030](adr/0030-singbox-plugin-business.md)。
+运行时、节点、链路与外部来源的管理接口在 `/api/traffic/...`，代理用户、策略组与套餐组、门户的管理接口在 `/api/access/...`。更早的根路径管理地址（ADR 0030 之前）不保留别名，返回 404。已有 `/sub/{token}` 订阅地址永久保留，旧表、业务编号、令牌、密钥、授权和用量账本不重写，详见 [ADR 0030](adr/0030-singbox-plugin-business.md) 与 [ADR 0141](adr/0141-self-contained-agent-and-desired-service-config.md)。
 
 | 方法与路径 | 请求或用途 |
 |---|---|
-| `GET /api/traffic/servers` | 未删除服务器的插件启用元数据列表 |
-| `GET /api/traffic/servers/{id}` | 单台服务器的插件启用元数据 |
-| `POST /api/traffic/servers/{id}/enable` | 空 JSON `{}`；管理员明确安装 sing-box 并安排首次发布，重复请求幂等（路径沿用 `enable`） |
+| `GET /api/traffic/servers` | 未删除服务器的服务配置与运行时状态列表 |
+| `GET /api/traffic/servers/{id}` | 单台服务器的服务配置与运行时状态 |
 
-元数据为 `{id,name,enabled,online,agent_supported,read_only,source,installation}`。source 为 `administrator` 或 null（生产只有 `administrator`）；单独的能力声明不自动启用。`installation={state,reason,target_rev,applied_rev}`，state 为 `not_enabled`、`queued`、`waiting_agent`、`offline`、`pending`、`ready` 或 `failed`，reason 提供中文原因。启用安排无部署服务器的首次安全配置，重复请求不延后待办；实际安装仍须签名制品、设备支持和应用确认。创建节点和读取部署需先启用，否则返回 409。未启用服务器详情不请求节点或部署；已有网卡遥测继续显示。详见 [安装流程](singbox-installation.md)。
+响应对象为 `{id,name,configured,online,agent_supported,read_only,source,runtime_version,status}`。`configured` 仅当服务器存在当前有效服务配置（未删除且启用的节点、启用的链路跳，或已激活的兼容切流目标）时为 `true`；历史 `deployments` 或默认 `ServerProfile` 不单独使 `configured` 为 `true`。`source` 为 `configured`、`nexus` 或 `null`；`read_only` 仅在 `source="nexus"` 时为 `true`。`status={state,reason,target_rev,applied_rev,current_healthy}`，`state` 为 `unconfigured`、`waiting_agent`、`upgrade_required`、`offline`、`pending`、`ready`、`sync_blocked` 或 `failed`，`current_healthy` 区分当前已运行配置是否健康，`reason` 提供中文原因。无需调用手工启用接口（原 `POST /api/traffic/servers/{id}/enable` 已移除），直接在未退役服务器上创建启用节点或链路即可安排发布；删除或禁用全部节点与链路后自动下发空模块期望停止运行时。详见 [服务配置与运行生命周期](singbox-installation.md)。
 
-服务器详情的「网络服务」分页 `/#/servers/{id}/services`（旧地址 `/plugins` 保留一个发布版本）是一台服务器运行时的家：安装、部署状态、安装条件检查（`POST …/deployments/check`）、重新部署、运行时运维与部署历史都在这里；网络服务的「运行时」视图 `/#/nodes?view=runtimes`（旧地址 `/#/settings/plugins/servers`）只汇总各服务器的状态并链接过去。安装须管理员在服务器详情明确调用上述服务器级接口，不创建全局安装状态。
+服务器详情的「网络服务」分页 `/#/servers/{id}/services` 是一台服务器运行时的家：配置与运行状态、条件检查（`POST …/deployments/check`）、重新部署、运行时运维与部署历史都在这里；网络服务的「运行时」视图 `/#/nodes?view=runtimes` 只汇总各服务器的状态并链接过去。
 
 ## 节点
 
@@ -188,7 +187,7 @@
 | `POST /api/traffic/ordered-proxy-resources/chain/{id}/apply-node-versions` | 带期望代数应用外部节点的新版本 |
 | `POST /api/traffic/chains/ordered-batch` | 至多 32 行原子创建链路，一次请求保存全部入口与链路或整批回滚 |
 
-资源包含 `kind,id,name,entry,exit,available,unavailable_reasons,policy_group_ids,user_count,chain_refs`。公开端点包含节点／服务器 ID 和名称、协议、公开地址、监听 `port`、实际公开 `public_port`、SNI、启用／删除状态，以及 `online,desired_revision,applied_revision,applied_observed_at`；不包含私钥、内部 relay UUID、用户身份或完整配置。`public_port` 使用已有节点设置的有效覆盖值，未覆盖则沿用监听端口；损坏设置、协议配置解析失败或与协议标记不一致，让对应资源不可用并说明原因，不使整个列表失去可读性。`available` 表示结构及插件配置可用，在线和应用观察另列，不表示端到端连通。`user_count` 是未删除代理用户的授权并集人数，不是当前套餐资格人数。退役或软删端点的链路仍可读取与明确清理。
+资源包含 `kind,id,name,entry,exit,available,unavailable_reasons,policy_group_ids,user_count,chain_refs`。公开端点包含节点／服务器 ID 和名称、协议、公开地址、监听 `port`、实际公开 `public_port`、SNI、启用／删除状态 `enabled,node_deleted,server_deleted`、服务器有效服务配置状态 `runtime_enabled`（对应服务器 `configured`），以及 `online,desired_revision,applied_revision,applied_observed_at`；不包含私钥、内部 relay UUID、用户身份或完整配置。`public_port` 使用已有节点设置的有效覆盖值，未覆盖则沿用监听端口；损坏设置、协议配置解析失败或与协议标记不一致，让对应资源不可用并说明原因，不使整个列表失去可读性。`available` 表示结构、协议配置及所在服务器 `runtime_enabled` 可用，在线和应用观察另列，不表示端到端连通。`user_count` 是未删除代理用户的授权并集人数，不是当前套餐资格人数。退役或软删端点的链路仍可读取与明确清理。
 
 批量请求示例：
 
@@ -217,7 +216,7 @@
 
 ## 外部来源
 
-外部来源接口（UUID 节点身份）位于 `/api/traffic`；节点在节点库中以数字别名 `public_id` 出现，见[节点库说明](node-catalog.md)。见 [ADR 0072](adr/0072-subscription-source-lifecycle.md) 与 [验收边界](acceptance/subscription-sources.md)。仅管理员使用；来源节点不是对用户授权的公开入口。有序链路（`/chains/ordered-batch`）的订阅跳使用本节的节点；迁移前的 mixed 链路使用数字编号来源的节点。
+外部来源接口（UUID 节点身份）位于 `/api/traffic`；节点在节点库中以数字别名 `public_id` 出现，见[节点库说明](node-catalog.md)。见 [ADR 0072](adr/0072-subscription-source-lifecycle.md) 与 [验收边界](acceptance/subscription-sources.md)。仅管理员使用；来源节点不是对用户授权的公开入口。有序链路（`/chains/ordered-batch`）的外部节点跳使用本节的节点（数字编号来源与混合链路已随 ADR 0131 删除）。
 
 | 方法与相对路径 | 请求／行为 |
 | --- | --- |
@@ -359,7 +358,7 @@
 
 从未发布时 `status` 为 `null`、`history` 为空。历史按版本倒序，最多 100 条，仅包含元数据。`target_rev` 是最新期望版本；`applied_rev` 是已知成功应用的版本；`last_result_rev` 是最后接受的应用结果版本；`healthy` 表示设备报告当前配置是否健康。失败后成功回滚时可以同时出现 `healthy=true` 和 `last_error`，界面应保留失败提示及当前实际版本。
 
-响应还含 `pending`（存在尚未发布的修改）、`enabled_nodes` 与 `authorized_nodes`（当前有有效授权的节点数）。管理员 `POST /api/traffic/servers/{id}/deployments/check` 无请求体，返回 `{ready,checks:[{name,passed,detail}]}`，检查设备接入、60 秒在线、插件能力、设备制品验签能力及现有平台选择规则下的签名运行时。只有设备声明 `artifact:minisign-v1` 才能通过验签能力检查；面板保存已签运行时不能替代设备验签支持。只读检查不会安装、发布或重启；归档验签不随每次状态轮询执行。缺少制品返回检查未通过，内部验证错误不泄露密钥和路径。
+响应还含 `pending`（存在尚未发布的修改）、`enabled_nodes` 与 `authorized_nodes`（当前有有效授权的节点数）。管理员 `POST /api/traffic/servers/{id}/deployments/check` 无请求体，返回 `{ready,checks:[{name,passed,detail}]}`，只读检查设备已注册、60 秒内在线、`singbox` 模块能力及一体化自带能力 Agent 就绪状态（`agent:self-contained:v1` 与匹配的内置 `sing-box 1.14.4-apsp.2`，不再查找面板侧独立运行时压缩包；见 [ADR 0141](adr/0141-self-contained-agent-and-desired-service-config.md)）。只读检查不会安装、发布或重启，内部校验错误不泄露密钥和路径。
 
 较旧的应用结果不能覆盖较新结果。认证设备在 hello/heartbeat 中报告已发布且高于面板记录的已应用版本时，面板补齐成功状态，以恢复应用成功但回报丢失的场景；最近目标版本的错误说明仍保留。
 
@@ -385,13 +384,21 @@
 - `available_formats` 在节点能以 Clash 格式表达时包含 `clash`；`format=clash` 的 `content` 为上述 YAML。
 - `content` 在成功时为完整配置或 base64 分享链接字符串。禁止缓存，界面仅显式预览，复制/下载重新读取；不调用第三方转换服务。
 
+## 迁移成员原生采用
+
+- `POST /api/access/users/{id}/native-adoption/preview` 返回现有编译器的影子输出、既有订阅地址、摘要和阻塞原因，要求 `proxy:write`、服务器范围与近期交互式验证。
+- `POST /api/access/users/{id}/native-adoption/adopt` 校验 `expected_digest`、`compared_formats`、`comparison_confirmed`、`old_subscription_route_ready`，事务内固定当前周期用量锚点并保留原 UUID；同摘要重试幂等。
+- `POST /api/access/native-adoption/retire` 仅所有者及近期验证可用；全部成员依赖、待投递用量、未完成交换和旧端停用确认清空后才关闭桥。
+
+预览包含敏感凭据，不公开缓存；生产采用与原入口核对见[操作说明](native-adoption.md)。暂停、到期、耗尽或无套餐用户保持原来的不可用状态，不为完成迁移临时启用。
+
 ## 后台统计
 
 管理员 `GET /api/statistics?days=7` 返回服务器数量、网卡 `traffic` 汇总、逐日 `points` 和 `by_server` 前 8 排行；`GET /api/access/statistics?days=7` 返回代理节点/用户数量、独立代理 `traffic`、`points`、`by_node` / `by_user` 前 8 排行。`days` 仅支持 7/30；未知查询字段拒绝。公开看板开关不会开放这些接口。
 
 流量以十进制字符串返回，没有记录用 null，真实零用 `"0"`；日期为 UTC 日起点。服务器统计排除删除服务器、包含隐藏服务器，并按当前选定网卡汇总原始日观测；不包含账单流量矫正。代理按批次结束日汇总并保留删除对象历史。完整口径见[统计仪表盘](statistics.md)。
 
-## 流量与制品
+## 流量与签名 Agent 发布
 
 `GET /api/access/usage` 返回所有已确认流量，也可传入正整数 `user_id` 和/或 `node_id` 筛选：
 
@@ -407,17 +414,13 @@
 
 所有字节总量都是精确十进制字符串，避免浏览器整数精度损失。分组数组只包含有流量的项目；`deleted` 表示对应对象已删除，用于显示历史记录。按 `(server_id, epoch, seq)` 在事务中去重，持久化成功才确认，设备重传不会重复计费。这里的流量仅来自代理统计，与服务器网卡指标分开显示。
 
-`GET /api/artifacts` 返回签名与实际内容均验证通过的制品数组，每项包含 `name`、`version`、`arch`、`sha256`、`bytes`，例如 `{"name":"sing-box","version":"版本","arch":"amd64","sha256":"摘要","bytes":123}`。`arch` 可为旧 `amd64/arm64` 或精确签名 ABI。「制品与版本」按组件归并不同版本和架构：服务器 Agent（`agent`）、运行时（`sing-box`）、诊断工具（`ipquality`、`tcpquality`、`nodequality`），其他组件按自己的名称列出。此响应不是任何服务器的已安装列表，也不能代替服务器能力、版本或安全门禁检查。
+`GET /api/system/agent-releases` 需要具备 `servers:read` 权限的管理员；`GET /api/bootstrap/versions?token=…` 需要有效接入令牌。查询可选 `target=auto/签名ABI`、`platform=unix/windows/linux`、`agent_version=latest/精确版本`。返回 `{policy:{default_version,selection,minimum_version},versions:[{version,tag,targets,protocol_min,protocol_max}]}`，默认最新目录仅含稳定版并按数字版本降序，Linux 的显式合法预发布版本可单独查询；原生服务入口按现有服务管理器约束只提供稳定版。`targets` 来自完整签名 proof。目录只提供候选，客户端须独立验签并检查本机 ABI/协议。
 
-界面入口为「系统 › 制品与版本」`/#/settings/artifacts`（ADR 0131；旧地址 `/#/settings/plugins` 保留一个发布版本，`/#/artifacts` 按 ADR 0126 不恢复）。页面只读，不发起安装、启用或任务。
-
-`GET /api/artifacts/targets` 返回 `{default_targets,supported_targets}`，仅管理员可读取。默认目标由现有服务器上报的 Agent/运行时平台架构推断；没有可用上报时使用面板宿主平台。
-
-`GET /api/artifacts/agent-versions` 需要管理员；`GET /api/bootstrap/versions?token=…` 需要有效接入令牌。查询可选 `target=auto/签名ABI`、`platform=unix/windows/linux`、`agent_version=latest/精确版本`。返回 `{versions:[{version,tag,targets,cached_targets,protocol_min,protocol_max}]}`，默认最新目录仅含稳定版并按数字版本降序，Linux 的显式合法预发布版本可单独查询；原生服务入口按现有服务管理器约束只提供稳定版。`targets` 来自完整签名 proof，`cached_targets` 只列已缓存且字节验证通过的 Agent；缺少缓存不隐藏合法签名目标。目录只提供候选，客户端须独立验签并检查本机 ABI/协议。
+`GET /api/system/agent-releases/targets` 需要所有者会话，返回 `{default_targets,supported_targets}`。独立制品列表（原 `GET /api/artifacts` 及 `/#/settings/artifacts` 页面）与设备制品下载（原 `/api/agent/v1/artifacts/...`）已按 [ADR 0141](adr/0141-self-contained-agent-and-desired-service-config.md) 移除；在线设备内置组件版本与摘要通过 `GET /api/servers` 与 `GET /api/servers/{id}` 的 `static_info.components`、`static_info.component_digests` 直接上报。
 
 `GET /api/bootstrap/{version}/{arch}?token=…` 验证接入令牌后仍返回 409：Agent 二进制必须从 GitHub Release 或独立 HTTPS 镜像下载，面板不提供 Agent。独立安装入口使用已签 metadata 的 asset_name 构造固定官方 tag 地址，只取本机系统/CPU/ABI，不向 GitHub/镜像发送 token 或设备凭据。
 
-`POST /api/artifacts/import-release` 是部署维护接口，插件目录不提供此操作。请求 `{"tag":"agent-v0.3.0","targets":["linux-gnu-arm64"]}`，`targets` 可省略以自动匹配，不接受空数组、重复或未知目标。仅接受固定官方仓库的规范 tag，不接受 URL。成功返回 `{tag,targets,artifacts,signature_verified:true}`。完整 proof 验签后，仅下载所选平台的兼容制品；ARM 不下载 AMD。所选内容在同文件系统私有 staging 完成核对，随后公布本地清单。相同标签可追加目标或重导以修复缺失/损坏的普通文件；旧完整目录兼容。同一身份不同内容返回 409，并发导入返回 429；下载/验签失败保留原集合。草稿、缺签名、非法根、软链路径或内容篡改均拒绝；面板镜像缺少编译时公钥时也返回 409。此接口只准备已验证的分发文件，不安装或运行插件。目录布局、独立 bootstrap 和轮换步骤见部署文档与 ADR 0017、0037、0038、0041。
+`POST /api/system/agent-releases/import` 是所有者部署维护接口（需近期再次验证），请求体为 `{"tag":"agent-v<版本>","targets":["linux-musl-amd64"]}`（`targets` 可选，省略时取 `default_targets`）。面板核对完整 minisign 签名 proof，并校验发布元数据中全部条目均为 `<= 128 MiB` 的单文件 `raw` `agent` 二进制后收录，返回 `{tag,version,targets,artifacts,signature_verified:true}`；草稿、缺签名、非 `agent` 条目、非法根、软链路径或内容篡改均拒绝，面板镜像缺少编译时公钥时返回 409。目录布局、独立 bootstrap 和轮换步骤见 [部署文档](deploy.md#导入签名-release) 与 ADR 0017、0037、0038、0041、0141。
 
 ## 服务器 IP 信息
 
@@ -430,7 +433,7 @@
 
 每个质量对象是 `{ip,checked_at,expires_at,status,databases,provider,last_attempt_at,last_success_at,fresh_until,last_error}`，status 为最近查询批次的 `succeeded`、`partial`、`failed`。每个数据库是 `{database,label,status,fields:[{label,value,kind}],error,provider,target_ip,attempted_at,elapsed_ms,error_kind,http_status,last_attempt_at,last_success_at,fresh_until,last_error,historical,available,unavailable_reason}`；数字零和布尔 false 保持原值，缺失字段省略。`provider` 标识真实入口：`check-place` 是旧聚合入口，七个 `database` 是该入口的响应形状（MaxMind 地理/ASN、IPAPI、Scamalytics、AbuseIPDB、IP2Location、IPData、IPQualityScore）。接口参数依据上游 IPQuality 源码，不假造 NodeQuality 的按 IP 查询接口。每种响应分别展示，不推导统一评分。正式来源 `abuseipdb-api` 仅有 `abuseipdb-v2` 响应视图，固定只读 CHECK、30 天窗口，展示文档定义的用途、国家代码、ISP、Tor 与 0–100 原始滥用置信度；必须确认目标 IP/版本/公网状态一致。正式响应中的该 score 仅接受 JSON 整数 0–100，缺失/空值/错误类型不推导为零分或 false。
 
-`providers` 是入口描述列表，字段为 `{provider,label,kind,execution,enabled,reason,databases:[{database,label}]}`。kind 为 aggregator/credential_api/node_self，execution 为 panel/node；enabled 仅表示可执行或已配置，不证明凭据授权/额度或最新查询成功。缺失/无效 `APSP_ABUSEIPDB_API_KEY` 不发正式接口请求，原因不含凭据，`ipquality-node` 目前明确未启用。没有请求就没有新缓存行或尝试时间。所有入口共用四并发/40 秒批次/单请求 3 秒连接与 6 秒总超时/64 KiB 上限，403/429 不重试或更改 UA。流媒体解锁保持未知，面板查询不冒充节点出口自查。
+`providers` 是入口描述列表，字段为 `{provider,label,kind,execution,enabled,reason,databases:[{database,label}]}`。kind 为 `aggregator`/`credential_api`/`node_self`，execution 为 `panel`/`node`；enabled 仅表示当前入口可直接由面板刷新或已有节点上报配置状态，不证明凭据额度或最新查询成功。缺失/无效 `APSP_ABUSEIPDB_API_KEY` 不发正式接口请求，原因不含凭据；`ipquality-node`、`ipregistry-node`、`dbip-node` 属于设备侧入口（不在面板 `refresh` 内代跑，`POST /api/servers/{id}/ip-quality/node-query` 与 `POST /api/servers/{id}/diagnostics/ipquality` 需满足在线签名一体化 Agent 身份核实与节点 root 私有配置授权）。没有请求就没有新缓存行或尝试时间。面板被动查询共用四并发/40 秒批次/单请求 3 秒连接与 6 秒总超时/64 KiB 上限，403/429 不重试或更改 UA。流媒体解锁在面板被动查询中保持未知，不冒充节点出口自查。
 
 `available` 表示缓存所属入口目前是否已启用，`unavailable_reason` 提供中文原因。已关闭或未注册入口的成功快照保留并标记 historical，不影响原尝试/成功时间、字段或当前错误；没有发生失败请求时不编造错误类别。旧接口仍可读取省略新增字段的旧 payload。
 
@@ -444,23 +447,25 @@
 
 页面读取不自动刷新；管理员手工刷新至少间隔一分钟，同机并发刷新在服务器行锁事务内去重。异常退出的运行租约过期后允许恢复。最多处理八个地址，每个源有限时及 64 KiB 响应上限，整体限时并限制并发。非公网地址不向第三方发送，并明确说明原因；外部服务 403、429、超时、非 JSON 或未知响应形状都作为相应源的失败保存，不是零风险。换 IP 不删除旧记录；页面仍只显示当前 IP，旧 IP 再出现时可读取原成功数据。
 
-## NodeQuality 报告
+## 诊断工具与 NodeQuality 报告
 
 | 方法与路径 | 请求与用途 |
 |---|---|
-| `GET /api/servers/{id}/node-quality/reports` | 返回 `{plugin_ready,plugin_reason,reports,cancel_supported,proxy_activity}`，NodeQualityView 不包含 IP 查询字段 |
+| `GET /api/servers/{id}/diagnostics` | 返回 `{cancel_supported,tools:[{tool,title,version,ready,reason}],reports}`，查看各诊断工具就绪状态与最近报告 |
+| `POST /api/servers/{id}/diagnostics/{tool}` | 向已登记诊断工具（如 `nodequality`、`ipquality`、`tcpquality`）提交参数并创建任务 |
+| `GET /api/servers/{id}/node-quality/reports` | 返回 `{tool_ready,tool_reason,full_ready,full_reason,reports,cancel_supported,proxy_activity}`，NodeQualityView 不包含 IP 查询字段 |
 | `POST /api/servers/{id}/node-quality/reports` | 日常：`{mode:"daily",ip_version:"both"}`；完整：`{mode:"full",confirm_full:true,acknowledge_traffic_warning:true,ip_version:"both",network_mode:"low"}`；创建一次性报告，返回 201 和任务记录 |
 
-`plugin_ready` 需要设备在线、明确 Linux、支持的架构、声明 `diagnostic:nodequality`、`diagnostic:nodequality-modes`、`diagnostic:report-sections` 与 `artifact:minisign-v1` 能力，以及有效对应 r4 签名制品；未就绪时 `plugin_reason` 提供原因。仅声明旧运行时能力的 Agent 不能领取诊断任务。报告读取不访问 IP 缓存，IP 缓存损坏或查询失败不会阻止读取已保存报告。
+`tool_ready` 按观测共用诊断服务判定（[ADR 0028](adr/0028-shared-diagnostic-job-service.md)、[ADR 0141](adr/0141-self-contained-agent-and-desired-service-config.md)）：需要设备 60 秒内在线、明确 `os="linux"`、架构为 `amd64`/`arm64`、当前允许接收设备任务，且同时声明 `agent:self-contained:v1`、`diagnostic:report-sections`、`diagnostic:job-service`、`diagnostic:confirmed-completion-v1`、`diagnostic:cpu-ceiling-v1` 以及对应工具能力（NodeQuality 为 `diagnostic:nodequality` 与 `diagnostic:nodequality-modes`，当前源码默认 `TOOL_VERSION` 为 `a92fca6c0067df29ddd03fdc2fee6f3000f64545-r22`），不再查找面板侧独立诊断制品；未就绪时 `tool_reason` 提供中文原因。仅声明旧能力的 Agent 不能领取诊断任务。报告读取不访问 IP 缓存，IP 缓存损坏或查询失败不会阻止读取已保存报告。
 
-过渡兼容保留 `GET /api/servers/{id}/node-quality` 的原 `{ip_addresses,quality,plugin_ready,plugin_reason,reports}` 组合响应，由 LegacyNodeQualityView 汇合两个视图；`POST /api/servers/{id}/node-quality/refresh` 继续作为相同 IP 刷新的别名。兼容读取路由、刷新间隔和历史保留；新建完整报告仍必须明确管理员确认。新前端只使用独立接口，服务器概况不加载这两个视图，子导航分别访问 `#/servers/{id}/ip-info` 和 `#/servers/{id}/node-quality`。
+过渡兼容保留 `GET /api/servers/{id}/node-quality` 的 `{ip_addresses,public_ip_addresses,private_ip_addresses,quality,providers,tool_ready,tool_reason,full_ready,full_reason,reports,cancel_supported,proxy_activity}` 组合响应，由 LegacyNodeQualityView 汇合两个视图；`POST /api/servers/{id}/node-quality/refresh` 继续作为相同 IP 刷新的别名。兼容读取路由、刷新间隔和历史保留；新建完整报告仍必须明确管理员确认。新前端只使用独立接口，服务器概况不加载这两个视图，子导航分别访问 `#/servers/{id}/ip-info` 和 `#/servers/{id}/node-quality`。
 
-任务记录包含 `{id,status,job,report,error,created_at,updated_at,expires_at,agent_completed,cancel_requested_at,cancel_error,expected_sections,report_completeness,sections}`。status 为 `queued`、`running`、`cancel_requested`、`cancelled`、`succeeded`、`failed`；job 的协议结构见 [设备协议](protocol.md)。入口 `mode=daily|full` 默认为 full，旧空请求因缺少明确完整确认而返回 400；`confirm_full` 和 `acknowledge_traffic_warning` 必须是真正 JSON bool。完整需要 confirm_full=true，流量 active/unknown 时还需要 acknowledge_traffic_warning=true，否则返回 409。`proxy_activity={state,reason,checked_at,last_positive_at}` 的 state 为 active、unknown 或 not_enabled，近一分钟正向代理计量为 active；配置存在但无新正向计量时为 unknown，不以网卡流量推断无连接。确认和该次流量证据作为 job 的额外审计字段保存。IP 版本允许 `both|ipv4|ipv6`；full 网络模式允许 `low|normal`，默认 both/low。daily 必须 low、关闭 upload_report，目标来自该服务器最多4个已启用TCP拨测，不能通过该接口传任意目标。每台设备同时最多一个活跃任务；等待确认取消也保持同机互斥；并发点击由事务锁与数据库唯一约束去重，返回 409。full 执行时限为30分钟，daily为90秒，面板均另留五分钟传输窗口。日常入口同时调用独立IP刷新接口，查询失败仍按逐源历史缓存显示；Agent只执行有界TCP检查，DNS2秒/每连接1秒/每地址族4次。资源profile日常64MiB/32tasks、完整512MiB/128，保留现有预检和运行保护。启动资源、负载与实际ServiceJob预算随检查点保存为environment独立章；日常预期2章，完整6章。
+任务记录 `ReportRecord` 包含 `{id,status,job,report,error,created_at,updated_at,expires_at,agent_completed,cleanup_pending,cancel_requested_at,cancel_error,expected_sections,report_completeness,sections}`。status 为 `queued`、`running`、`cleaning`、`cancel_requested`、`cancelled`、`succeeded`、`failed`；控制台 API 呈现边界将存储的诊断标识投影为 `job.tool`（数据库行 `diagnostic_jobs.job`、Agent wire `DiagnosticJob`、设备持久化检查点与签名报告仍按原契约保留 `plugin`，见 [设备协议](protocol.md)）。入口 `mode=daily|full` 默认为 full，旧空请求因缺少明确完整确认而返回 400；`confirm_full` 和 `acknowledge_traffic_warning` 必须是真正 JSON bool。完整需要 confirm_full=true，流量 active/unknown 时还需要 acknowledge_traffic_warning=true，否则返回 409。`proxy_activity={state,reason,checked_at,last_positive_at}` 的 state 为 active、unknown 或 not_enabled，近一分钟正向代理计量为 active；配置存在但无新正向计量时为 unknown，不以网卡流量推断无连接。确认和该次流量证据作为 job 的额外审计字段保存。IP 版本允许 `both|ipv4|ipv6`；full 网络模式允许 `low|normal`，默认 both/low。daily 必须 low、关闭 upload_report，目标来自该服务器最多4个已启用TCP拨测，不能通过该接口传任意目标。每台设备同时最多一个活跃任务；等待确认取消也保持同机互斥；并发点击由事务锁与数据库唯一约束去重，返回 409。full 执行时限为30分钟，daily为90秒，面板均另留五分钟传输窗口。日常入口同时调用独立IP刷新接口，查询失败仍按逐源历史缓存显示；Agent只执行有界TCP检查，DNS2秒/每连接1秒/每地址族4次。资源profile日常64MiB/32tasks、完整512MiB/128，保留现有预检和运行保护。启动资源、负载与实际ServiceJob预算随检查点保存为environment独立章；日常预期2章，完整5章（另加保存的 environment 章）。
 
 report 为 `{text,report_url?}`，文本以纯文本呈现，协议接受上限 512 KiB；NodeQuality 适配器输出最多 256 KiB，超过时标注截断，原始 ZIP 保留在节点本地。可选链接限定 NodeQuality 官方 HTTPS origin。在线上传失败仍可保存本地报告。报告会执行节点上的资源和带宽测试，上游可能生成公开链接；只有管理员明确点击才创建任务。设备结果持久化后才确认，重复最终回报幂等；晚到的 running 不覆盖最终结果。
 
 
-## DDNS 插件（Cloudflare）
+## 动态域名解析（Cloudflare）
 
 全部接口要求管理员会话，不进入 Agent API 或公开看板。不需要按服务器启用（2026-11-05 起，见 ADR 0110），规则自身的 `enabled` 是唯一开关；核心 IP 报告不包含 Token。
 
@@ -479,7 +484,7 @@ report 为 `{text,report_url?}`，文本以纯文本呈现，协议接受上限 
 
 写入体为 `{"config":{"name":"示例规则","server_id":1,"zone_id":"00000000000000000000000000000000","record_name":"node.example.com","record_type":"A","ttl":1,"proxied":false,"interval_secs":300,"enabled":false,"adopt_existing":false},"api_token":"YOUR_CLOUDFLARE_API_TOKEN"}`。Zone、域名、Token 与服务器 ID 均需替换为自己管理的资源。更新另加 `revision`；Zone、域名和类型不可改变。接口拒绝重复身份、非法域名/TTL、过期修订及运行中修改。
 
-执行返回的 `status` 为 pending/running/updated/unchanged/waiting/error，`error_code` 为固定脱敏代码。同步 API 成功返回结果不代表 Cloudflare 一定写入成功，应检查 status/error_code；失败保留 last_ip/last_success_at。busy 反映是否正在同步；读取无外部请求。详细语义见 [DDNS 插件](ddns.md)。
+执行返回的 `status` 为 pending/running/updated/unchanged/waiting/error，`error_code` 为固定脱敏代码。同步 API 成功返回结果不代表 Cloudflare 一定写入成功，应检查 status/error_code；失败保留 last_ip/last_success_at。busy 反映是否正在同步；读取无外部请求。详细语义见 [动态域名解析](ddns.md)。
 
 
 ### 阿里云 CDT 历史与 Cron 预览（ADR 0121）

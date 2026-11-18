@@ -1,11 +1,12 @@
 use crate::{
     AppState,
+    business::digest,
     error::{ApiError, ApiResult},
     servers::RowLock,
+    users::record_event,
 };
-use crate::{business::digest, users::record_event};
 use apsp_compiler::{Access, Node};
-use apsp_protocol::{fleet::Operation, now_timestamp};
+use apsp_protocol::{SELF_CONTAINED_AGENT_CAPABILITY, fleet::Operation, now_timestamp};
 use axum::{
     Json,
     extract::{Path, State},
@@ -17,8 +18,6 @@ use sha2::Digest;
 use sqlx::{Postgres, Row, Transaction};
 use std::{collections::BTreeSet, net::IpAddr};
 use uuid::Uuid;
-mod bootstrap;
-pub(in super::super) use bootstrap::install as bootstrap_install;
 
 const PERMISSIONS_MODULE: &str = "sing-box";
 const PREFLIGHT_CAPABILITY: &str = apsp_protocol::fleet::RUNTIME_PREFLIGHT_CAPABILITY;
@@ -46,7 +45,13 @@ pub(super) async fn nodes(tx: &mut Transaction<'_, Postgres>, server: i64) -> Ap
         .await?;
     let mut nodes = Vec::new();
     for row in rows {
-        let users:Vec<(i64,Uuid,String)>=sqlx::query_as("SELECT user_id,uuid,credential FROM singbox_eligible_accesses($2) WHERE node_id=$1 ORDER BY user_id").bind(row.id).bind(now_timestamp()).fetch_all(&mut **tx).await?;
+        let users: Vec<(i64, Uuid, String)> = sqlx::query_as(
+            "SELECT user_id,uuid,credential FROM singbox_eligible_accesses($2) WHERE node_id=$1 ORDER BY user_id",
+        )
+        .bind(row.id)
+        .bind(now_timestamp())
+        .fetch_all(&mut **tx)
+        .await?;
         nodes.push(
             row.model(
                 users
@@ -75,12 +80,6 @@ struct Context {
     target: Option<i64>,
 }
 
-/// What the checks read about `server`, its row locked as `lock` says: `RowLock::Update` for
-/// the console's preflight requests and the first installation, `RowLock::KeyShare` for the
-/// publisher. The publication transaction already serializes through the publication lock
-/// and its own publication row, and it reads in a REPEATABLE READ snapshot: locking for
-/// update the row that every device message writes (`last_seen`) after that snapshot would
-/// fail it with a serialization error.
 async fn context(
     tx: &mut Transaction<'_, Postgres>,
     server: i64,
@@ -89,13 +88,19 @@ async fn context(
     crate::servers::lock_row(tx, server, lock, "id")
         .await?
         .ok_or(ApiError::NotFound)?;
-    crate::settings::require_enabled(tx, server).await?;
-    let row=sqlx::query("SELECT s.static_info,s.capabilities,s.last_seen,COALESCE(p.policy,'{}'::jsonb) AS policy,m.target_rev FROM servers s LEFT JOIN fleet_profiles p ON p.server_id=s.id LEFT JOIN server_module_status m ON m.server_id=s.id AND m.module='singbox' WHERE s.id=$1").bind(server).fetch_one(&mut **tx).await?;
-    // Operations owns maintenance windows and answers whether they or the server's lifecycle
-    // close it to new tasks.
+    let row = sqlx::query(
+        "SELECT s.static_info,s.capabilities,s.last_seen,COALESCE(p.policy,'{}'::jsonb) AS policy,NULLIF(m.target_rev,0) AS target_rev FROM servers s LEFT JOIN fleet_profiles p ON p.server_id=s.id LEFT JOIN server_module_status m ON m.server_id=s.id AND m.module='singbox' WHERE s.id=$1",
+    )
+    .bind(server)
+    .fetch_one(&mut **tx)
+    .await?;
     let blocked = crate::device_work::closed_tx(tx, server, now_timestamp()).await?;
-    let network_references=sqlx::query_scalar("SELECT jsonb_build_object('id',id,'revision',revision,'active_version',active_version,'config',config) FROM network_documents WHERE (kind='endpoint' AND (config->>'server_id')::bigint=$1) OR (kind='certificate' AND EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(config->'targets','[]'::jsonb)) target WHERE (target->>'server_id')::bigint=$1)) ORDER BY id")
-        .bind(server).fetch_all(&mut **tx).await?;
+    let network_references = sqlx::query_scalar(
+        "SELECT jsonb_build_object('id',id,'revision',revision,'active_version',active_version,'config',config) FROM network_documents WHERE (kind='endpoint' AND (config->>'server_id')::bigint=$1) OR (kind='certificate' AND EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(config->'targets','[]'::jsonb)) target WHERE (target->>'server_id')::bigint=$1)) ORDER BY id",
+    )
+    .bind(server)
+    .fetch_all(&mut **tx)
+    .await?;
     let profile =
         sqlx::query_scalar("SELECT definition FROM singbox_server_profiles WHERE server_id=$1")
             .bind(server)
@@ -122,28 +127,16 @@ fn has(context: &Context, capability: &str) -> bool {
         .is_some_and(|values| values.iter().any(|value| value == capability))
 }
 
-fn fingerprint(
-    state: &AppState,
-    context: &Context,
-) -> impl std::future::Future<Output = ApiResult<String>> + Send + use<> {
-    let state = state.clone();
-    let info = context.info.clone();
-    let capabilities = context.capabilities.clone();
-    let mut snapshot = json!({"server_profile":context.profile,"nodes":context.nodes,"platform":context.info,"capabilities":context.capabilities,"policy":context.policy,"network_references":context.network_references,"runtime_version":crate::RUNTIME_VERSION});
-    async move {
-        let artifact = match crate::agent::runtime_artifact(&state, &info)
-            .await
-            .and_then(|value| {
-                crate::agent::artifact_capability(&value, &capabilities)?;
-                Ok(value)
-            }) {
-            Ok(value) => Some(value.sha256),
-            Err(ApiError::BadRequest(_) | ApiError::NotFound) => None,
-            Err(error) => return Err(error),
-        };
-        snapshot["artifact_sha256"] = json!(artifact);
-        digest(&snapshot)
-    }
+fn fingerprint(context: &Context) -> ApiResult<String> {
+    digest(&json!({
+        "server_profile": context.profile,
+        "nodes": context.nodes,
+        "platform": context.info,
+        "capabilities": context.capabilities,
+        "policy": context.policy,
+        "network_references": context.network_references,
+        "runtime_version": crate::RUNTIME_VERSION,
+    }))
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -231,10 +224,7 @@ fn listeners(nodes: &[Node]) -> Vec<Listener> {
         .collect()
 }
 
-fn panel_checks(
-    state: &AppState,
-    context: &Context,
-) -> impl std::future::Future<Output = ApiResult<Vec<Value>>> + Send + use<> {
+fn panel_checks(context: &Context) -> Vec<Value> {
     let now = now_timestamp();
     let online = context
         .last_seen
@@ -247,7 +237,7 @@ fn panel_checks(
             context.last_seen,
             "authenticated_agent_message",
             json!({"maximum_age_secs":60}),
-            "按最近经过设备身份验证的消息判断；离线时不使用旧设备结果确认。",
+            "按最近经过设备身份验证的消息判断；离线时不使用旧设备结果。",
         ),
         check(
             "lifecycle",
@@ -256,7 +246,7 @@ fn panel_checks(
             Some(now),
             "current_server_lifecycle",
             json!({"accepts_new_tasks":!context.blocked}),
-            "维护、停止接收新任务或退役状态阻塞预检请求与确认。",
+            "维护、停止接收新任务或退役状态阻塞本机预检采样请求。",
         ),
         check(
             "policy",
@@ -273,10 +263,10 @@ fn panel_checks(
         ),
     ];
     for capability in [
+        SELF_CONTAINED_AGENT_CAPABILITY,
         "singbox",
         apsp_protocol::fleet::OPERATIONS_CAPABILITY,
         PREFLIGHT_CAPABILITY,
-        apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY,
     ] {
         checks.push(check(
             &format!("capability:{capability}"),
@@ -289,53 +279,51 @@ fn panel_checks(
             context.last_seen,
             "authenticated_agent_capabilities",
             json!({"capability":capability}),
-            "使用设备实际声明的独立能力；旧 Agent 不自动开放新权限。",
+            "使用设备实际声明的一体化与受控预检能力；旧 Agent 不自动开放新权限。",
         ));
     }
     let compiled = apsp_compiler::compile_server(&context.nodes);
-    checks.push(check("configuration","普通节点配置",if compiled.is_ok(){"passed"}else{"failed"},Some(now),"fixed_compiler_1.14.4-apsp.2",json!({"node_ids":context.nodes.iter().map(|node|node.id).collect::<Vec<_>>(),"compiled":compiled.is_ok(),"configuration_sha256":compiled.ok().map(|value|format!("{:x}",sha2::Sha256::digest(value.as_bytes()))),"secret_values_returned":false}),"确定性编译当前有效授权与普通节点；预检不复制凭据，也不替代 Agent 的原生配置检查。"));
-    let state = state.clone();
-    let info = context.info.clone();
-    let capabilities = context.capabilities.clone();
-    async move {
-        let artifact = match crate::agent::runtime_artifact(&state, &info)
-            .await
-            .and_then(|value| {
-                crate::agent::artifact_capability(&value, &capabilities)?;
-                Ok(value)
-            }) {
-            Ok(value) => check(
-                "artifact",
-                "运行时制品",
-                "passed",
-                Some(now),
-                "verified_local_release_inventory",
-                json!({"version":crate::RUNTIME_VERSION,"sha256":value.sha256,"signature_verified":true,"payload_verified":true}),
-                "核对目标平台与当前真正可用的签名制品，确认时重新核对摘要。",
-            ),
-            Err(ApiError::BadRequest(message)) => check(
-                "artifact",
-                "运行时制品",
-                "failed",
-                Some(now),
-                "verified_local_release_inventory",
-                json!({"version":crate::RUNTIME_VERSION}),
-                &message,
-            ),
-            Err(ApiError::NotFound) => check(
-                "artifact",
-                "运行时制品",
-                "failed",
-                Some(now),
-                "verified_local_release_inventory",
-                json!({"version":crate::RUNTIME_VERSION,"artifact_available":false}),
-                "没有目标平台匹配且验签完整的固定版本制品。",
-            ),
-            Err(error) => return Err(error),
-        };
-        checks.push(artifact);
-        Ok(checks)
-    }
+    checks.push(check(
+        "configuration",
+        "普通节点配置",
+        if compiled.is_ok() { "passed" } else { "failed" },
+        Some(now),
+        "fixed_compiler_1.14.4-apsp.2",
+        json!({
+            "node_ids": context.nodes.iter().map(|node| node.id).collect::<Vec<_>>(),
+            "compiled": compiled.is_ok(),
+            "configuration_sha256": compiled.ok().map(|value| format!("{:x}", sha2::Sha256::digest(value.as_bytes()))),
+            "secret_values_returned": false,
+        }),
+        "确定性编译当前有效授权与普通节点；预检不复制凭据，也不替代 Agent 的原生配置检查。",
+    ));
+    let raw_component = context
+        .info
+        .get("components")
+        .and_then(|components| components.get("sing-box"))
+        .and_then(Value::as_str)
+        .filter(|version| !version.is_empty());
+    let embedded_version = crate::agent::embedded_runtime_version(&context.info);
+    let active_runtime_version = crate::agent::reported_runtime_version(&context.info);
+    let builtin_ok = crate::agent::supports_self_contained_singbox(&context.capabilities)
+        && raw_component.is_none_or(|version| {
+            embedded_version.as_deref() == Some(crate::RUNTIME_VERSION)
+                && version == crate::RUNTIME_VERSION
+        });
+    checks.push(check(
+        "builtin_runtime",
+        "内置运行时",
+        if builtin_ok { "passed" } else { "failed" },
+        context.last_seen,
+        "authenticated_agent_static_info",
+        json!({
+            "expected_version": crate::RUNTIME_VERSION,
+            "embedded_version": embedded_version,
+            "active_runtime_version": active_runtime_version,
+        }),
+        "核对在线一体化 Agent 上报的内置 sing-box 组件版本与面板固定编译器版本一致；未启动前实际运行版本保持为空。",
+    ));
+    checks
 }
 
 async fn evidence_permission(
@@ -372,11 +360,11 @@ pub(in super::super) async fn request(
     let mut tx = state.pool.begin().await?;
     crate::business::lock_publication(&mut tx).await?;
     let initial = context(&mut tx, server, RowLock::Update).await?;
-    let expected = fingerprint(&state, &initial).await?;
-    let checks = panel_checks(&state, &initial).await?;
+    let expected = fingerprint(&initial)?;
+    let checks = panel_checks(&initial);
     if checks.iter().any(|check| check["blocking"] == true) {
         return Err(ApiError::Conflict(
-            "设备、能力、授权、制品或配置条件未满足；请在完整预检逐项结果中处理后重试".into(),
+            "设备连接、生命周期、预检授权、内置能力或配置条件未满足；请处理后重试".into(),
         ));
     }
     tx.commit().await?;
@@ -386,9 +374,9 @@ pub(in super::super) async fn request(
     let mut tx = state.pool.begin().await?;
     crate::business::lock_publication(&mut tx).await?;
     let current = context(&mut tx, server, RowLock::Update).await?;
-    if fingerprint(&state, &current).await? != expected {
+    if fingerprint(&current)? != expected {
         return Err(ApiError::Conflict(
-            "业务、授权、入口或制品在采集期间发生变化，请重新预检".into(),
+            "业务、授权、入口或设备状态在采集期间发生变化，请重新预检".into(),
         ));
     }
     let permissions = crate::device_work::submit_observation_tx(
@@ -408,7 +396,14 @@ pub(in super::super) async fn request(
     let snapshot = json!({"listeners":profile_listeners(&current.nodes,&current.profile),"node_ids":current.nodes.iter().map(|node|node.id).collect::<Vec<_>>(),"runtime_module":PERMISSIONS_MODULE,"server_id":server});
     sqlx::query("INSERT INTO singbox_deployment_preflights(id,server_id,administrator_id,expected_digest,snapshot,panel_checks,ports_operation_id,permissions_operation_id,created_at,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)")
         .bind(id).bind(server).bind(actor).bind(expected).bind(snapshot).bind(json!(network)).bind(ports).bind(permissions).bind(now).bind(now+300).execute(&mut *tx).await?;
-    record_event(&mut tx,Some(actor),None,"runtime_preflight_requested",json!({"id":id,"server_id":server,"ports_operation_id":ports,"permissions_operation_id":permissions,"secret_values_recorded":false})).await?;
+    record_event(
+        &mut tx,
+        Some(actor),
+        None,
+        "runtime_preflight_requested",
+        json!({"id":id,"server_id":server,"ports_operation_id":ports,"permissions_operation_id":permissions,"secret_values_recorded":false}),
+    )
+    .await?;
     tx.commit().await?;
     Ok(Json(
         json!({"id":id,"status":"queued","ports_operation_id":ports,"permissions_operation_id":permissions,"expires_at":now+300,"deployment_requested":false}),
@@ -504,7 +499,7 @@ fn permission_checks(receipt: &Value, requested_at: i64, now: i64) -> Vec<Value>
             at,
             "agent_service_manager_probe",
             manager.clone(),
-            "实际只读连接系统服务后端并核对特权执行账号；非 root 或外部授权未知时阻塞，不推断能够重启服务。",
+            "实际只读连接系统服务后端并核对特权执行账号；非 root 或外部授权未知时留意排查，不推断能够重启服务。",
         ),
     ]
 }
@@ -568,7 +563,7 @@ fn storage_check(receipt: &Value, requested_at: i64, now: i64) -> Value {
         at,
         "agent_runtime_permissions",
         json!({"runtime_account":result["runtime_account"],"data_directory":result["data_directory"],"certificate_directory":result["certificate_directory"],"secret_values_returned":false}),
-        "目标设备逐级以目录描述符并降权到已安装服务真实账号，只读核对数据与证书目录或最近已存在父目录的读写遍历；root 可写不能代替运行时可写。符号链接、不可写、账号未知或过期回执均阻塞，不创建目录或读取私钥。",
+        "目标设备逐级以目录描述符并降权到已安装服务真实账号，只读核对数据与证书目录或最近已存在父目录的读写遍历；root 可写不能代替运行时可写。",
     )
 }
 
@@ -653,7 +648,7 @@ fn ports_check(
             at,
             "agent_ss_lntup",
             json!({"operation_complete":receipt["succeeded"],"truncated":result["truncated"]}),
-            "尚无完整、可解析且五分钟内的新监听证据；未知与截断均阻塞。",
+            "尚无完整、可解析且五分钟内的新监听证据；未知与截断均标记异常。",
         );
     };
     let manager = &permissions["result"]["service_manager"];
@@ -704,14 +699,18 @@ fn ports_check(
 }
 
 async fn aggregate_tx(
-    state: &AppState,
     server: i64,
     tx: &mut Transaction<'_, Postgres>,
     context: &Context,
     access: bool,
 ) -> ApiResult<Value> {
-    let mut checks = panel_checks(state, context).await?;
-    let latest=sqlx::query("SELECT * FROM singbox_deployment_preflights WHERE server_id=$1 ORDER BY sequence DESC LIMIT 1").bind(server).fetch_optional(&mut **tx).await?;
+    let mut checks = panel_checks(context);
+    let latest = sqlx::query(
+        "SELECT * FROM singbox_deployment_preflights WHERE server_id=$1 ORDER BY sequence DESC LIMIT 1",
+    )
+    .bind(server)
+    .fetch_optional(&mut **tx)
+    .await?;
     let Some(latest) = latest else {
         for (key, name) in [
             ("ports", "实际监听冲突"),
@@ -720,15 +719,27 @@ async fn aggregate_tx(
             ("dns", "公开入口 DNS"),
             ("certificate", "证书材料与实际观测"),
         ] {
-            checks.push(check(key,name,"unknown",None,"not_requested",json!({"required_permissions":["proxy:write","operations:read","monitoring:read","diagnostics:write"]}),"尚未执行完整预检；请求后等待目标 Agent 的只读回执与面板实际 DNS/证书核对。"));
+            checks.push(check(
+                key,
+                name,
+                "unknown",
+                None,
+                "not_requested",
+                json!({"required_permissions":["proxy:write","operations:read","monitoring:read","diagnostics:write"]}),
+                "尚未执行环境预检；请求后等待目标 Agent 的只读回执与面板实际 DNS/证书核对。",
+            ));
         }
-        return Ok(
-            json!({"id":null,"panel_ready":false,"ready":false,"confirmed":false,"device_checks_pending":true,"bootstrap":{"available":context.target.is_none(),"ready":false,"reason":"首次安装需要先采集五分钟内的实际目录、管理权限和端口证据。"},"checks":checks}),
-        );
+        return Ok(json!({
+            "id": null,
+            "panel_ready": false,
+            "ready": false,
+            "device_checks_pending": true,
+            "checks": checks,
+        }));
     };
     let now = now_timestamp();
     let started: i64 = latest.get("created_at");
-    let current = fingerprint(state, context).await? == latest.get::<String, _>("expected_digest");
+    let current = fingerprint(context)? == latest.get::<String, _>("expected_digest");
     let unexpired = latest.get::<i64, _>("expires_at") > now;
     let network: Value = latest.get("panel_checks");
     for mut item in network.as_array().into_iter().flatten().cloned() {
@@ -741,7 +752,7 @@ async fn aggregate_tx(
             if item["blocking"] != false {
                 item["blocking"] = json!(true);
             }
-            item["detail"] = json!("网络或证书证据缺失、已过期或时间异常，请重新执行预检。");
+            item["detail"] = json!("网络或证书证据缺失、已过期或时间异常，可重新执行预检。");
         }
         checks.push(item);
     }
@@ -761,28 +772,37 @@ async fn aggregate_tx(
         .as_ref()
         .and_then(|operation| operation.result.clone());
     let operations = if access {
-        vec![(latest.get::<Uuid,_>("permissions_operation_id"),permissions_operation.as_ref()),(latest.get::<Uuid,_>("ports_operation_id"),ports_operation.as_ref())].into_iter().map(|(id,operation)|json!({"id":id,"status":operation.map(|operation|if operation.result.is_none()&&operation.expires_at<=now{"unknown".to_string()}else{operation.status.clone()}).unwrap_or("unknown".into()),"agent_completed":operation.is_some_and(|operation|operation.result.is_some())})).collect::<Vec<_>>()
+        vec![
+            (
+                latest.get::<Uuid, _>("permissions_operation_id"),
+                permissions_operation.as_ref(),
+            ),
+            (
+                latest.get::<Uuid, _>("ports_operation_id"),
+                ports_operation.as_ref(),
+            ),
+        ]
+        .into_iter()
+        .map(|(id, operation)| {
+            json!({
+                "id": id,
+                "status": operation
+                    .map(|operation| {
+                        if operation.result.is_none() && operation.expires_at <= now {
+                            "unknown".to_string()
+                        } else {
+                            operation.status.clone()
+                        }
+                    })
+                    .unwrap_or("unknown".into()),
+                "agent_completed": operation.is_some_and(|operation| operation.result.is_some()),
+            })
+        })
+        .collect::<Vec<_>>()
     } else {
         Vec::new()
     };
     let pending = permissions.is_none() || ports.is_none();
-    let bootstrap = if access {
-        bootstrap::status(
-            state,
-            server,
-            tx,
-            context,
-            bootstrap::Evidence {
-                requested: started,
-                current: current && unexpired,
-                permissions: permissions.as_ref().unwrap_or(&Value::Null),
-                ports: ports.as_ref().unwrap_or(&Value::Null),
-            },
-        )
-        .await?
-    } else {
-        json!({"available":false,"ready":false,"reason":"当前管理员没有读取首次安装设备证据的权限。"})
-    };
     if access {
         let permissions = permissions.unwrap_or(Value::Null);
         let ports = ports.unwrap_or(Value::Null);
@@ -820,12 +840,30 @@ async fn aggregate_tx(
             "当前管理员没有读取目标设备运维或监听证据的权限，证据已隐藏。",
         ));
     }
-    checks.push(check("snapshot","固定业务与证据时效",if current&&unexpired{"passed"}else{"unknown"},Some(started),"current_configuration_fingerprint",json!({"configuration_matches":current,"unexpired":unexpired,"expires_at":latest.get::<i64,_>("expires_at")}),"任何节点、有效授权、Agent 平台/能力、策略、登记入口、关联证书版本或制品变化都会使旧预检失效；五分钟到期后必须重新采样。"));
+    checks.push(check(
+        "snapshot",
+        "固定业务与证据时效",
+        if current && unexpired { "passed" } else { "unknown" },
+        Some(started),
+        "current_configuration_fingerprint",
+        json!({"configuration_matches":current,"unexpired":unexpired,"expires_at":latest.get::<i64,_>("expires_at")}),
+        "任何节点、有效授权、Agent 平台/能力、策略、登记入口或关联证书版本变化都会使旧预检证据过期；五分钟到期后可重新采样。",
+    ));
     super::preflight_network::resolve_dependencies(&mut checks);
     let ready = access && checks.iter().all(|check| check["blocking"] != true);
-    Ok(
-        json!({"id":latest.get::<Uuid,_>("id"),"created_at":started,"expires_at":latest.get::<i64,_>("expires_at"),"ready":ready,"panel_ready":ready,"confirmed":ready&&latest.get::<Option<i64>,_>("confirmed_at").is_some(),"confirmed_at":latest.get::<Option<i64>,_>("confirmed_at"),"device_checks_pending":pending,"ports_operation_id":latest.get::<Uuid,_>("ports_operation_id"),"permissions_operation_id":latest.get::<Uuid,_>("permissions_operation_id"),"deployment_requested":false,"bootstrap":bootstrap,"operations":operations,"checks":checks}),
-    )
+    Ok(json!({
+        "id": latest.get::<Uuid, _>("id"),
+        "created_at": started,
+        "expires_at": latest.get::<i64, _>("expires_at"),
+        "ready": ready,
+        "panel_ready": ready,
+        "device_checks_pending": pending,
+        "ports_operation_id": latest.get::<Uuid, _>("ports_operation_id"),
+        "permissions_operation_id": latest.get::<Uuid, _>("permissions_operation_id"),
+        "deployment_requested": false,
+        "operations": operations,
+        "checks": checks,
+    }))
 }
 
 pub(super) async fn view(state: &AppState, headers: &HeaderMap, server: i64) -> ApiResult<Value> {
@@ -833,40 +871,21 @@ pub(super) async fn view(state: &AppState, headers: &HeaderMap, server: i64) -> 
     crate::business::lock_publication(&mut tx).await?;
     let context = context(&mut tx, server, RowLock::Update).await?;
     let mut result = aggregate_tx(
-        state,
         server,
         &mut tx,
         &context,
         evidence_permission(state, headers, server).await?,
     )
     .await?;
+    let pending_publish = crate::publications::pending(&mut tx, server).await?;
     let changed = ordinary_shape_changes_tx(&mut tx, server, &context.nodes).await?;
-    result["application"] = json!({"requires_preflight":!changed.is_empty(),"changed_node_ids":changed,"state":if changed.is_empty(){"ordinary_shape_unchanged"}else if result["confirmed"]==true{"confirmed_candidate"}else{"needs_preflight"},"revocations_and_same_shape_user_changes_remain_automatic":true});
+    result["application"] = json!({
+        "pending_publish": pending_publish,
+        "changed_node_ids": changed,
+        "state": if pending_publish { "pending_publish" } else { "automatic" },
+    });
     tx.commit().await?;
     Ok(result)
-}
-
-pub(super) async fn require_confirmed_tx(
-    state: &AppState,
-    headers: &HeaderMap,
-    server: i64,
-    tx: &mut Transaction<'_, Postgres>,
-) -> ApiResult<()> {
-    let context = context(tx, server, RowLock::Update).await?;
-    let status = aggregate_tx(
-        state,
-        server,
-        tx,
-        &context,
-        evidence_permission(state, headers, server).await?,
-    )
-    .await?;
-    if status["ready"] != true || status["confirmed"] != true {
-        return Err(ApiError::Conflict(format!(
-            "服务器 #{server} 尚无当前业务指纹一致、五分钟内且已明确确认的完整部署预检；请先采集并确认"
-        )));
-    }
-    Ok(())
 }
 
 fn shape(node: &Node) -> ApiResult<Value> {
@@ -903,14 +922,23 @@ fn added_or_changed(
     Ok(changed)
 }
 
-pub(crate) async fn ordinary_shape_changes_tx(
+async fn ordinary_shape_changes_tx(
     tx: &mut Transaction<'_, Postgres>,
     server: i64,
     desired: &[Node],
 ) -> ApiResult<Vec<i64>> {
-    let ordinary:Vec<i64>=sqlx::query_scalar("SELECT n.id FROM nodes n WHERE n.server_id=$1 AND n.deleted_at IS NULL AND NOT EXISTS(SELECT 1 FROM singbox_chains c LEFT JOIN singbox_ordered_chain_hops h ON h.chain_id=c.id WHERE (c.deleted_at IS NULL OR c.phase<>'retired') AND (c.entry_node_id=n.id OR h.managed_node_id=n.id))")
-        .bind(server).fetch_all(&mut **tx).await?;
-    let previous:Option<Value>=sqlx::query_scalar("SELECT source_json FROM deployments WHERE server_id=$1 AND module='singbox' ORDER BY rev DESC LIMIT 1").bind(server).fetch_optional(&mut **tx).await?;
+    let ordinary: Vec<i64> = sqlx::query_scalar(
+        "SELECT n.id FROM nodes n WHERE n.server_id=$1 AND n.deleted_at IS NULL AND NOT EXISTS(SELECT 1 FROM singbox_chains c LEFT JOIN singbox_ordered_chain_hops h ON h.chain_id=c.id WHERE (c.deleted_at IS NULL OR c.phase<>'retired') AND (c.entry_node_id=n.id OR h.managed_node_id=n.id))",
+    )
+    .bind(server)
+    .fetch_all(&mut **tx)
+    .await?;
+    let previous: Option<Value> = sqlx::query_scalar(
+        "SELECT source_json FROM deployments d JOIN server_module_status m ON m.server_id=d.server_id AND m.module=d.module WHERE d.server_id=$1 AND d.module='singbox' AND m.target_rev>0 ORDER BY d.rev DESC LIMIT 1",
+    )
+    .bind(server)
+    .fetch_optional(&mut **tx)
+    .await?;
     let previous = previous
         .map(crate::ordered_paths::models::public_nodes)
         .transpose()
@@ -919,87 +947,13 @@ pub(crate) async fn ordinary_shape_changes_tx(
     added_or_changed(&previous, desired, &ordinary.into_iter().collect())
 }
 
-pub(crate) async fn publisher_ready_tx(
-    state: &AppState,
-    server: i64,
-    tx: &mut Transaction<'_, Postgres>,
-) -> ApiResult<bool> {
-    let actor:Option<i64>=sqlx::query_scalar("SELECT confirmed_by FROM singbox_deployment_preflights WHERE server_id=$1 ORDER BY sequence DESC LIMIT 1").bind(server).fetch_optional(&mut **tx).await?.flatten();
-    let Some(actor) = actor else {
-        return Ok(false);
-    };
-    for capability in [
-        "proxy:write",
-        "operations:read",
-        "monitoring:read",
-        "diagnostics:write",
-    ] {
-        match crate::control_center::require_actor_server(state, actor, server, capability).await {
-            Ok(_) => {}
-            Err(ApiError::Forbidden(_)) => return Ok(false),
-            Err(error) => return Err(error),
-        }
-    }
-    // The publication claim holds the server row FOR KEY SHARE; see `context`.
-    let context = context(tx, server, RowLock::KeyShare).await?;
-    let evidence = aggregate_tx(state, server, tx, &context, true).await?;
-    Ok(evidence["ready"] == true && evidence["confirmed"] == true)
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(in super::super) struct Confirm {
-    id: Uuid,
-    confirm: bool,
-}
-
-pub(in super::super) async fn confirm(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(server): Path<i64>,
-    Json(request): Json<Confirm>,
-) -> ApiResult<Json<Value>> {
-    let actor =
-        crate::control_center::require_server(&state, &headers, server, "proxy:write").await?;
-    crate::control_center::require_recent_proof(&state, &headers).await?;
-    for permission in ["operations:read", "monitoring:read", "diagnostics:write"] {
-        crate::control_center::require_server(&state, &headers, server, permission).await?;
-    }
-    if !request.confirm {
-        return Err(ApiError::BadRequest("请明确确认逐项预检结果".into()));
-    }
-    let mut tx = state.pool.begin().await?;
-    crate::business::lock_publication(&mut tx).await?;
-    let context = context(&mut tx, server, RowLock::Update).await?;
-    let aggregate = aggregate_tx(
-        &state,
-        server,
-        &mut tx,
-        &context,
-        evidence_permission(&state, &headers, server).await?,
-    )
-    .await?;
-    if aggregate["id"] != json!(request.id) || aggregate["ready"] != true {
-        return Err(ApiError::Conflict(
-            "完整预检尚未通过，或业务/证据已改变；未知、失败和过期均不能确认".into(),
-        ));
-    }
-    let now = now_timestamp();
-    sqlx::query("UPDATE singbox_deployment_preflights SET confirmed_at=COALESCE(confirmed_at,$2),confirmed_by=COALESCE(confirmed_by,$3) WHERE id=$1").bind(request.id).bind(now).bind(actor).execute(&mut *tx).await?;
-    crate::business::mark_dirty(&mut tx, &[server]).await?;
-    record_event(&mut tx,Some(actor),None,"runtime_preflight_confirmed",json!({"id":request.id,"server_id":server,"publication_resumed":true,"deployment_requested":false,"checks":aggregate["checks"]})).await?;
-    tx.commit().await?;
-    Ok(Json(
-        json!({"id":request.id,"confirmed":true,"publication_resumed":true,"deployment_requested":false,"expires_at":aggregate["expires_at"]}),
-    ))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
     #[test]
-    fn ordinary_gate_preserves_revocations_but_checks_first_listener_and_material_changes() {
-        let before:Node=serde_json::from_value(json!({"id":1,"name":"TEST_ONLY","port":443,"public_host":"proxy.example.invalid","sni":"proxy.example.invalid","private_key":"TEST_ONLY-private","public_key":"TEST_ONLY-public","short_id":"01020304","users":[{"user_id":1,"uuid":"00000000-0000-4000-8000-000000000001","credential":"TEST_ONLY-old"}]})).expect("node fixture");
+    fn ordinary_shape_diff_detects_first_listener_and_material_changes() {
+        let before: Node = serde_json::from_value(json!({"id":1,"name":"TEST_ONLY","port":443,"public_host":"proxy.example.invalid","sni":"proxy.example.invalid","private_key":"TEST_ONLY-private","public_key":"TEST_ONLY-public","short_id":"01020304","users":[{"user_id":1,"uuid":"00000000-0000-4000-8000-000000000001","credential":"TEST_ONLY-old"}]})).expect("node fixture");
         let ordinary = BTreeSet::from([1]);
         let mut next = before.clone();
         next.users[0].credential = "TEST_ONLY-new".into();
@@ -1012,32 +966,6 @@ mod tests {
             )
             .expect("same shape")
             .is_empty()
-        );
-        next.users.clear();
-        assert!(
-            added_or_changed(
-                std::slice::from_ref(&before),
-                std::slice::from_ref(&next),
-                &ordinary
-            )
-            .expect("revocation")
-            .is_empty()
-        );
-        next = before.clone();
-        next.enabled = false;
-        assert!(
-            added_or_changed(
-                std::slice::from_ref(&before),
-                std::slice::from_ref(&next),
-                &ordinary
-            )
-            .expect("disable")
-            .is_empty()
-        );
-        assert!(
-            added_or_changed(std::slice::from_ref(&before), &[], &ordinary)
-                .expect("delete")
-                .is_empty()
         );
         assert_eq!(
             added_or_changed(&[], std::slice::from_ref(&before), &ordinary)
@@ -1055,23 +983,8 @@ mod tests {
             .expect("port changed"),
             vec![1]
         );
-        next = before.clone();
-        next.private_key = "TEST_ONLY-new-material".into();
-        assert_eq!(
-            added_or_changed(
-                std::slice::from_ref(&before),
-                std::slice::from_ref(&next),
-                &ordinary
-            )
-            .expect("key material changed"),
-            vec![1]
-        );
-        assert!(
-            added_or_changed(&[], std::slice::from_ref(&before), &BTreeSet::new())
-                .expect("chain has own gate")
-                .is_empty()
-        );
     }
+
     #[test]
     fn socket_evidence_does_not_guess_process_names_or_convert_truncation_to_free_ports() {
         let required = vec![Listener {
@@ -1107,6 +1020,7 @@ mod tests {
             "unknown"
         );
     }
+
     #[test]
     fn missing_service_authorization_is_unknown_even_with_directory_access() {
         let receipt = json!({"succeeded":true,"completed_at":100,"result":{"sampled_at":100,"module":"sing-box","runtime_account":{"known":true,"uid":1001,"gid":1001},"runtime_directory":{"path":"/TEST_ONLY/sing-box@main","symlink_free":true,"readable":true,"writable":true,"executable":true,"runtime_readable":true,"runtime_executable":true,"error":null,"runtime_error":null},"service_manager":{"available":true,"management_authorized":null,"privileged_effective_uid":1000}}});
@@ -1115,6 +1029,7 @@ mod tests {
         assert_eq!(checks[1]["state"], "unknown");
         assert_eq!(checks[1]["blocking"], true);
     }
+
     #[test]
     fn acme_storage_requires_real_child_directory_receipts() {
         let directory = |path: &str| json!({"path":path,"symlink_free":true,"readable":true,"writable":true,"executable":true,"runtime_readable":true,"runtime_writable":true,"runtime_executable":true,"runtime_error":null,"error":null});

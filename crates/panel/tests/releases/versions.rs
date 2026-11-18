@@ -137,12 +137,14 @@ async fn signed_legacy_identity_is_preserved_but_not_offered_as_standard_install
         );
         // The verified original release inventory remains readable; filtering
         // installation choices never deletes or rewrites a historical payload.
-        let (bytes, _, _) =
-            releases::artifact(&fixture.state, "agent", version, "linux-musl-amd64").await?;
-        assert_eq!(
-            bytes,
-            format!("fixture Agent {version} linux-musl-amd64").as_bytes()
-        );
+        let stored = releases::signed_agents(&fixture.state).await?;
+        let expected_sha =
+            signing::hash(format!("fixture Agent {version} linux-musl-amd64").as_bytes());
+        assert!(stored.iter().any(|entry| {
+            entry.version == version
+                && entry.arch == "linux-musl-amd64"
+                && entry.sha256 == expected_sha
+        }));
     }
     let selected = apsp_resources::installation::select_with_mirror(
         &fixture.state,
@@ -192,7 +194,6 @@ async fn versions_are_numeric_platform_compatible_and_include_signed_uncached_ta
     );
     let first = versions.last().context("Linux fixture missing")?;
     assert_eq!(first.targets, ["amd64", "arm64"]);
-    assert_eq!(first.cached_targets, ["arm64"]);
     assert_eq!(
         releases::select_agent(&fixture.state, None).await?,
         ("0.10.0".into(), "agent-v0.10.0".into())
@@ -318,7 +319,6 @@ async fn corrupt_cached_agent_remains_a_signed_github_candidate() -> Result<()> 
     let catalogue =
         releases::agent_versions(&fixture.state, Some("linux-musl-arm64"), None).await?;
     assert_eq!(catalogue[0].targets, ["arm64"]);
-    assert!(catalogue[0].cached_targets.is_empty());
     let release = releases::newer_agent(&fixture.state, &["arm64".into()], (0, 2, 0))
         .await?
         .context("signed update missing")?;
@@ -330,7 +330,7 @@ async fn corrupt_cached_agent_remains_a_signed_github_candidate() -> Result<()> 
     );
     assert_eq!(std::fs::read(path)?, b"damaged");
     assert!(matches!(
-        releases::entries(&fixture.state).await,
+        releases::signed_agents(&fixture.state).await,
         Err(ApiError::Conflict(_))
     ));
     Ok(())
@@ -358,10 +358,10 @@ async fn native_agents_remain_selectable_without_panel_payloads() -> Result<()> 
     )
     .await?;
     let before = snapshot(&fixture.release_root())?;
+    let cached = releases::signed_agents(&fixture.state).await?;
     for target in native_targets {
         let versions = releases::agent_versions(&fixture.state, Some(target), None).await?;
         assert_eq!(versions[0].targets, [target]);
-        assert!(versions[0].cached_targets.is_empty());
         let release = releases::newer_agent(&fixture.state, &[target.into()], (0, 2, 0))
             .await?
             .context("native signed update missing")?;
@@ -371,12 +371,9 @@ async fn native_agents_remain_selectable_without_panel_payloads() -> Result<()> 
         ));
         assert!(release.artifact.url.ends_with(target));
         assert_eq!(release.artifact.proof, Some(bundle.proof.clone()));
-        assert!(matches!(
-            releases::artifact(&fixture.state, "agent", "0.3.0", target).await,
-            Err(ApiError::NotFound)
-        ));
+        assert!(cached.iter().all(|entry| entry.arch != target));
     }
     assert_eq!(snapshot(&fixture.release_root())?, before);
-    assert_eq!(releases::entries(&fixture.state).await?.len(), 1);
+    assert_eq!(cached.len(), 1);
     Ok(())
 }

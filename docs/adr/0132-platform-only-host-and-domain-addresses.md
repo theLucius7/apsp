@@ -111,7 +111,7 @@
 
 - **地址说的是对象属于谁，不是处理函数在哪个 crate。** 与 `/api/servers/{id}/commands` 由作业实现一样：阿里云的云账号与云资源是资源的对象，整组接口放在 `/api/resources/alicloud`，其中的 26 条路由由资源（6）、作业（18）、成本（1）与应用层的总览（1）实现；`/api/access/statistics` 仍由观测的处理函数回答。
 - **旧地址在一个发布版本内照常应答。** 请求在匹配路由、进入专属地址网关与权限守卫之前改写到现地址（`crates/panel/src/moved_paths.rs`，集成测试 `crates/panel/tests/moved_api_paths.rs`），让升级前已经打开的页面（含成员门户）与运维脚本继续可用；2026-11-13 之后的下一个发布版本后删除这段改写。例外是续费日历的订阅地址 `/api/plugins/expenses/calendar.ics`：它登记为外部契约（管理员的日历程序按这个地址订阅），旧地址长期保留，不随其余改写一起删除。此后写入的审计记录带现地址，旧记录保持原样。
-- **不改名的：** Agent 协议的 `/api/agent/v1/*`、客户端订阅 `/sub/{token}` 与其余 `/api/...` 地址。数据库基线（含表名 `server_plugins` 与 `singbox_*`）、Agent 协议（`DiagnosticJob.plugin` 等消息字段）、设备上的路径（`/opt/apsp/plugins`、`/var/lib/apsp/plugins`）、签名制品里的名字（`plugins/...`）、已保存的标识（后台任务心跳名 `sing-box`、`ddns`、`alicloud`、`expenses`，诊断任务里的 `plugin` 键）与接口响应里的 `plugin_*` 字段都不动：基线、协议与制品格式各有自己的变更流程，设备上的路径与协议字段只随 Agent 发布改变；已保存的标识在控制台里显示为各自的名称；响应字段要服务端与前端一起改。清单见[功能划分与逻辑结构 §12](../architecture.md#12-扫描结论与余下工作2026-11-13)。
+- **不改名的：** Agent 协议的 `/api/agent/v1/*`、客户端订阅 `/sub/{token}` 与其余 `/api/...` 地址。数据库基线（含表名 `server_plugins` 与 `singbox_*`）、Agent 协议（`DiagnosticJob.plugin` 等消息字段）、设备上的路径（`/opt/apsp/plugins`、`/var/lib/apsp/plugins`）、签名制品里的名字（`plugins/...`）、已保存的标识（后台任务心跳名 `sing-box`、`ddns`、`alicloud`、`expenses`，诊断任务里的 `plugin` 键）与接口响应里的 `plugin_*` 字段都不动：基线、协议与制品格式各有自己的变更流程，设备上的路径与协议字段只随 Agent 发布改变；已保存的标识在控制台里显示为各自的名称；响应字段要服务端与前端一起改。清单见[功能划分与逻辑结构 §12](../architecture.md#12-当前优化项)。
 
 这一条取代 ADR 0131 第 4 条的“接口前缀”。那一条把改名推迟到兼容桥退出之后，理由是在那之前还有仓库外的调用方。逐个核对后这个理由不成立：兼容桥只经数据库函数与 apsp 交换数据，不调用 HTTP 接口（ADR 0131 的背景已经写明）；设备只用 `/api/agent/v1/*`，订阅客户端只用 `/sub/{token}` 与专属地址，安装脚本只用 `/install.sh`、`/install.ps1` 与 `/api/bootstrap/*`，都不带这个前缀。带这个前缀的调用方是控制台与成员门户的页面（与接口同一版本发布）以及仓库里的运维脚本与测试（一起改了）；升级前已打开的页面，和可能存在的、持管理员会话或管理 API 令牌的仓库外脚本，由一个发布版本的改写覆盖；按旧地址订阅续费日历的日历程序由长期保留的那一条覆盖。已发给代理用户与客户端的地址（订阅、专属地址、门户与邀请链接）不在这个前缀下，没有变化。
 
@@ -119,7 +119,7 @@
 
 - 名称不再带“插件”：观测的 `diagnostic_plugins/` 改为 `diagnostic_tools/`（`DiagnosticPlugin` 改为 `DiagnosticTool`，各工具的 `…Plugin` 改为 `…Tool`，`PluginReadiness`、`PLUGIN_VERSION` 改为 `ToolReadiness`、`TOOL_VERSION`）；平台的 `notifications/plugin.rs` 改为 `notifications/delivery.rs`；流量服务的 `PluginServer` 改为 `RuntimeServer`；前端的 `PluginServer`、`PluginInstallation` 改为 `RuntimeServer`、`RuntimeInstallation`，界面上四处“插件”字样去掉。
 - 行为相同的重复实现各合为一处：JSON 内容摘要（`apsp_panel_host::digest::json`）、普通服务器地址的判断（`net::server_ip`）、证书名称与网络文档的域名检查（`net::dns_name`）、安装脚本地址（`installation::blob_url`）、ISO 时间格式（`apsp_cloud_api::signing::iso_time`）。只有一个调用方的函数移到调用方：锁定用户的两个函数从流量服务移到服务权益；`servers.agent_settings` 由资源的 `servers::save_agent_settings` 写入（观测只做校验）；作业判断管理员能否看见全部服务器改用治理的 `control_center::actor_all_servers`。前端的统计条、请求编号、资源快照、日期文本与操作执行器各合为一个共用模块。
-- 合并会改变行为的重复实现没有在这一步合并（两个 Globalping 客户端、三处 Cloudflare 接口、几个通知队列等），清单与取舍见[功能划分与逻辑结构 §12](../architecture.md#12-扫描结论与余下工作2026-11-13)。
+- 合并会改变行为的重复实现没有在这一步合并（两个 Globalping 客户端、三处 Cloudflare 接口、几个通知队列等），清单与取舍见[功能划分与逻辑结构 §12](../architecture.md#12-当前优化项)。
 
 ## 取代与调整
 
@@ -134,4 +134,4 @@
 - 平台 crate 读领域表的 SQL 还剩 5 条，都在告警发件箱（`notifications/outbox.rs` 4 条、`settings.rs` 1 条）：发件箱实际是观测的告警投递队列，迁出需要新的接口，没有在这一步做。
 - 边界清单的代码部分变为每个所有者一个 crate 一行，不再有宿主里逐个文件的登记；层级检查把 `crates/governance` 登记为第一个领域 crate，宿主的例外表达式只剩 `src/config.rs` 一条。
 - 新增或改动路由要同步路由权限表：先运行 `python3 tools/route-policy.py`，规则见 [AGENTS.md](../../AGENTS.md)「分层」与「实现与检查」。
-- 这一步有意没有做的归属调整、重复实现与仍带“插件”字样的契约，连同各自需要的条件，列在[功能划分与逻辑结构 §12](../architecture.md#12-扫描结论与余下工作2026-11-13)。
+- 这一步有意没有做的归属调整、重复实现与仍带“插件”字样的契约，连同各自需要的条件，列在[功能划分与逻辑结构 §12](../architecture.md#12-当前优化项)。

@@ -75,6 +75,25 @@ pub async fn locked_profile(
     }))
 }
 
+/// The server's stored local access policy, or `None` when no profile has been saved.
+pub async fn policy(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    server_id: i64,
+) -> Result<Option<Value>, sqlx::Error> {
+    sqlx::query_scalar("SELECT policy FROM fleet_profiles WHERE server_id=$1")
+        .bind(server_id)
+        .fetch_optional(&mut **tx)
+        .await
+}
+
+/// SQL that holds while the server is being retired or its lifecycle profile is marked retired.
+pub fn retired_sql(server: &str) -> String {
+    format!(
+        "({} OR EXISTS(SELECT 1 FROM fleet_profiles retired_profile WHERE retired_profile.server_id={server} AND retired_profile.lifecycle='retired'))",
+        crate::retirement::retiring_sql(server)
+    )
+}
+
 /// SQL that holds while the server's own lifecycle blocks new work at `at`: a retirement is
 /// recorded, the server is draining or retired, or its maintenance lifecycle covers `at`.
 /// `server` is a parameter or a qualified column and `at` a time in seconds, both SQL. Every
@@ -276,7 +295,7 @@ pub async fn lifecycle(
 /// leaves behind.
 async fn references(pool: &sqlx::PgPool, id: i64) -> ApiResult<Value> {
     let references = crate::server_runtime::references(pool, id).await?;
-    Ok(json!({"plugins":references.enabled,"applications":references.deployments}))
+    Ok(json!({"modules":references.configured,"applications":references.deployments}))
 }
 
 #[derive(Deserialize)]
@@ -300,7 +319,7 @@ async fn preview(state: &AppState, source: i64, target: i64) -> ApiResult<Value>
             .bind(source)
             .fetch_all(&state.pool)
             .await?;
-    let snapshot = json!({"source":source,"target":target,"collection":rows.iter().map(|row|json!({"id":row.get::<i64,_>("id"),"name":row.get::<String,_>("name"),"agent_settings":row.get::<Value,_>("agent_settings"),"telemetry_settings":telemetry.remove(&row.get::<i64,_>("id")),"enrolled":row.get::<Option<String>,_>("device_public_key").is_some()})).collect::<Vec<_>>(),"probes":probes,"related":references(&state.pool,source).await?,"scope":["agent_settings","telemetry_settings","network_probes"],"identity_copied":false,"business_requires_plugin_migration":true});
+    let snapshot = json!({"source":source,"target":target,"collection":rows.iter().map(|row|json!({"id":row.get::<i64,_>("id"),"name":row.get::<String,_>("name"),"agent_settings":row.get::<Value,_>("agent_settings"),"telemetry_settings":telemetry.remove(&row.get::<i64,_>("id")),"enrolled":row.get::<Option<String>,_>("device_public_key").is_some()})).collect::<Vec<_>>(),"probes":probes,"related":references(&state.pool,source).await?,"scope":["agent_settings","telemetry_settings","network_probes"],"identity_copied":false,"business_requires_runtime_migration":true});
     let digest = format!(
         "{:x}",
         Sha256::digest(serde_json::to_vec(&snapshot).map_err(anyhow::Error::from)?)
@@ -383,6 +402,6 @@ pub async fn migrate(
     .await?;
     tx.commit().await?;
     Ok(Json(
-        json!({"migrated":true,"business_requires_plugin_migration":true}),
+        json!({"migrated":true,"business_requires_runtime_migration":true}),
     ))
 }

@@ -5,8 +5,24 @@ use uuid::Uuid;
 fn receipt() -> (Value, DiagnosticSectionUpdate, i64) {
     let id = Uuid::new_v4();
     let now = now_timestamp();
-    let job = json!({"id":id,"plugin":"nodequality","version":NODE_QUERY_VERSION,
-        "options":{"mode":"ip","ip_version":"both","node_ips":"[\"1.1.1.1\"]"}});
+    let job = json!({
+        "id": id,
+        "plugin": "nodequality",
+        "version": NODE_QUERY_VERSION,
+        "agent_bundle": {
+            "schema": 1,
+            "agent_version": "0.4.0",
+            "release_tag": "agent-v0.4.0",
+            "target": "linux-musl-amd64",
+            "source_repo": apsp_protocol::release::RELEASE_SOURCE_REPO,
+            "agent_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "agent_bytes": 1024,
+            "component": "nodequality",
+            "component_version": NODE_QUERY_VERSION,
+            "component_sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        "options": {"mode": "ip", "ip_version": "both", "node_ips": "[\"1.1.1.1\"]"}
+    });
     let rows = [
         json!({"provider":"ipregistry-node","database":"ipregistry-v1","target_ip":"1.1.1.1",
             "execution":"node","source":"https://api.ipregistry.co","available":true,"observed_ip":"1.1.1.1",
@@ -119,9 +135,25 @@ fn frozen_identity_time_schema_source_and_secret_keys_are_enforced() {
             "{pointer}"
         );
     }
-    let (mut job, update, now) = receipt();
-    job["version"] = json!(TOOL_VERSION);
-    assert!(parse_section(&job, &update, now, now + 90).is_err());
+    let (mut legacy_version, update, now) = receipt();
+    legacy_version["version"] = json!(LEGACY_NODE_QUERY_VERSION);
+    legacy_version
+        .as_object_mut()
+        .unwrap()
+        .remove("agent_bundle");
+    assert!(parse_section(&legacy_version, &update, now, now + 90).is_ok());
+
+    let (mut older_version, update, now) = receipt();
+    older_version["version"] = json!("a92fca6c0067df29ddd03fdc2fee6f3000f64545-r20");
+    older_version
+        .as_object_mut()
+        .unwrap()
+        .remove("agent_bundle");
+    assert!(parse_section(&older_version, &update, now, now + 90).is_err());
+
+    let (mut unverified, update, now) = receipt();
+    unverified.as_object_mut().unwrap().remove("agent_bundle");
+    assert!(parse_section(&unverified, &update, now, now + 90).is_err());
 }
 
 #[test]
@@ -165,14 +197,17 @@ fn per_source_unknown_and_http_errors_preserve_attempt_semantics() {
 }
 
 #[test]
-fn dispatch_requires_exact_version_mode_and_every_capability() {
+fn dispatch_requires_exact_version_mode_bundle_and_every_capability() {
     let (job, _, _) = receipt();
     let required = json!(NodeIpQualityTool.required_capabilities());
     assert!(NodeIpQualityTool.can_dispatch(&job, &required));
     assert!(!NodeIpQualityTool.can_dispatch(&job, &json!(["diagnostic:nodequality"])));
-    let mut wrong = job;
-    wrong["version"] = json!(TOOL_VERSION);
+    let mut wrong = job.clone();
+    wrong["version"] = json!(LEGACY_NODE_QUERY_VERSION);
     assert!(!NodeIpQualityTool.can_dispatch(&wrong, &required));
+    let mut unbundled = job;
+    unbundled.as_object_mut().unwrap().remove("agent_bundle");
+    assert!(!NodeIpQualityTool.can_dispatch(&unbundled, &required));
 }
 
 #[test]
@@ -203,7 +238,7 @@ fn special_use_addresses_cannot_be_reported_as_official_node_sources() {
 }
 
 #[test]
-fn only_exact_registered_r21_ip_jobs_bypass_the_full_start_gate() {
+fn only_exact_signed_r22_ip_jobs_bypass_the_full_start_gate() {
     let (job, _, _) = receipt();
     assert!(
         crate::diagnostic_tools::for_job(&job)
@@ -211,8 +246,16 @@ fn only_exact_registered_r21_ip_jobs_bypass_the_full_start_gate() {
             .start_denial(&job)
             .is_none()
     );
+    let mut unbundled = job.clone();
+    unbundled.as_object_mut().unwrap().remove("agent_bundle");
+    assert_eq!(
+        crate::diagnostic_tools::for_job(&unbundled)
+            .unwrap()
+            .start_denial(&unbundled),
+        Some(LEGACY_NODE_QUERY_DENIAL)
+    );
     for version in [
-        TOOL_VERSION,
+        LEGACY_NODE_QUERY_VERSION,
         "a92fca6c0067df29ddd03fdc2fee6f3000f64545-r20",
         "unknown",
     ] {
@@ -228,11 +271,11 @@ fn only_exact_registered_r21_ip_jobs_bypass_the_full_start_gate() {
     for mode in [Value::Null, json!("full")] {
         let mut full = job.clone();
         full["options"]["mode"] = mode;
-        assert!(
+        assert_eq!(
             crate::diagnostic_tools::for_job(&full)
                 .unwrap()
-                .start_denial(&full)
-                .is_some()
+                .start_denial(&full),
+            Some(FULL_START_DENIAL)
         );
     }
 }

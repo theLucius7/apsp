@@ -169,6 +169,10 @@ pub(super) async fn release_proof(tag: &str, trusted: &TrustedKeys) -> Result<Re
     };
     let verified = verify_release(&proof, trusted)?;
     ensure!(verified.metadata().tag == tag, "signed tag differs");
+    ensure!(
+        super::valid_release_entries(tag, &verified.metadata().artifacts),
+        "signed release entries are invalid for this release line"
+    );
     let expected: BTreeMap<_, _> = [
         ("release.json".to_owned(), proof.metadata_json.len() as u64),
         ("SHA256SUMS".to_owned(), proof.checksums.len() as u64),

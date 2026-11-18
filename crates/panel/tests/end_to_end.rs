@@ -3,28 +3,104 @@
 mod business_support;
 #[path = "e2e_support/preflight.rs"]
 mod deployment_preflight;
+#[allow(dead_code)]
 mod e2e_support;
+#[allow(unused_imports)]
 use business_support::release_fixture;
 #[path = "../../protocol/tests/support/release.rs"]
 mod release_support;
 
 use anyhow::{Context, Result};
 use apsp_adapter_sdk::{Counter, Prepared};
-use apsp_agent_core::{fake::FakeServiceManager, identity, state::State, transport};
+use apsp_agent_core::{
+    bundled::{BundledComponents, BundledItem, BundledPayload},
+    config::Config as AgentConfig,
+    fake::FakeServiceManager,
+    identity,
+    state::State,
+    system::SystemOps,
+    transport,
+};
 use apsp_protocol::{UsageBatch, UsageRecord};
 use base64::{Engine, engine::general_purpose::STANDARD};
-use e2e_support::{AgentTask, Harness, PanelAdapter, eventually};
+use e2e_support::{Harness, PanelAdapter, eventually};
+use flate2::{Compression, write::GzEncoder};
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Row};
-use std::{fs, os::unix::fs::PermissionsExt, sync::Arc};
+use std::{borrow::Cow, fs, os::unix::fs::PermissionsExt, sync::Arc};
+use tokio::task::JoinHandle;
+
+fn bundled_singbox() -> Result<(Vec<u8>, BundledComponents)> {
+    let binary = b"#!/bin/sh\nexit 0\n".to_vec();
+    let mut builder = tar::Builder::new(GzEncoder::new(Vec::new(), Compression::default()));
+    let mut header = tar::Header::new_gnu();
+    header.set_size(binary.len() as u64);
+    header.set_mode(0o755);
+    header.set_cksum();
+    builder.append_data(&mut header, "demo", binary.as_slice())?;
+    let archive = builder.into_inner()?.finish()?;
+    let archive_sha256 = format!("{:x}", Sha256::digest(&archive));
+    let mut components = BundledComponents::default();
+    components.runtimes.insert(
+        "singbox".into(),
+        BundledItem {
+            component_name: "sing-box".into(),
+            binary_name: "demo".into(),
+            version: apsp_traffic::RUNTIME_VERSION.into(),
+            payload: BundledPayload::TarGz {
+                archive_sha256,
+                bytes: Cow::Owned(archive),
+            },
+        },
+    );
+    Ok((binary, components))
+}
+
+struct SelfContainedTask(JoinHandle<Result<()>>);
+
+impl SelfContainedTask {
+    fn start(
+        config: AgentConfig,
+        adapter: Arc<PanelAdapter>,
+        bundled: BundledComponents,
+        services: Arc<FakeServiceManager>,
+    ) -> Self {
+        Self(tokio::spawn(transport::run_with_components(
+            config,
+            vec![adapter],
+            Vec::new(),
+            bundled,
+            Arc::new(SystemOps),
+            services,
+            "panel-test-agent",
+        )))
+    }
+
+    async fn stop(self) -> Result<()> {
+        self.0.abort();
+        let mut task = self;
+        match (&mut task.0).await {
+            Err(error) if error.is_cancelled() => Ok(()),
+            Err(error) => Err(error.into()),
+            Ok(result) => result.context("agent stopped before cancellation"),
+        }
+    }
+}
+
+impl Drop for SelfContainedTask {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
 
 #[sqlx::test(migrations = "./migrations")]
 async fn published_configuration_usage_and_lost_ack_survive_agent_restart(
     pool: PgPool,
 ) -> Result<()> {
     let panel = Harness::start(pool.clone()).await?;
-    let expected_binary = panel.write_runtime_artifact()?;
+    let (expected_binary, bundled) = bundled_singbox()?;
     let config = panel.agent_config();
     let adapter = Arc::new(PanelAdapter::default());
     let services = Arc::new(FakeServiceManager::default());
@@ -43,8 +119,6 @@ async fn published_configuration_usage_and_lost_ack_survive_agent_restart(
         identity::enroll(&config, enrollment["token"].as_str().context("token")?).await?,
         server_id
     );
-    // This fixture explicitly enables only the independent read-only capability.
-    // No runtime deployment bypass is present in the production configuration.
     let policy_path = config
         .identity_dir
         .parent()
@@ -59,26 +133,57 @@ async fn published_configuration_usage_and_lost_ack_survive_agent_restart(
     )?;
     fs::set_permissions(&policy_path, fs::Permissions::from_mode(0o600))?;
     let original_key = fs::read(config.identity_dir.join("device.key"))?;
-    let agent = AgentTask::start(config.clone(), adapter.clone(), services.clone());
-    eventually("authenticated agent telemetry", 10, || async {
-        let server = panel
-            .api(
-                Method::GET,
-                &format!("/api/servers/{server_id}"),
-                Value::Null,
-            )
-            .await?;
-        Ok(server["online"] == true && server["static_info"]["arch"].is_string())
-    })
+    let agent = SelfContainedTask::start(
+        config.clone(),
+        adapter.clone(),
+        bundled.clone(),
+        services.clone(),
+    );
+    eventually(
+        "authenticated self-contained agent telemetry",
+        10,
+        || async {
+            let server = panel
+                .api(
+                    Method::GET,
+                    &format!("/api/servers/{server_id}"),
+                    Value::Null,
+                )
+                .await?;
+            Ok(server["online"] == true
+                && server["static_info"]["arch"].is_string()
+                && server["static_info"]["components"]["sing-box"] == apsp_traffic::RUNTIME_VERSION
+                && server["static_info"]["runtime_version"].is_null())
+        },
+    )
     .await?;
 
-    panel
-        .api(
-            Method::POST,
-            &format!("/api/traffic/servers/{server_id}/enable"),
-            json!({}),
-        )
-        .await?;
+    // Retired standalone enablement endpoint is rejected.
+    assert_eq!(
+        panel
+            .client
+            .post(format!(
+                "{}/api/traffic/servers/{server_id}/enable",
+                panel.base
+            ))
+            .header(reqwest::header::COOKIE, &panel.cookie)
+            .json(&json!({}))
+            .send()
+            .await?
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+
+    // Pause the Agent before saving business configuration: offline saving must queue
+    // and publish automatically without requiring preflight or manual confirmation.
+    agent.stop().await?;
+    eventually(
+        "Agent paused before offline first-time configuration",
+        5,
+        || async { Ok(!config.status_socket.exists()) },
+    )
+    .await?;
+
     let node = panel
         .api(
             Method::POST,
@@ -159,48 +264,86 @@ async fn published_configuration_usage_and_lost_ack_survive_agent_restart(
         0
     );
 
-    // Pause the native transport while the controlled Agent fixture claims the
-    // two real typed requests. This prevents racing a mock service backend that
-    // does not implement system permission inspection. The reserved DNS and
-    // directory/service receipts are TEST_ONLY; no public DNS or host service
-    // permission is being accepted by this accounting/restart scenario.
-    agent.stop().await?;
     eventually(
-        "Agent paused before controlled deployment preflight",
-        5,
-        || async { Ok(!config.status_socket.exists()) },
+        "debounced automatic deployment committed while Agent is paused without preflight",
+        15,
+        || async {
+            let row: Option<(i64, i64)> = sqlx::query_as(
+                "SELECT COALESCE((SELECT p.manifest_rev FROM runtime_publications p WHERE p.server_id=s.id),0),(SELECT count(*) FROM deployments d WHERE d.server_id=s.id AND d.module='singbox') FROM servers s WHERE s.id=$1",
+            )
+            .bind(server_id)
+            .fetch_optional(&pool)
+            .await?;
+            Ok(row.is_some_and(|(revision, count)| revision > 0 && count == 1))
+        },
     )
     .await?;
-    let preflight = deployment_preflight::prepare(&panel, server_id).await?;
-    // Let the production publisher consume the current explicit confirmation
-    // before the real Agent replaces TEST_ONLY read-only fixture declarations
-    // with its actual platform capabilities. Its immutable deployment remains
-    // pending and is applied through the real authenticated WebSocket on restart.
-    eventually("debounced confirmed deployment committed while Agent is paused", 15, || async {
-        let row: Option<(i64, i64)> = sqlx::query_as(
-            "SELECT COALESCE((SELECT p.manifest_rev FROM runtime_publications p WHERE p.server_id=s.id),0),(SELECT count(*) FROM deployments d WHERE d.server_id=s.id AND d.module='singbox') FROM servers s WHERE s.id=$1"
-        ).bind(server_id).fetch_optional(&pool).await?;
-        Ok(row.is_some_and(|(revision, count)| revision > 0 && count == 1))
-    }).await?;
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM singbox_deployment_preflights WHERE server_id=$1"
+        )
+        .bind(server_id)
+        .fetch_one(&pool)
+        .await?,
+        0,
+        "ordinary node publication must not depend on preflight"
+    );
+
+    // Optional read-only preflight inspection remains available while confirm is retired.
+    let preflight = deployment_preflight::observe(&panel, server_id).await?;
     let confirmed: (Option<i64>, Option<i64>) = sqlx::query_as(
-        "SELECT confirmed_at,confirmed_by FROM singbox_deployment_preflights WHERE id=$1 AND server_id=$2"
-    ).bind(preflight).bind(server_id).fetch_one(&pool).await?;
-    assert!(confirmed.0.is_some() && confirmed.1.is_some());
+        "SELECT confirmed_at,confirmed_by FROM singbox_deployment_preflights WHERE id=$1 AND server_id=$2",
+    )
+    .bind(preflight)
+    .bind(server_id)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(confirmed, (None, None));
+    assert_eq!(
+        panel
+            .client
+            .post(format!(
+                "{}/api/traffic/servers/{server_id}/operations-view/preflight/confirm",
+                panel.base
+            ))
+            .header(reqwest::header::COOKIE, &panel.cookie)
+            .json(&json!({"id": preflight, "confirm": true}))
+            .send()
+            .await?
+            .status(),
+        StatusCode::NOT_FOUND
+    );
     assert!(
         State::open(&config.state_db)?
             .get_json::<Prepared>("applied:singbox")?
             .is_none()
     );
-    let agent = AgentTask::start(config.clone(), adapter.clone(), services.clone());
+    let agent = SelfContainedTask::start(
+        config.clone(),
+        adapter.clone(),
+        bundled.clone(),
+        services.clone(),
+    );
 
-    // The real publisher's immutable bundle still crosses its authenticated
-    // WebSocket delivery and the existing adapter/configuration/accounting path.
-    eventually("debounced deployment applied over WebSocket", 15, || async {
-        let row: Option<(i64, i64, bool)> = sqlx::query_as(
-            "SELECT target_rev,applied_rev,healthy FROM server_module_status WHERE server_id=$1 AND module='singbox'"
-        ).bind(server_id).fetch_optional(&pool).await?;
-        Ok(row.is_some_and(|(target, applied, healthy)| target > 0 && target == applied && healthy))
-    }).await?;
+    // The published bundle crosses authenticated WebSocket delivery and materializes
+    // the Agent's embedded sing-box payload locally.
+    eventually(
+        "debounced deployment applied over WebSocket",
+        15,
+        || async {
+            let runtime = panel
+                .api(
+                    Method::GET,
+                    &format!("/api/traffic/servers/{server_id}"),
+                    Value::Null,
+                )
+                .await?;
+            Ok(runtime["configured"] == true
+                && runtime["status"]["state"] == "ready"
+                && runtime["runtime_version"] == apsp_traffic::RUNTIME_VERSION)
+        },
+    )
+    .await?;
     let actual = panel
         .api(
             Method::GET,
@@ -325,7 +468,12 @@ async fn published_configuration_usage_and_lost_ack_survive_agent_restart(
     }
     assert_eq!(State::open(&config.state_db)?.pending_usage_count()?, 1);
     let actions_before_restart = services.actions.lock().unwrap().clone();
-    let restarted = AgentTask::start(config.clone(), adapter, services.clone());
+    let restarted = SelfContainedTask::start(
+        config.clone(),
+        adapter.clone(),
+        bundled.clone(),
+        services.clone(),
+    );
     eventually(
         "restarted agent retransmission acknowledged",
         10,
@@ -362,8 +510,57 @@ async fn published_configuration_usage_and_lost_ack_survive_agent_restart(
         State::open(&config.state_db)?.get_json::<Prepared>("applied:singbox")?,
         Some(applied)
     );
+
+    // Deleting the last node deactivates sing-box and keeps it stopped across Agent restarts.
+    panel
+        .api(
+            Method::DELETE,
+            &format!("/api/traffic/nodes/{node_id}"),
+            Value::Null,
+        )
+        .await?;
+    eventually("last node removal deactivates runtime", 15, || async {
+        let runtime = panel
+            .api(
+                Method::GET,
+                &format!("/api/traffic/servers/{server_id}"),
+                Value::Null,
+            )
+            .await?;
+        Ok(runtime["configured"] == false
+            && runtime["status"]["target_rev"] == 0
+            && runtime["status"]["applied_rev"] == 0
+            && runtime["runtime_version"].is_null())
+    })
+    .await?;
+    assert!(
+        State::open(&config.state_db)?
+            .get_json::<Prepared>("applied:singbox")?
+            .is_none()
+    );
     restarted.stop().await?;
     eventually("restarted agent children stopped", 5, || async {
+        Ok(!config.status_socket.exists())
+    })
+    .await?;
+
+    let actions_after_stop = services.actions.lock().unwrap().clone();
+    let verify_idle = SelfContainedTask::start(config.clone(), adapter, bundled, services.clone());
+    eventually(
+        "idle agent reconnects without reviving singbox",
+        10,
+        || async {
+            if !config.status_socket.exists() {
+                return Ok(false);
+            }
+            let status = transport::status(&config.status_socket).await?;
+            Ok(status["connected"] == true && status["applied"].get("singbox").is_none())
+        },
+    )
+    .await?;
+    assert_eq!(*services.actions.lock().unwrap(), actions_after_stop);
+    verify_idle.stop().await?;
+    eventually("idle agent stopped", 5, || async {
         Ok(!config.status_socket.exists())
     })
     .await?;

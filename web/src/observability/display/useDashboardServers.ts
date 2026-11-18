@@ -2,15 +2,15 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Server } from '../../types'
 import { mergeLiveServers, mergeLiveSnapshot } from './live'
 import type { LiveSnapshot } from './live'
-import { useDashboardPoll } from './useDashboardPoll'
+import { useResourcePoll } from '@/lib/useResourcePoll'
 
 export function useDashboardServers(paused: boolean, id?: number) {
   const [liveCapable, setLiveCapable] = useState(false)
-  const metadata = useDashboardPoll<Server[] | Server>(`/api/dashboard/servers${id ? `/${id}` : ''}`, liveCapable ? 30_000 : 5000, paused)
+  const metadata = useResourcePoll<Server[] | Server>(`/api/dashboard/servers${id ? `/${id}` : ''}`, liveCapable ? 30_000 : 5000, paused)
   const rows = useMemo(() => metadata.data ? Array.isArray(metadata.data) ? metadata.data : [metadata.data] : undefined, [metadata.data])
   const modern = liveCapable || Boolean(rows?.some(server => server.telemetry_settings))
   useEffect(() => { if (modern) setLiveCapable(true) }, [modern])
-  const live = useDashboardPoll<LiveSnapshot>(modern ? '/api/dashboard/live' : null, 3000, paused, '', mergeLiveSnapshot)
+  const live = useResourcePoll<LiveSnapshot>(modern ? '/api/dashboard/live' : null, 3000, paused, '', mergeLiveSnapshot)
   const scopeChanged = Boolean(rows?.length && live.data && rows.some(server => Boolean(server.public_view) !== live.data!.public_view))
   const reconciled = useRef<LiveSnapshot | undefined>(undefined)
   useEffect(() => {

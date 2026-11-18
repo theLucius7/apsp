@@ -92,8 +92,29 @@ pub(super) async fn run(
                 continue;
             }
         };
+        let mut startup_failure: Option<String> = None;
         for (module, reconciler) in &reconcilers {
             let Some(target) = manifest.modules.get(module) else {
+                match reconciler.deactivate_if_active().await {
+                    Ok(true) => {
+                        let current = runtime.applied()?;
+                        if current != reported
+                            && let Some(info) = runtime.static_info()?
+                            && outgoing
+                                .try_send(Envelope::new("telemetry.static", info)?)
+                                .is_ok()
+                        {
+                            reported = current;
+                        }
+                    }
+                    Ok(false) => {}
+                    Err(error) => {
+                        tracing::warn!(%module, %error, "failed to stop unconfigured runtime");
+                        if startup_failure.is_none() {
+                            startup_failure = Some(format!("{error:#}"));
+                        }
+                    }
+                }
                 continue;
             };
             let result = match reconciler.reconcile(target, &active_client).await {
@@ -109,6 +130,12 @@ pub(super) async fn run(
             };
             // Results can be reconstructed on the next reconciliation if disconnected.
             let applied = result.status == ApplyStatus::Applied;
+            if !applied && startup_failure.is_none() {
+                startup_failure =
+                    Some(result.error.clone().unwrap_or_else(|| {
+                        format!("module {module} failed initial reconciliation")
+                    }));
+            }
             let _ = outgoing.try_send(Envelope::new("apply.result", result)?);
             if applied {
                 let current = runtime.applied()?;
@@ -120,6 +147,37 @@ pub(super) async fn run(
                 {
                     reported = current;
                 }
+            }
+        }
+        if !runtime
+            .bundle
+            .ready
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            if let Some(error_text) = startup_failure {
+                if let Ok(mut slot) = runtime.bundle.error.lock() {
+                    *slot = Some(error_text.clone());
+                }
+                tokio::time::sleep(Duration::from_millis(250)).await;
+                anyhow::bail!(
+                    "initial runtime reconciliation failed during startup gate: {error_text}"
+                );
+            }
+            let mut all_ready = true;
+            for (_, reconciler) in &reconcilers {
+                if !reconciler.satisfies_trial_readiness().await? {
+                    all_ready = false;
+                    break;
+                }
+            }
+            if all_ready {
+                if let Ok(mut slot) = runtime.bundle.error.lock() {
+                    *slot = None;
+                }
+                runtime
+                    .bundle
+                    .ready
+                    .store(true, std::sync::atomic::Ordering::Release);
             }
         }
     }

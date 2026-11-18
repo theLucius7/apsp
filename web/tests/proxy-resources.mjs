@@ -5,7 +5,7 @@ import { createServer } from 'node:http'
 import { mkdir, readFile } from 'node:fs/promises'
 import { resolve, extname, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { catalogNodeFixtures, proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
+import { catalogNodeFixtures, proxyResourceFixtures, runtimeServerFixture } from './proxy-resource-fixtures.mjs'
 
 // Exercise the shipped UI with owned API fixtures, including a committed request whose response is lost.
 const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
@@ -29,7 +29,7 @@ try {
     // Dialogs finish closing on animation frames, which the page clock holds here; with reduced motion they close at once.
     await page.emulateMedia({ reducedMotion: 'reduce' })
     const trafficApi = '/api/traffic', accessApi = '/api/access', errors = [], writes = [], receipts = new Map()
-    const servers = [1,2].map(id => ({id,name:`服务器 ${id}`,enabled:true,online:false,read_only:false,agent_supported:true,source:'administrator',installation:{state:'pending',reason:'等待设备应用，尚未确认连通。',target_rev:1,applied_rev:0}}))
+    const servers = [1,2].map(id => runtimeServerFixture(id, { online: false, status: { state: 'pending', reason: '等待设备应用，尚未确认连通。', target_rev: 1, applied_rev: 0, current_healthy: false } }))
     let nodes = [1,2,3,4].map(id => ({id,name:id === 2 ? '共享出口' : `监听 ${id}`,server_id:id === 2 ? 2 : 1,protocol:'vless-reality',enabled:true,port:20000+id,public_host:id === 2 ? 'exit.example.com' : 'entry.example.com',sni:'www.example.com',public_key:'TEST_ONLY',short_id:'abcd',...(id === 3 ? {settings:{public_port:8443}} : {})}))
     let chains = [{id:1,name:'既有链路',entry_node_id:3,exit_node_id:2,available:true}]
     let nextNode = 200,nextChain = 100,allocations = 0,mode = 'reject-once',resourceFailure = false,malformed = false,nodesFailure = false,broken = false

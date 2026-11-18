@@ -13,7 +13,6 @@ pub struct AgentVersion {
     pub version: String,
     pub tag: String,
     pub targets: Vec<String>,
-    pub cached_targets: Vec<String>,
     pub protocol_min: u16,
     pub protocol_max: u16,
 }
@@ -105,15 +104,7 @@ fn validate_filter(target: Option<&str>, platform: Option<&str>) -> ApiResult<()
 fn valid_agent(release: &StoredRelease, artifact: &VerifiedArtifact) -> bool {
     let entry = artifact.metadata();
     let metadata = release.verified.metadata();
-    let binary_name = if entry.arch.starts_with("windows-") {
-        "apsp-agent.exe"
-    } else {
-        "apsp-agent"
-    };
-    entry.name == "agent"
-        && entry.format == "raw"
-        && entry.binary_name == binary_name
-        && entry.archive_size <= 128 * 1024 * 1024
+    is_agent_entry(entry)
         // Pre-0.3 historical binaries lack the current installation/service CLI.
         // This policy is not proof of arbitrary newer bytes: signature, payload
         // and the Agent's independent installation/cache checks still apply.
@@ -134,7 +125,7 @@ async fn versions(
     let target = target.filter(|target| *target != "auto");
     validate_filter(target, platform)?;
     let version = version.filter(|version| *version != "latest");
-    let targets = target.map(|target| selection::candidates(target, "raw"));
+    let targets = target.map(selection::candidates);
     let releases = released(state).await?;
     inventory(&releases).map_err(invalid)?;
     let mut values = BTreeMap::new();
@@ -179,20 +170,10 @@ async fn versions(
                 version: entry.version.clone(),
                 tag: metadata.tag.clone(),
                 targets: Vec::new(),
-                cached_targets: Vec::new(),
                 protocol_min: metadata.protocol_min,
                 protocol_max: metadata.protocol_max,
             });
             value.targets.push(entry.arch.clone());
-            if release.paths.contains(artifact.path()) {
-                let bytes =
-                    storage::existing_bytes(&release.directory.join(artifact.path()), MAX_ARTIFACT)
-                        .await
-                        .map_err(invalid)?;
-                if bytes.is_some_and(|bytes| verify_payload(&artifact, &bytes).is_ok()) {
-                    value.cached_targets.push(entry.arch.clone());
-                }
-            }
         }
     }
     Ok(values
@@ -200,7 +181,6 @@ async fn versions(
         .rev()
         .map(|mut value| {
             value.targets.sort();
-            value.cached_targets.sort();
             value
         })
         .collect())
@@ -241,7 +221,7 @@ pub async fn selection_error(state: &AppState, version: Option<&str>) -> ApiResu
     }) {
         "所选 Agent 版本与当前面板协议不兼容，请选择兼容的已签名版本"
     } else if version_key(version).is_some_and(|version| version < MINIMUM_INSTALLATION_VERSION) {
-        "所选历史 Agent 不支持当前标准安装与服务合同：0.1/0.2 原制品缺少所需的验签、缓存预检或 supervisor；补签元数据不能补齐这些命令。历史制品与身份保留，请选择 0.3.0 或更新的兼容已签版本"
+        "所选历史 Agent 不支持当前标准安装与服务合同：0.1/0.2 历史 Agent 发布缺少所需的验签、缓存预检或 supervisor；补签元数据不能补齐这些命令。历史证明与身份保留，请选择 0.3.0 或更新的兼容已签版本"
     } else {
         "所选 Agent 版本不包含该平台可安装的制品，请核对平台、架构及稳定版本要求"
     };
@@ -269,7 +249,7 @@ pub async fn list_agent_versions(
     headers: HeaderMap,
     Query(query): Query<AgentVersionQuery>,
 ) -> ApiResult<Response> {
-    auth::require_admin(&state, &headers).await?;
+    control_center::require_capability(&state, &headers, "servers:read").await?;
     let versions = versions(
         &state,
         query.target.as_deref(),

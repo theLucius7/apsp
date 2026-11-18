@@ -1,6 +1,6 @@
 # 管理员与代理用户 Passkey
 
-Passkey 使用设备指纹、面容、PIN 或支持用户验证的安全密钥完成身份验证，私钥留在认证器。管理员保留原有密码/TOTP 登录；代理用户入口属于 sing-box 插件，只能查看自己的订阅、累计上传/下载和管理自己的密钥。
+Passkey 使用设备指纹、面容、PIN 或支持用户验证的安全密钥完成身份验证，私钥留在认证器。管理员保留原有密码/TOTP 登录；代理用户入口属于服务权益领域（`crates/access`），只能查看自己的订阅、累计上传/下载和管理自己的密钥。
 
 ## 部署条件
 
@@ -8,7 +8,7 @@ Passkey 使用设备指纹、面容、PIN 或支持用户验证的安全密钥�
 
 服务端只接受配置地址对应的 Origin，不通过 `Host`、`Forwarded` 或 `X-Forwarded-*` 扩大认证范围。反向代理应保留浏览器的 Origin，并正确提供 HTTPS。改变域名/RP ID 后，原 Passkey 不能直接迁移：管理员使用原密码/TOTP 重新绑定，代理用户由管理员重新生成开通链接。端口受精确 Origin 限制，默认端口按 URL 标准规范化。
 
-容器已声明 OpenSSL 构建和运行库。源码构建面板需 OpenSSL 开发库及 `pkg-config`；Debian/Ubuntu 使用 `libssl-dev pkg-config`，容器运行环境使用 `libssl3`。Agent 不新增该依赖。首次启动自动执行迁移 `0039_passkeys.sql`，只新增认证与插件账户映射表，不改原用户 ID、订阅令牌或用量账本；升级前沿用现有数据库备份流程。
+容器已声明 OpenSSL 构建和运行库。源码构建面板需 OpenSSL 开发库及 `pkg-config`；Debian/Ubuntu 使用 `libssl-dev pkg-config`，容器运行环境使用 `libssl3`。Agent 不新增该依赖。认证与门户账户映射包含在当前数据库基线中，不改原用户 ID、订阅令牌或用量账本；升级前沿用现有数据库备份流程。
 
 ## 管理员
 

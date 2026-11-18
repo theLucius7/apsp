@@ -1,4 +1,23 @@
-#!/usr/bin/python3
+#!/bin/sh
+''':'
+WB_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+if [ "${APSP_WORKBENCH_BUNDLED_PYTHON:-}" != 1 ] && [ -x "$WB_DIR/bin/python3" ]; then
+  if [ -d "$WB_DIR/lib" ]; then LD_LIBRARY_PATH="$WB_DIR/lib"; export LD_LIBRARY_PATH; fi
+  if [ -d "$WB_DIR/python" ]; then PYTHONHOME="$WB_DIR/python"; export PYTHONHOME; fi
+  if [ -f "$WB_DIR/certs/ca-certificates.crt" ]; then
+    SSL_CERT_FILE="$WB_DIR/certs/ca-certificates.crt"
+    CURL_CA_BUNDLE="$WB_DIR/certs/ca-certificates.crt"
+    export SSL_CERT_FILE CURL_CA_BUNDLE
+  fi
+  APSP_WORKBENCH_BUNDLED_PYTHON=1
+  export APSP_WORKBENCH_BUNDLED_PYTHON
+  exec "$WB_DIR/bin/python3" -B -s "$0" "$@"
+fi
+if [ -x "$WB_DIR/bin/python3" ]; then
+  exec "$WB_DIR/bin/python3" -B -s "$0" "$@"
+fi
+exec /usr/bin/python3 -B -s "$0" "$@"
+':'''
 """Offline workbench entrypoint. Supply this executable and its signed manifest.
 No downloads, shell, rank uploads, disk devices, or host configuration changes.
 """
@@ -19,6 +38,7 @@ import socket
 import ssl
 import struct
 import subprocess
+import sys
 import tempfile
 import time
 from urllib.parse import urlsplit, urljoin
@@ -33,6 +53,7 @@ PROCESS = None
 MANIFEST = {}
 EXECUTION = {}
 WORKSPACE = None
+BUNDLE_ROOT = None
 CREATED = []
 FILE_FDS = []
 LATENCY_SAMPLES = []
@@ -43,6 +64,65 @@ CANCELLED = False
 def require(condition, message):
     if not condition:
         raise ValueError(message)
+
+
+def resolve_bundled_path(root, relative, directory=False):
+    require(isinstance(root, Path) and not root.is_symlink() and root.is_dir()
+            and root.resolve() == root, "invalid workbench bundle root")
+    require(isinstance(relative, str) and bool(relative) and not Path(relative).is_absolute(),
+            "bundled path must be relative")
+    parts = Path(relative).parts
+    require(bool(parts) and all(part not in ("", ".", "..") for part in parts),
+            "bundled path contains forbidden traversal segment")
+    current = root
+    for part in parts:
+        current = current / part
+        require(not current.is_symlink(), "bundled path must not contain symlinks")
+        require(current.stat().st_mode & 0o022 == 0, "bundled path is writable by other accounts")
+    require(current.is_dir() if directory else current.is_file(),
+            "bundled target is missing or wrong file type")
+    resolved = current.resolve()
+    require(resolved == current and root in resolved.parents,
+            "bundled path escapes workbench bundle root")
+    return resolved
+
+
+def bundled_environment():
+    env = {"PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"}
+    if BUNDLE_ROOT is None:
+        return env
+    bundled_bin = BUNDLE_ROOT / "bin"
+    if not bundled_bin.is_symlink() and bundled_bin.is_dir() and (bundled_bin.stat().st_mode & 0o022 == 0):
+        env["PATH"] = f"{bundled_bin.resolve()}:/usr/bin:/bin"
+    lib_dirs = MANIFEST.get("bundled_lib_dirs")
+    if lib_dirs:
+        require(isinstance(lib_dirs, list) and len(lib_dirs) <= 16, "invalid bundled library list")
+        resolved_dirs = [str(resolve_bundled_path(BUNDLE_ROOT, entry, directory=True))
+                         for entry in lib_dirs]
+        env["LD_LIBRARY_PATH"] = ":".join(resolved_dirs)
+    python_home = (MANIFEST.get("interpreter") or {}).get("bundled_python_home")
+    if python_home:
+        env["PYTHONHOME"] = str(resolve_bundled_path(BUNDLE_ROOT, python_home, directory=True))
+    ca_bundle = MANIFEST.get("bundled_ca_bundle")
+    if ca_bundle:
+        ca_path = str(resolve_bundled_path(BUNDLE_ROOT, ca_bundle, directory=False))
+        env["SSL_CERT_FILE"] = ca_path
+        env["CURL_CA_BUNDLE"] = ca_path
+    for helper_rel in ("bin/mtr-packet", "libexec/mtr-packet"):
+        candidate = BUNDLE_ROOT / helper_rel
+        if not candidate.is_symlink() and candidate.is_file():
+            env["MTR_PACKET"] = str(resolve_bundled_path(BUNDLE_ROOT, helper_rel, directory=False))
+            break
+    return env
+
+
+def default_ssl_context():
+    ca_bundle = MANIFEST.get("bundled_ca_bundle") if isinstance(MANIFEST, dict) else None
+    if BUNDLE_ROOT is not None and ca_bundle:
+        return ssl.create_default_context(
+            cafile=str(resolve_bundled_path(BUNDLE_ROOT, ca_bundle, directory=False))
+        )
+    return ssl.create_default_context()
 
 
 def atomic(path, value):
@@ -131,9 +211,13 @@ def supplied_tool(name, expected_version=None):
             "tool license or offline inventory missing: " + name)
     require(item.get("license") and item.get("source_url", "").startswith("https://"),
             "tool license and source evidence required")
-    path = Path(item["path"])
-    require(path.is_absolute() and path.is_file(), "offline tool is not installed")
-    require(path.stat().st_mode & 0o022 == 0, "tool is writable by other accounts")
+    if item.get("bundled_path") is not None:
+        require(BUNDLE_ROOT is not None, "bundle root missing for bundled tool")
+        path = resolve_bundled_path(BUNDLE_ROOT, item["bundled_path"], directory=False)
+    else:
+        path = Path(item["path"])
+        require(path.is_absolute() and path.is_file(), "offline tool is not installed")
+        require(path.stat().st_mode & 0o022 == 0, "tool is writable by other accounts")
     digest = hashlib.sha256()
     with path.open("rb") as stream:
         for block in iter(lambda: stream.read(1024 * 1024), b""):
@@ -141,7 +225,11 @@ def supplied_tool(name, expected_version=None):
     require(digest.hexdigest() == item.get("sha256"), "tool does not match signed manifest")
     require(not expected_version or item.get("version") == expected_version, "tool version differs")
     flag = "-V" if name == "ping" else "--version"
-    version = subprocess.run([str(path), flag], capture_output=True, timeout=3, check=True)
+    if BUNDLE_ROOT is not None and MANIFEST.get("bundled_lib_dirs"):
+        version = subprocess.run([str(path), flag], capture_output=True, timeout=3, check=True,
+                                 env=bundled_environment())
+    else:
+        version = subprocess.run([str(path), flag], capture_output=True, timeout=3, check=True)
     require(hashlib.sha256(version.stdout + version.stderr).hexdigest() == item.get("version_output_sha256"), "tool runtime identity differs from signed inventory")
     return str(path)
 
@@ -222,7 +310,7 @@ def command(args, seconds):
         PROCESS = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                    stdin=subprocess.DEVNULL, start_new_session=True,
                                    pass_fds=tuple(FILE_FDS),
-                                   env={"PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"})
+                                   env=bundled_environment())
         pipe = PROCESS.stdout
         os.set_blocking(pipe.fileno(), False)
         selector.register(PROCESS.stdout, selectors.EVENT_READ)
@@ -419,7 +507,7 @@ def http_request(check, url, websocket=False):
             timings["proxy_connect_ms"] = (time.monotonic() - phase) * 1000
         if secure:
             phase = time.monotonic()
-            sock = ssl.create_default_context().wrap_socket(sock, server_hostname=parsed.hostname)
+            sock = default_ssl_context().wrap_socket(sock, server_hostname=parsed.hostname)
             timings["tls_ms"] = (time.monotonic() - phase) * 1000
         path = parsed.path or "/"
         if parsed.query:
@@ -508,7 +596,7 @@ def tls(check):
     with socket.socket(family(check)) as sock:
         sock.settimeout(5)
         sock.connect(endpoint)
-        with ssl.create_default_context().wrap_socket(sock, server_hostname=check["server_name"]) as wrapped:
+        with default_ssl_context().wrap_socket(sock, server_hostname=check["server_name"]) as wrapped:
             cert = wrapped.getpeercert()
             return {"domain_match": True, "trust_chain_valid": True, "certificate": cert,
                     "expires_at": int(ssl.cert_time_to_seconds(cert["notAfter"])), "handshake_ms": (time.monotonic() - started) * 1000,
@@ -722,7 +810,7 @@ def listener(args, check, maximum):
     log = tempfile.TemporaryFile(dir=WORKSPACE)
     try:
         PROCESS = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True,
-                                   env={"PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"})
+                                   env=bundled_environment())
         deadline = time.monotonic() + maximum
         ready = False
         while PROCESS.poll() is None:
@@ -841,7 +929,11 @@ def preflight(execution):
     if tool_name(check):
         program = supplied_tool(tool_name(check), check.get("tool_version"))
         if check["kind"] == "quic":
-            version = subprocess.run([program, "--version"], capture_output=True, timeout=2, check=True)
+            if BUNDLE_ROOT is not None and MANIFEST.get("bundled_lib_dirs"):
+                version = subprocess.run([program, "--version"], capture_output=True, timeout=2, check=True,
+                                         env=bundled_environment())
+            else:
+                version = subprocess.run([program, "--version"], capture_output=True, timeout=2, check=True)
             require(b"HTTP3" in version.stdout, "QUIC unavailable: curl was built without HTTP3")
     if check["kind"] == "throughput":
         multiplier = 2 if check["direction"] == "bidirectional" else 1
@@ -857,7 +949,7 @@ def preflight(execution):
 
 
 def main():
-    global EXECUTION, WORKSPACE, MANIFEST
+    global EXECUTION, WORKSPACE, MANIFEST, BUNDLE_ROOT
     parser = argparse.ArgumentParser()
     parser.add_argument("--version", action="store_true")
     parser.add_argument("--input")
@@ -868,11 +960,28 @@ def main():
     if args.version:
         print("apsp-network-workbench " + VERSION)
         return 0
+    manifest_path = Path(args.manifest)
+    require(not manifest_path.is_symlink() and manifest_path.is_file(),
+            "manifest must be an ordinary file")
+    BUNDLE_ROOT = manifest_path.resolve().parent
+    require(BUNDLE_ROOT.stat().st_mode & 0o022 == 0,
+            "manifest directory is writable by other accounts")
     EXECUTION = json.loads(Path(args.input).read_text())
-    MANIFEST = json.loads(Path(args.manifest).read_text())
+    MANIFEST = json.loads(manifest_path.read_text())
     require(MANIFEST.get("schema") == 1 and MANIFEST.get("engine_version") == VERSION, "signed manifest version mismatch")
     interpreter = MANIFEST.get("interpreter", {})
-    require(interpreter.get("path") == "/usr/bin/python3" and hashlib.sha256(Path("/usr/bin/python3").read_bytes()).hexdigest() == interpreter.get("sha256"), "host Python interpreter differs from signed inventory")
+    if interpreter.get("bundled_path") is not None:
+        bundled_python = resolve_bundled_path(BUNDLE_ROOT, interpreter["bundled_path"], directory=False)
+        require(hashlib.sha256(bundled_python.read_bytes()).hexdigest() == interpreter.get("sha256"),
+                "bundled Python interpreter differs from signed inventory")
+        if Path(sys.executable).resolve() != bundled_python:
+            require(os.environ.get("APSP_WORKBENCH_BUNDLED_PYTHON") != "1",
+                    "bundled Python interpreter failed to activate")
+            reexec_env = bundled_environment()
+            reexec_env["APSP_WORKBENCH_BUNDLED_PYTHON"] = "1"
+            os.execve(str(bundled_python), [str(bundled_python), "-B", "-s", *sys.argv], reexec_env)
+    else:
+        require(interpreter.get("path") == "/usr/bin/python3" and hashlib.sha256(Path("/usr/bin/python3").read_bytes()).hexdigest() == interpreter.get("sha256"), "host Python interpreter differs from signed inventory")
     preflight(EXECUTION)
     if args.preflight:
         print(json.dumps({"ready": True, "version": VERSION, "resources": current_resources()}))

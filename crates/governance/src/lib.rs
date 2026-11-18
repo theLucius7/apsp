@@ -2,9 +2,8 @@
 //! Platform governance (ADR 0128): who may administer the panel and how the panel itself
 //! stays trustworthy. Administrators with their sessions, sign-in factors and Passkeys,
 //! the request guard with its permissions and audit trail, managed credentials, panel
-//! settings, and the signed releases and artifacts the panel trusts.
+//! settings, and the signed Agent releases the panel trusts.
 
-pub mod artifacts;
 pub mod auth;
 pub mod control_center;
 pub mod locks;

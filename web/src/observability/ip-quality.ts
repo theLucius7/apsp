@@ -15,7 +15,7 @@ export function nodeIpStartError(scope: NodeIpScope, expectedServer: number) {
   if (scope.serverId !== expectedServer) return '已切换服务器，请在当前页面重新提交。'
   const data = scope.getCurrent ? scope.getCurrent() : scope.data
   if (!(scope.isCurrent ? scope.isCurrent() : scope.fresh) || scope.error || !data) return '当前节点自查状态未知，读取恢复后才能创建任务。'
-  if (!data.ready) return data.reason || '节点自查尚未就绪，请准备匹配的设备版本和签名制品。'
+  if (!data.ready) return data.reason || '节点自查尚未就绪，请确认设备在线并已升级至自带诊断能力的当前 Agent 版本。'
   if (data.reports.some(diagnosticActive)) return '此服务器已有诊断任务或正在等待清理确认。'
   return ''
 }
@@ -23,7 +23,7 @@ export function nodeIpStartError(scope: NodeIpScope, expectedServer: number) {
 export function nodeIpCancelError(scope: NodeIpScope, expectedServer: number, jobId: string) {
   const data = scope.getCurrent ? scope.getCurrent() : scope.data
   if (scope.serverId !== expectedServer || !(scope.isCurrent ? scope.isCurrent() : scope.fresh) || scope.error || !data) return '当前任务状态未知，读取恢复后再请求取消。'
-  const record = data.reports.find(record => record.id === jobId && record.job?.plugin === 'ipquality')
+  const record = data.reports.find(record => record.id === jobId && record.job?.tool === 'ipquality')
   if (!record || !diagnosticCancellable(record)) return '任务已经改变，请刷新查看设备确认。'
   if (!data.cancel_supported) return '此设备尚不支持确认式取消，请先升级设备。'
   return ''

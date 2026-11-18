@@ -1,14 +1,11 @@
+import { nonnegativeNumber as number } from '@/lib/validate'
 import { bytes, numberText } from '../../format'
 import type { Metrics, Server } from '../../types'
 import type { Tone } from '@/components/board'
 
 export type Sample = { id: string; sampled_at: number; metrics: Metrics }
-export type Point = { at: number; value: number | null; range?: { from: number; to: number; count: number; min: number; max: number; samples: number; partial: boolean; live?: boolean; bucketFrom?: number; bucketTo?: number } }
 export type NetworkField = 'received_bytes' | 'transmitted_bytes' | 'receive_bytes_per_sec' | 'transmit_bytes_per_sec'
 
-export function number(value: unknown): number | null {
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null
-}
 
 export function ratio(used: unknown, total: unknown): number | null {
   const amount = number(used), capacity = number(total)
@@ -54,37 +51,6 @@ export function filterServers(servers: Server[], query: string, filter: string) 
     const matches = [server.name, server.static_info.hostname, server.static_info.system, server.static_info.arch, server.asset_settings?.region, server.asset_settings?.group_name, ...(server.asset_settings?.tags ?? [])]
       .filter(Boolean).join(' ').toLocaleLowerCase().includes(text)
     return matches && (filter === 'all' || (filter === 'online' ? server.online : filter === 'offline' ? !server.online && (server.registered ?? Boolean(server.device_public_key)) : !server.online && !(server.registered ?? Boolean(server.device_public_key))))
-  })
-}
-
-// Keep missing samples and long gaps separate. Limit SVG complexity without hiding peaks.
-export function segments(points: Point[], from: number, to: number, gap: number, buckets = 180): Point[][] {
-  const ordered = points.filter(point => Number.isFinite(point.at) && point.at >= from && point.at <= to)
-    .sort((left, right) => left.at - right.at)
-  const result: Point[][] = []
-  let current: Point[] = []
-  for (const point of ordered) {
-    if (point.value === null || number(point.value) === null || (current.length && point.at - current[current.length - 1].at > gap)) {
-      if (current.length) result.push(current)
-      current = []
-    }
-    if (number(point.value) !== null) current.push(point)
-  }
-  if (current.length) result.push(current)
-  const width = Math.max(1, (to - from) / buckets)
-  return result.map(part => {
-    const groups = new Map<number, Point[]>()
-    for (const point of part) {
-      const key = Math.floor((point.at - from) / width)
-      const group = groups.get(key) ?? []
-      group.push(point)
-      groups.set(key, group)
-    }
-    return [...groups.values()].flatMap(group => {
-      const low = group.reduce((best, point) => (point.range?.min ?? point.value!) < (best.range?.min ?? best.value!) ? point : best)
-      const high = group.reduce((best, point) => (point.range?.max ?? point.value!) > (best.range?.max ?? best.value!) ? point : best)
-      return [...new Set([group[0], low, high, group[group.length - 1]])].sort((a, b) => a.at - b.at)
-    })
   })
 }
 

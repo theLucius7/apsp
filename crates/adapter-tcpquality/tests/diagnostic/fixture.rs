@@ -110,15 +110,36 @@ impl Privileged for Recorder {
         Box::pin(async move {
             assert_eq!(timeout_secs, 2);
             assert_eq!(maximum, 4096);
-            assert_eq!(args.len(), 1);
-            self.probes.lock().unwrap().push(args[0].clone());
+            let flag = match args {
+                [flag] => {
+                    self.probes.lock().unwrap().push(flag.clone());
+                    flag.as_str()
+                }
+                [sub, flag] if sub == "tcp-probe" => {
+                    self.probes.lock().unwrap().push(format!("{sub} {flag}"));
+                    flag.as_str()
+                }
+                _ => anyhow::bail!("unexpected identity arguments: {args:?}"),
+            };
             if self.hang {
                 std::future::pending::<()>().await;
             }
-            let stdout=match args[0].as_str() {
-                "--version"=> if self.bad_version { "wrong version\n".into() } else { "apsp-tcp-probe 0.3.0\n".into() },
-                "--build-info"=> self.bad.clone().unwrap_or_else(||json!({"version":"0.3.0","source_repo":"theLucius7/apsp","source_commit":SOURCE})).to_string(),
-                _=>anyhow::bail!("unexpected execution"),
+            let stdout = match flag {
+                "--version" => {
+                    if self.bad_version {
+                        "wrong version\n".into()
+                    } else {
+                        "apsp-tcp-probe 0.3.0\n".into()
+                    }
+                }
+                "--build-info" => self
+                    .bad
+                    .clone()
+                    .unwrap_or_else(|| {
+                        json!({"version":"0.3.0","source_repo":"theLucius7/apsp","source_commit":SOURCE})
+                    })
+                    .to_string(),
+                _ => anyhow::bail!("unexpected execution"),
             };
             Ok(Execution {
                 output: CommandOutput {

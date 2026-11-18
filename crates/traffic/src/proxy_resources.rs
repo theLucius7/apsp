@@ -32,7 +32,6 @@ pub struct ResourceEndpoint {
     pub enabled: bool,
     pub node_deleted: bool,
     pub server_deleted: bool,
-    pub plugin_enabled: bool,
     pub online: bool,
     pub desired_revision: Option<i64>,
     pub applied_revision: Option<i64>,
@@ -111,35 +110,32 @@ fn validate_identity(kind: &str, id: i64) -> ApiResult<()> {
 async fn read_resources(state: &AppState) -> ApiResult<Vec<ProxyResource>> {
     use super::ordered_paths::{models::*, storage};
     let mut tx = crate::read_snapshot(&state.pool).await?;
-    let query = format!(
-        "SELECT n.id,n.name,n.server_id,s.name AS server_name,n.protocol,n.port,n.settings,n.protocol_config,n.public_host,n.sni,n.enabled,n.deleted_at IS NOT NULL AS node_deleted,s.deleted_at IS NOT NULL AS server_deleted,({}) IS NOT NULL AS plugin_enabled,(s.last_seen IS NOT NULL AND $1-s.last_seen<=60) AS online,m.target_rev AS desired_revision,m.applied_rev AS applied_revision,m.updated_at AS applied_observed_at FROM nodes n JOIN servers s ON s.id=n.server_id {} LEFT JOIN server_module_status m ON m.server_id=s.id AND m.module='singbox' ORDER BY n.id",
-        super::settings::SOURCE_SQL,
-        super::settings::ENABLEMENT_JOIN
-    );
-    let endpoints: BTreeMap<i64, ResourceEndpoint> = sqlx::query_as::<_, ResourceEndpoint>(&query)
-        .bind(now_timestamp())
-        .fetch_all(&mut *tx)
-        .await?
-        .into_iter()
-        .map(|mut endpoint| {
-            let settings = serde_json::from_value::<apsp_compiler::NodeSettings>(std::mem::take(
-                &mut endpoint.settings,
-            ));
-            let protocol = serde_json::from_value::<apsp_compiler::ProtocolConfig>(std::mem::take(
-                &mut endpoint.protocol_config,
-            ));
-            endpoint.protocol_config_valid =
-                protocol.is_ok_and(|config| config.kind() == endpoint.protocol);
-            endpoint.public_port = endpoint.port;
-            if let Ok(settings) = settings
-                && settings.public_port != Some(0)
-            {
-                endpoint.public_port = settings.public_port.map(i32::from).unwrap_or(endpoint.port);
-                endpoint.public_port_valid = true;
-            }
-            (endpoint.id, endpoint)
-        })
-        .collect();
+    let endpoints: BTreeMap<i64, ResourceEndpoint> = sqlx::query_as::<_, ResourceEndpoint>(
+        "SELECT n.id,n.name,n.server_id,s.name AS server_name,n.protocol,n.port,n.settings,n.protocol_config,n.public_host,n.sni,n.enabled,n.deleted_at IS NOT NULL AS node_deleted,s.deleted_at IS NOT NULL AS server_deleted,(s.last_seen IS NOT NULL AND $1-s.last_seen<=60) AS online,m.target_rev AS desired_revision,m.applied_rev AS applied_revision,m.updated_at AS applied_observed_at FROM nodes n JOIN servers s ON s.id=n.server_id LEFT JOIN server_module_status m ON m.server_id=s.id AND m.module='singbox' ORDER BY n.id",
+    )
+    .bind(now_timestamp())
+    .fetch_all(&mut *tx)
+    .await?
+    .into_iter()
+    .map(|mut endpoint| {
+        let settings = serde_json::from_value::<apsp_compiler::NodeSettings>(std::mem::take(
+            &mut endpoint.settings,
+        ));
+        let protocol = serde_json::from_value::<apsp_compiler::ProtocolConfig>(std::mem::take(
+            &mut endpoint.protocol_config,
+        ));
+        endpoint.protocol_config_valid =
+            protocol.is_ok_and(|config| config.kind() == endpoint.protocol);
+        endpoint.public_port = endpoint.port;
+        if let Ok(settings) = settings
+            && settings.public_port != Some(0)
+        {
+            endpoint.public_port = settings.public_port.map(i32::from).unwrap_or(endpoint.port);
+            endpoint.public_port_valid = true;
+        }
+        (endpoint.id, endpoint)
+    })
+    .collect();
     let chains = sqlx::query_as::<_, super::ordered_paths::models::ChainRow>(&format!(
         "SELECT {CHAIN_COLUMNS} FROM singbox_chains WHERE deleted_at IS NULL AND path_kind='ordered' ORDER BY id"
     ))
@@ -383,9 +379,6 @@ fn endpoint_reasons(endpoint: &ResourceEndpoint, role: &str) -> Vec<String> {
     if !endpoint.enabled {
         reasons.push(format!("{role}节点已停用"));
     }
-    if !endpoint.plugin_enabled {
-        reasons.push(format!("{role}服务器未安装 sing-box"));
-    }
     if !endpoint.public_port_valid {
         reasons.push(format!("{role}公开端口参数无法确认，暂显示监听端口"));
     }
@@ -582,5 +575,80 @@ fn reference_error(
     ApiError::ConflictReferences {
         message: format!("资源仍被引用，请先解除：{}", names.join("、")),
         references: serde_json::json!({"policies":policies,"chains":chains}),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn sample_endpoint() -> ResourceEndpoint {
+        ResourceEndpoint {
+            id: 7,
+            name: "TEST_ONLY endpoint".into(),
+            server_id: 3,
+            server_name: "TEST_ONLY server".into(),
+            protocol: "vless-reality".into(),
+            port: 20443,
+            public_port: 20443,
+            public_host: "example.invalid".into(),
+            sni: "example.com".into(),
+            enabled: true,
+            node_deleted: false,
+            server_deleted: false,
+            online: false,
+            desired_revision: None,
+            applied_revision: None,
+            applied_observed_at: None,
+            settings: json!({}),
+            protocol_config: json!({}),
+            public_port_valid: true,
+            protocol_config_valid: true,
+        }
+    }
+
+    #[test]
+    fn endpoint_wire_omits_legacy_runtime_enabled_and_keeps_structural_availability() {
+        let endpoint = sample_endpoint();
+        assert!(endpoint_reasons(&endpoint, "节点").is_empty());
+        let value = serde_json::to_value(&endpoint).unwrap();
+        let keys: Vec<&str> = value
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            keys,
+            vec![
+                "id",
+                "name",
+                "server_id",
+                "server_name",
+                "protocol",
+                "port",
+                "public_port",
+                "public_host",
+                "sni",
+                "enabled",
+                "node_deleted",
+                "server_deleted",
+                "online",
+                "desired_revision",
+                "applied_revision",
+                "applied_observed_at",
+            ]
+        );
+    }
+
+    #[test]
+    fn disabled_or_invalid_endpoint_reports_structural_reasons() {
+        let mut endpoint = sample_endpoint();
+        endpoint.enabled = false;
+        endpoint.public_port_valid = false;
+        endpoint.protocol_config_valid = false;
+        let reasons = endpoint_reasons(&endpoint, "入口");
+        assert_eq!(reasons.len(), 3);
     }
 }

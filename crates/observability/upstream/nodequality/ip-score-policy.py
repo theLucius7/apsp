@@ -4,8 +4,8 @@ import hashlib
 MAX_SOURCE = 2 * 1024 * 1024
 SOURCES = {
     'ip.sh': {
-        'source_sha256': 'e332b5405ca12fe03ad5f427789c38c92f04bb2b66df05d296060e4cd8483c1e',
-        'patched_sha256': 'f434c87f920cc9594aca3978b58e28dcaf786c074d70d64475f567068d093c4d',
+        'source_sha256': '5e4f6453b87d0b720d0ad0ae88ad49dd814b3890ba73fb26f43c3eafadbfc31e',
+        'patched_sha256': 'd21fd7c1616840dfaf6fb680394d6410aecd3016d926995b1c160ec271d8eca5',
     },
 }
 HELPERS = r'''# Apsp modification (2026-10-01): unknown scores never imply low risk.

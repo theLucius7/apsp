@@ -31,3 +31,4 @@ tracing.workspace = true
 
 [dev-dependencies]
 apsp-cloud-api = { workspace = true, features = ["test-support"] }
+blake2.workspace = true

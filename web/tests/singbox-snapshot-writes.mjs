@@ -44,7 +44,7 @@ try {
       const nodes = [1, 2].map(id => ({ id, name: `TEST_ONLY 节点 ${id}`, server_id: id, protocol: 'vless-reality', public_host: '127.0.0.1', port: 20000 + id, sni: 'localhost', public_key: 'TEST_ONLY', short_id: '0123abcd' }))
       // What policy groups choose from: the managed nodes and one chain with its own entry.
       const endpoint = (id, name) => ({ id, name, server_id: id, server_name: `TEST_ONLY 服务器 ${id}`, protocol: 'vless-reality', port: 20000 + id, public_port: 20000 + id, public_host: '127.0.0.1', sni: 'localhost',
-        enabled: true, node_deleted: false, server_deleted: false, plugin_enabled: true, online: true, desired_revision: null, applied_revision: null, applied_observed_at: null })
+        enabled: true, node_deleted: false, server_deleted: false, online: true, desired_revision: null, applied_revision: null, applied_observed_at: null })
       const resources = nodes.map(node => ({ kind: 'direct', id: node.id, name: node.name, entry: endpoint(node.id, node.name), exit: null, available: true, unavailable_reasons: [], policy_group_ids: [], user_count: 0, chain_refs: [], settings_revision: 1, path_kind: null, hops: [], path_state: null }))
       resources.push(orderedResourceFixture({ id: 10, name: 'TEST_ONLY 原链路', entry: endpoint(3, 'TEST_ONLY 链路入口'), hops: [{ kind: 'managed', position: 1, node_id: 2, endpoint_version_id: pathFixtureUuid(2), endpoint: endpoint(2, 'TEST_ONLY 节点 2') }] }))
       const policies = [{ id: 1, name: 'TEST_ONLY 原策略', node_ids: [1], chain_ids: [10], member_count: 1 }, { id: 2, name: 'TEST_ONLY 新策略', node_ids: [2], chain_ids: [], member_count: 0 }]

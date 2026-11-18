@@ -150,7 +150,7 @@ expected_name = 'agent-' + version + ('-linux-musl-' + arch if target == arch el
 ensure(item['format'] == 'raw' and item['binary_name'] == 'apsp-agent'
        and item['asset_name'] == expected_name, 'Agent 制品身份不匹配')
 expected_size = item['archive_size']
-ensure(type(expected_size) is int and 0 < expected_size <= 256 * 1024 * 1024
+ensure(type(expected_size) is int and 0 < expected_size <= 128 * 1024 * 1024
        and type(item['binary_size']) is int and item['binary_size'] == expected_size,
        '已签 Agent 大小无效')
 ensure(isinstance(item['binary_sha256'], str)
@@ -272,7 +272,11 @@ if ! getent group apsp-singbox >/dev/null; then
   if command -v groupadd >/dev/null; then groupadd --system apsp-singbox; else addgroup -S apsp-singbox; fi
 fi
 if ! getent passwd apsp-singbox >/dev/null; then
-  NOLOGIN=$(command -v nologin)
+  if NOLOGIN=$(command -v nologin 2>/dev/null) && [ -n "$NOLOGIN" ]; then :
+  elif [ -x /usr/sbin/nologin ]; then NOLOGIN=/usr/sbin/nologin
+  elif [ -x /sbin/nologin ]; then NOLOGIN=/sbin/nologin
+  else NOLOGIN=$(command -v false || printf '%s' /bin/false)
+  fi
   if command -v useradd >/dev/null; then useradd --system --no-create-home --gid apsp-singbox --shell "$NOLOGIN" apsp-singbox
   else adduser -S -D -H -G apsp-singbox -s "$NOLOGIN" apsp-singbox; fi
 fi
@@ -331,7 +335,9 @@ fi
 chmod 0755 /etc/init.d/apsp-agent /etc/init.d/apsp-singbox@main
 rc-update --update
 rc-update add apsp-agent default
-rc-update add apsp-singbox@main default
+if [ -f /var/lib/apsp/plugins/sing-box@main/current/config.json ]; then
+  rc-update add apsp-singbox@main default
+fi
 rc-service apsp-agent restart
 fi
 STARTED=0

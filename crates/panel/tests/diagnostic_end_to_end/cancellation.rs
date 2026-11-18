@@ -5,7 +5,7 @@ async fn cancellation_crosses_real_agent_websocket_http_and_recovers_after_resta
     pool: PgPool,
 ) -> Result<()> {
     let harness = Harness::start(pool).await?;
-    write_artifact(&harness)?;
+    let fixture = SignedAgentFixture::prepare(&harness)?;
     let server = harness
         .api(
             Method::POST,
@@ -27,31 +27,28 @@ async fn cancellation_crosses_real_agent_websocket_http_and_recovers_after_resta
         enrollment["token"].as_str().context("enrollment token")?,
     )
     .await?;
-    let services = Arc::new(IndependentServices::default());
-    let start = || {
-        tokio::spawn(transport::run_with_diagnostics(
-            config.clone(),
-            vec![],
-            vec![Arc::new(NodeQualityAdapter::new())],
-            Arc::new(FakeResourceOps::new(Arc::new(SystemOps))),
-            services.clone(),
-            "cancellation-test-agent",
-        ))
-    };
-    let agent = start();
+    let agent = fixture.spawn(&config)?;
     eventually("confirmed cancellation capability", 15, || async {
-        let capabilities: serde_json::Value =
-            sqlx::query_scalar("SELECT capabilities FROM servers WHERE id=$1")
+        anyhow::ensure!(
+            !agent.is_finished()?,
+            "signed Agent subprocess exited during startup"
+        );
+        let row: (serde_json::Value, Option<i64>) =
+            sqlx::query_as("SELECT capabilities,static_info_received_at FROM servers WHERE id=$1")
                 .bind(id)
                 .fetch_one(&harness.state.pool)
                 .await?;
-        Ok(capabilities.as_array().is_some_and(|caps| {
-            caps.iter()
-                .any(|cap| cap == apsp_protocol::DIAGNOSTIC_CANCEL_CAPABILITY)
-                && caps
-                    .iter()
-                    .any(|cap| cap == apsp_protocol::DIAGNOSTIC_CPU_CEILING_CAPABILITY)
-        }))
+        Ok(row.1.is_some()
+            && row.0.as_array().is_some_and(|caps| {
+                caps.iter()
+                    .any(|cap| cap == apsp_protocol::SELF_CONTAINED_AGENT_CAPABILITY)
+                    && caps
+                        .iter()
+                        .any(|cap| cap == apsp_protocol::DIAGNOSTIC_CANCEL_CAPABILITY)
+                    && caps
+                        .iter()
+                        .any(|cap| cap == apsp_protocol::DIAGNOSTIC_CPU_CEILING_CAPABILITY)
+            }))
     })
     .await?;
     mark_simulated_linux(&harness, id).await?;
@@ -64,18 +61,18 @@ async fn cancellation_crosses_real_agent_websocket_http_and_recovers_after_resta
         .await?;
     let job = uuid::Uuid::parse_str(report["id"].as_str().context("job id")?)?;
     eventually("diagnostic service started once", 15, || async {
-        Ok(services.starts.load(Ordering::SeqCst) == 1)
+        Ok(fixture.services.starts()? == 1)
     })
     .await?;
     {
-        let jobs = services.jobs.lock().unwrap();
+        let jobs = fixture.services.jobs()?;
         let directory = &jobs.values().next().context("started service")?.0;
         fs::write(
             directory.join("result.txt"),
             "# 已完成的部分报告\n取消后保留。\n",
         )?;
     }
-    services.block_stop.store(true, Ordering::SeqCst);
+    fixture.services.set_block_stop(true)?;
     let cancellation = harness
         .api(
             Method::POST,
@@ -102,7 +99,7 @@ async fn cancellation_crosses_real_agent_websocket_http_and_recovers_after_resta
         15,
         || async {
             anyhow::ensure!(
-                !agent.is_finished(),
+                !agent.is_finished()?,
                 "Agent stopped while cancellation was pending"
             );
             let seen: i64 = sqlx::query_scalar("SELECT last_seen FROM servers WHERE id=$1")
@@ -118,8 +115,7 @@ async fn cancellation_crosses_real_agent_websocket_http_and_recovers_after_resta
         .context("durable cancellation intent")?;
     assert_eq!(saved.len(), 1);
     assert_eq!(saved[0].job.id, job);
-    agent.abort();
-    let _ = agent.await;
+    agent.stop().await;
     let mut state = State::open(&config.state_db)?;
     let mut saved: serde_json::Value = state
         .get_json("diagnostics:active")?
@@ -134,16 +130,16 @@ async fn cancellation_crosses_real_agent_websocket_http_and_recovers_after_resta
     requests[0].job.options.clear();
     state.set_json("diagnostics:cancellations", &requests)?;
     drop(state);
-    sqlx::query("UPDATE diagnostic_jobs SET job=jsonb_set(jsonb_set(job,'{options}','{}'),'{version}','\"a92fca6c0067df29ddd03fdc2fee6f3000f64545-r3\"') WHERE id=$1")
+    sqlx::query("UPDATE diagnostic_jobs SET job=jsonb_set(jsonb_set(job-'agent_bundle','{options}','{}'),'{version}','\"a92fca6c0067df29ddd03fdc2fee6f3000f64545-r3\"') WHERE id=$1")
         .bind(job).execute(&harness.state.pool).await?;
-    services.block_stop.store(false, Ordering::SeqCst);
-    let restarted = start();
+    fixture.services.set_block_stop(false)?;
+    let restarted = fixture.spawn(&config)?;
     eventually(
         "confirmed cleanup after restart and HTTP replay",
         20,
         || async {
             anyhow::ensure!(
-                !restarted.is_finished(),
+                !restarted.is_finished()?,
                 "Agent exited before cancellation recovery"
             );
             let row: (String, Option<serde_json::Value>, Option<i64>) = sqlx::query_as(
@@ -162,8 +158,8 @@ async fn cancellation_crosses_real_agent_websocket_http_and_recovers_after_resta
         },
     )
     .await?;
-    assert_eq!(services.starts.load(Ordering::SeqCst), 1);
-    assert!(services.jobs.lock().unwrap().is_empty());
+    assert_eq!(fixture.services.starts()?, 1);
+    assert!(fixture.services.jobs()?.is_empty());
     let duplicate = harness
         .api(
             Method::POST,
@@ -172,7 +168,6 @@ async fn cancellation_crosses_real_agent_websocket_http_and_recovers_after_resta
         )
         .await?;
     assert_eq!(duplicate["status"], "cancelled");
-    restarted.abort();
-    let _ = restarted.await;
+    restarted.stop().await;
     Ok(())
 }

@@ -97,18 +97,34 @@ pub async fn reconcile_applied(
     let mut checks = Vec::new();
     for row in rows {
         let module: String = row.get("module");
+        let target = row.get::<i64, _>("target_rev").max(0) as u64;
+        let known = row.get::<i64, _>("applied_rev").max(0) as u64;
+        let healthy: bool = row.get("healthy");
         let reported = applied.get(&module).copied().unwrap_or(0);
-        let known = row.get::<i64, _>("applied_rev") as u64;
-        differs |= reported != row.get::<i64, _>("target_rev") as u64 || reported != known;
-        if exact && reported != row.get::<i64, _>("target_rev") as u64 {
+        if target == 0 {
+            if reported == 0 {
+                if known != 0 || healthy {
+                    sqlx::query("UPDATE server_module_status SET applied_rev=0,healthy=false,last_error=NULL,updated_at=$3 WHERE server_id=$1 AND module=$2")
+                        .bind(server_id).bind(&module).bind(now_timestamp()).execute(&mut *tx).await?;
+                    sqlx::query(
+                        "DELETE FROM runtime_module_checkpoints WHERE server_id=$1 AND module=$2",
+                    )
+                    .bind(server_id)
+                    .bind(&module)
+                    .execute(&mut *tx)
+                    .await?;
+                }
+            } else {
+                differs = true;
+            }
+            continue;
+        }
+        differs |= reported != target || reported != known;
+        if exact && reported != target {
             sqlx::query("UPDATE server_module_status SET healthy=false,updated_at=$3 WHERE server_id=$1 AND module=$2")
                 .bind(server_id).bind(&module).bind(now_timestamp()).execute(&mut *tx).await?;
         }
-        if exact
-            && reported > 0
-            && reported == row.get::<i64, _>("target_rev") as u64
-            && (!row.get::<bool, _>("healthy") || known != reported)
-        {
+        if exact && reported > 0 && reported == target && (!healthy || known != reported) {
             checks.push(module.clone());
         }
         if !exact
@@ -165,13 +181,24 @@ pub async fn record_apply_result(
     anyhow::ensure!(!applied || result.healthy, "applied result must be healthy");
     let mut tx = state.pool.begin().await?;
     crate::runtime_control::lock_server(&mut tx, server_id).await?;
+    let current_target: Option<i64> = sqlx::query_scalar(
+        "SELECT target_rev FROM server_module_status WHERE server_id=$1 AND module=$2 FOR UPDATE",
+    )
+    .bind(server_id)
+    .bind(&result.module)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if current_target == Some(0) {
+        tx.commit().await?;
+        return Ok(());
+    }
     let exact: bool = sqlx::query_scalar("SELECT COALESCE((SELECT checkpoint_required FROM runtime_control_devices WHERE server_id=$1),false)")
         .bind(server_id).fetch_one(&mut *tx).await?;
     if exact {
         tx.commit().await?;
         return crate::runtime_control::record_apply(state, server_id, &result).await;
     }
-    sqlx::query("UPDATE server_module_status SET applied_rev=CASE WHEN $4 THEN GREATEST(applied_rev,$3) ELSE applied_rev END,last_result_rev=$3,healthy=$5,last_error=$6,updated_at=$7 WHERE server_id=$1 AND module=$2 AND last_result_rev<=$3 AND applied_rev<=$3")
+    sqlx::query("UPDATE server_module_status SET applied_rev=CASE WHEN $4 THEN GREATEST(applied_rev,$3) ELSE applied_rev END,last_result_rev=$3,healthy=$5,last_error=$6,updated_at=$7 WHERE server_id=$1 AND module=$2 AND target_rev>0 AND last_result_rev<=$3 AND applied_rev<=$3")
         .bind(server_id).bind(result.module).bind(rev).bind(applied).bind(result.healthy).bind(result.error.map(|error| error.chars().take(2048).collect::<String>())).bind(now_timestamp()).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok(())

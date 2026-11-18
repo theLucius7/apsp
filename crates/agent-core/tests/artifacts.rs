@@ -4,12 +4,17 @@
 use anyhow::Result;
 #[path = "../../protocol/tests/support/release.rs"]
 mod release_support;
-use apsp_adapter_sdk::{Descriptor, Privileged};
-use apsp_agent_core::{artifacts::PanelClient, system::SystemOps};
-use apsp_protocol::{Artifact, Bundle};
+use apsp_adapter_sdk::Privileged;
+use apsp_agent_core::{
+    artifacts::PanelClient,
+    bundled::{BundledItem, BundledPayload, ensure_materialized, verify_compiled_item},
+    system::SystemOps,
+};
+use apsp_protocol::Bundle;
 use flate2::{Compression, write::GzEncoder};
 use sha2::{Digest, Sha256};
 use std::{
+    borrow::Cow,
     collections::BTreeMap,
     io::Write,
     os::unix::fs::{PermissionsExt, symlink},
@@ -95,17 +100,6 @@ impl Drop for HttpServer {
 
 fn checksum(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
-}
-
-fn descriptor() -> Descriptor {
-    Descriptor {
-        auxiliary_files: vec![],
-        module: "runtime".into(),
-        plugin_name: "runtime".into(),
-        binary_name: "runtime".into(),
-        service_unit: "runtime@main.service".into(),
-        service_group: String::new(),
-    }
 }
 
 fn archive(entries: &[(&str, tar::EntryType, &[u8])]) -> Result<Vec<u8>> {
@@ -216,110 +210,105 @@ async fn manifest_uses_authenticated_panel_endpoint() -> Result<()> {
 }
 
 #[tokio::test]
-async fn artifact_cache_checks_contents_and_never_replaces_existing_versions() -> Result<()> {
+async fn bundled_materialization_verifies_contents_preserves_rollback_dirs_and_rejects_tampering()
+-> Result<()> {
     let temporary = Temporary::new()?;
-    let packed = archive(&[("runtime", tar::EntryType::Regular, b"original-runtime")])?;
-    let panel = HttpServer::new(packed.clone(), "200 OK", "").await?;
-    let client = PanelClient::new(&panel.origin, "test-session")?
-        .with_trusted_keys(release_support::trusted_keys());
-    let artifact = Artifact {
-        url: format!(
-            "{}/api/agent/v1/artifacts/runtime/1.2.3/{}",
-            panel.origin,
-            apsp_protocol::release::native_arch()?
-        ),
-        sha256: checksum(&packed),
-        proof: Some(release_support::proof_for_archive(
-            "runtime",
-            "1.2.3",
-            "runtime",
-            &packed,
-            b"original-runtime",
-        )),
-    };
     let ops = SystemOps;
-    let binary = client
-        .ensure_artifact(&artifact, "1.2.3", &descriptor(), &temporary.0, &ops)
-        .await?;
-    assert_eq!(std::fs::read(&binary)?, b"original-runtime");
+    let packed_a = archive(&[
+        ("runtime", tar::EntryType::Regular, b"bundled-runtime-a"),
+        (
+            "lib/helper.so",
+            tar::EntryType::Regular,
+            b"bundled-helper-a",
+        ),
+    ])?;
+    let item_a = BundledItem {
+        component_name: "runtime".into(),
+        binary_name: "runtime".into(),
+        version: "1.2.3+build1".into(),
+        payload: BundledPayload::TarGz {
+            archive_sha256: checksum(&packed_a),
+            bytes: Cow::Owned(packed_a.clone()),
+        },
+    };
+    let bin_a = ensure_materialized(&item_a, &temporary.0, &ops).await?;
+    assert_eq!(bin_a, temporary.0.join("runtime/1.2.3+build1/runtime"));
+    assert_eq!(std::fs::read(&bin_a)?, b"bundled-runtime-a");
     assert_eq!(
-        std::fs::metadata(&binary)?.permissions().mode() & 0o777,
+        std::fs::read(temporary.0.join("runtime/1.2.3+build1/lib/helper.so"))?,
+        b"bundled-helper-a"
+    );
+    assert_eq!(
+        std::fs::metadata(&bin_a)?.permissions().mode() & 0o777,
         0o755
     );
+    // Idempotent reuse when manifest and files match.
     assert_eq!(
-        client
-            .ensure_artifact(&artifact, "1.2.3", &descriptor(), &temporary.0, &ops)
-            .await?,
-        binary
+        ensure_materialized(&item_a, &temporary.0, &ops).await?,
+        bin_a
     );
-    assert_eq!(panel.requests.lock().await.len(), 1);
-    let mismatch = Artifact {
-        sha256: "0".repeat(64),
-        ..artifact.clone()
-    };
-    assert!(
-        client
-            .ensure_artifact(&mismatch, "1.2.3", &descriptor(), &temporary.0, &ops)
-            .await
-            .is_err()
-    );
-    assert_eq!(std::fs::read(&binary)?, b"original-runtime");
-    std::fs::write(&binary, b"tampered")?;
-    assert!(
-        client
-            .ensure_artifact(&artifact, "1.2.3", &descriptor(), &temporary.0, &ops)
-            .await
-            .is_err()
-    );
-    assert!(
-        client
-            .ensure_artifact(&artifact, "../escape", &descriptor(), &temporary.0, &ops)
-            .await
-            .is_err()
-    );
-    let mut invalid = descriptor();
-    invalid.plugin_name = "../escape".into();
-    assert!(
-        client
-            .ensure_artifact(&artifact, "1.2.3", &invalid, &temporary.0, &ops)
-            .await
-            .is_err()
-    );
-    Ok(())
-}
 
-#[tokio::test]
-async fn artifact_checksum_failure_leaves_no_version_and_symlink_paths_are_rejected() -> Result<()>
-{
-    let temporary = Temporary::new()?;
-    let packed = archive(&[("runtime", tar::EntryType::Regular, b"runtime")])?;
-    let panel = HttpServer::new(packed.clone(), "200 OK", "").await?;
-    let client = PanelClient::new(&panel.origin, "test-session")?
-        .with_trusted_keys(release_support::trusted_keys());
-    let mut artifact = Artifact {
-        proof: Some(release_support::proof_for_archive(
-            "runtime", "1.0", "runtime", &packed, b"runtime",
-        )),
-        url: format!(
-            "{}/api/agent/v1/artifacts/runtime/1.0/{}",
-            panel.origin,
-            apsp_protocol::release::native_arch()?
-        ),
-        sha256: "0".repeat(64),
+    // A newer Agent rebuild carrying the same semantic version string materializes into
+    // `<version>-<hash12>` without overwriting `<version>`, keeping rollback intact.
+    let packed_b = archive(&[("runtime", tar::EntryType::Regular, b"bundled-runtime-b")])?;
+    let sha_b = checksum(&packed_b);
+    let item_b = BundledItem {
+        component_name: "runtime".into(),
+        binary_name: "runtime".into(),
+        version: "1.2.3+build1".into(),
+        payload: BundledPayload::TarGz {
+            archive_sha256: sha_b.clone(),
+            bytes: Cow::Owned(packed_b),
+        },
     };
+    let bin_b = ensure_materialized(&item_b, &temporary.0, &ops).await?;
+    assert_eq!(
+        bin_b,
+        temporary
+            .0
+            .join(format!("runtime/1.2.3+build1-{}/runtime", &sha_b[..12]))
+    );
+    assert_eq!(std::fs::read(&bin_a)?, b"bundled-runtime-a");
+    assert_eq!(std::fs::read(&bin_b)?, b"bundled-runtime-b");
+
+    // Tampering with an extracted file fails verification against the compiled item.
+    std::fs::write(&bin_b, b"tampered-runtime")?;
     assert!(
-        client
-            .ensure_artifact(&artifact, "1.0", &descriptor(), &temporary.0, &SystemOps)
+        verify_compiled_item(&item_b, &temporary.0, &bin_b)
             .await
             .is_err()
     );
-    assert!(!temporary.0.join("runtime/1.0").exists());
-    artifact.sha256 = checksum(&packed);
-    let outside = Temporary::new()?;
-    symlink(&outside.0, temporary.0.join("runtime"))?;
+
+    // Mismatched archive digest or symlinked component directory is rejected without publishing.
+    let bad_digest_item = BundledItem {
+        component_name: "corrupt".into(),
+        binary_name: "runtime".into(),
+        version: "1.0.0".into(),
+        payload: BundledPayload::TarGz {
+            archive_sha256: "0".repeat(64),
+            bytes: Cow::Owned(packed_a.clone()),
+        },
+    };
     assert!(
-        client
-            .ensure_artifact(&artifact, "1.0", &descriptor(), &temporary.0, &SystemOps)
+        ensure_materialized(&bad_digest_item, &temporary.0, &ops)
+            .await
+            .is_err()
+    );
+    assert!(!temporary.0.join("corrupt/1.0.0").exists());
+
+    let outside = Temporary::new()?;
+    symlink(&outside.0, temporary.0.join("escaped"))?;
+    let symlink_item = BundledItem {
+        component_name: "escaped".into(),
+        binary_name: "runtime".into(),
+        version: "1.0.0".into(),
+        payload: BundledPayload::TarGz {
+            archive_sha256: checksum(&packed_a),
+            bytes: Cow::Owned(packed_a),
+        },
+    };
+    assert!(
+        ensure_materialized(&symlink_item, &temporary.0, &ops)
             .await
             .is_err()
     );
@@ -510,248 +499,5 @@ async fn cancelled_commands_terminate_the_child_process() -> Result<()> {
         }
     })
     .await?;
-    Ok(())
-}
-
-#[tokio::test]
-async fn unsigned_artifacts_and_signed_binary_mismatches_never_publish() -> Result<()> {
-    let temporary = Temporary::new()?;
-    let packed = archive(&[("runtime", tar::EntryType::Regular, b"unexpected-runtime")])?;
-    let panel = HttpServer::new(packed.clone(), "200 OK", "").await?;
-    let client = PanelClient::new(&panel.origin, "test-session")?
-        .with_trusted_keys(release_support::trusted_keys());
-    let mut artifact = Artifact {
-        proof: None,
-        url: format!(
-            "{}/api/agent/v1/artifacts/runtime/1.0/{}",
-            panel.origin,
-            apsp_protocol::release::native_arch()?
-        ),
-        sha256: checksum(&packed),
-    };
-    assert!(
-        client
-            .ensure_artifact(&artifact, "1.0", &descriptor(), &temporary.0, &SystemOps)
-            .await
-            .is_err()
-    );
-    assert!(panel.requests.lock().await.is_empty());
-    artifact.proof = Some(release_support::proof_for_archive(
-        "runtime",
-        "1.0",
-        "runtime",
-        &packed,
-        b"expected-runtime",
-    ));
-    assert!(
-        client
-            .ensure_artifact(&artifact, "1.0", &descriptor(), &temporary.0, &SystemOps)
-            .await
-            .is_err()
-    );
-    assert_eq!(panel.requests.lock().await.len(), 1);
-    assert!(!temporary.0.join("runtime/1.0").exists());
-    assert!(
-        std::fs::read_dir(temporary.0.join("runtime"))?
-            .next()
-            .is_none()
-    );
-    Ok(())
-}
-
-#[tokio::test]
-async fn legacy_local_hashes_cannot_authorize_a_changed_cached_binary() -> Result<()> {
-    let temporary = Temporary::new()?;
-    let packed = archive(&[("runtime", tar::EntryType::Regular, b"trusted-runtime")])?;
-    let panel = HttpServer::new(packed.clone(), "200 OK", "").await?;
-    let client = PanelClient::new(&panel.origin, "test-session")?
-        .with_trusted_keys(release_support::trusted_keys());
-    let proof = release_support::proof_for_archive(
-        "runtime",
-        "1.0",
-        "runtime",
-        &packed,
-        b"trusted-runtime",
-    );
-    let artifact = Artifact {
-        proof: Some(proof.clone()),
-        url: format!(
-            "{}/api/agent/v1/artifacts/runtime/1.0/{}",
-            panel.origin,
-            apsp_protocol::release::native_arch()?
-        ),
-        sha256: checksum(&packed),
-    };
-    let binary = client
-        .ensure_artifact(&artifact, "1.0", &descriptor(), &temporary.0, &SystemOps)
-        .await?;
-    let directory = binary.parent().unwrap();
-    for name in ["release.json", "SHA256SUMS", "SHA256SUMS.minisig"] {
-        std::fs::remove_file(directory.join(name))?;
-    }
-    // Full signed proofs in the cache marker remain verifiable offline.
-    assert_eq!(
-        client
-            .ensure_artifact(&artifact, "1.0", &descriptor(), &temporary.0, &SystemOps)
-            .await?,
-        binary
-    );
-    std::fs::write(&binary, b"hostile-runtime")?;
-    std::fs::write(
-        directory.join(".artifact.json"),
-        serde_json::to_vec(
-            &serde_json::json!({"archive_sha256":checksum(&packed),"binary_sha256":checksum(b"hostile-runtime")}),
-        )?,
-    )?;
-    assert!(
-        client
-            .ensure_artifact(&artifact, "1.0", &descriptor(), &temporary.0, &SystemOps)
-            .await
-            .is_err()
-    );
-    std::fs::write(
-        directory.join(".artifact.json"),
-        serde_json::to_vec(
-            &serde_json::json!({"proof":proof,"binary_sha256":checksum(b"hostile-runtime")}),
-        )?,
-    )?;
-    assert!(
-        client
-            .ensure_artifact(&artifact, "1.0", &descriptor(), &temporary.0, &SystemOps)
-            .await
-            .is_err()
-    );
-    assert_eq!(panel.requests.lock().await.len(), 1);
-    Ok(())
-}
-
-#[tokio::test]
-async fn auxiliary_artifacts_require_signed_file_hashes_and_reject_tampering() -> Result<()> {
-    let temporary = Temporary::new()?;
-    let packed = archive(&[
-        ("runtime", tar::EntryType::Regular, b"binary"),
-        ("helper.dll", tar::EntryType::Regular, b"library"),
-    ])?;
-    let panel = HttpServer::new(packed.clone(), "200 OK", "").await?;
-    let client = PanelClient::new(&panel.origin, "test-session")?
-        .with_trusted_keys(release_support::trusted_keys());
-    let mut entry =
-        release_support::entry("runtime", "1.0", "runtime", "tar.gz", &packed, b"binary");
-    entry.auxiliary_files.insert(
-        "helper.dll".into(),
-        apsp_protocol::release::ReleaseFile {
-            sha256: checksum(b"library"),
-            size: 7,
-        },
-    );
-    let artifact = Artifact {
-        proof: Some(release_support::signed_release(vec![(
-            entry,
-            packed.clone(),
-        )])),
-        url: format!(
-            "{}/api/agent/v1/artifacts/runtime/1.0/{}",
-            panel.origin,
-            apsp_protocol::release::native_arch()?
-        ),
-        sha256: checksum(&packed),
-    };
-    let mut descriptor = descriptor();
-    descriptor.auxiliary_files = vec!["helper.dll".into()];
-    let binary = client
-        .ensure_artifact(&artifact, "1.0", &descriptor, &temporary.0, &SystemOps)
-        .await?;
-    assert_eq!(
-        std::fs::read(binary.parent().unwrap().join("helper.dll"))?,
-        b"library"
-    );
-    client
-        .ensure_artifact(&artifact, "1.0", &descriptor, &temporary.0, &SystemOps)
-        .await?;
-    assert_eq!(panel.requests.lock().await.len(), 1);
-    std::fs::write(binary.parent().unwrap().join("helper.dll"), b"changed")?;
-    assert!(
-        client
-            .ensure_artifact(&artifact, "1.0", &descriptor, &temporary.0, &SystemOps)
-            .await
-            .is_err()
-    );
-    assert_eq!(panel.requests.lock().await.len(), 1);
-    descriptor.auxiliary_files.clear();
-    assert!(
-        client
-            .ensure_artifact(&artifact, "1.0", &descriptor, &temporary.0, &SystemOps)
-            .await
-            .is_err()
-    );
-    Ok(())
-}
-
-#[tokio::test]
-async fn signed_five_file_provenance_is_installed_and_cache_tampering_is_rejected() -> Result<()> {
-    let temporary = Temporary::new()?;
-    let auxiliary: [(&str, &[u8]); 5] = [
-        ("build-info.json", b"TEST_ONLY build provenance"),
-        ("LICENSE", b"TEST_ONLY license"),
-        ("source.tar.gz", b"TEST_ONLY fixed source archive"),
-        ("Cargo.lock", b"TEST_ONLY locked dependencies"),
-        (
-            "THIRD_PARTY_NOTICES.txt",
-            b"TEST_ONLY third-party originals",
-        ),
-    ];
-    let mut members = vec![("runtime", tar::EntryType::Regular, b"binary".as_slice())];
-    members.extend(
-        auxiliary
-            .iter()
-            .map(|(name, data)| (*name, tar::EntryType::Regular, *data)),
-    );
-    let packed = archive(&members)?;
-    let panel = HttpServer::new(packed.clone(), "200 OK", "").await?;
-    let client = PanelClient::new(&panel.origin, "test-session")?
-        .with_trusted_keys(release_support::trusted_keys());
-    let mut entry =
-        release_support::entry("runtime", "1.0", "runtime", "tar.gz", &packed, b"binary");
-    for (name, content) in auxiliary {
-        entry.auxiliary_files.insert(
-            name.into(),
-            apsp_protocol::release::ReleaseFile {
-                sha256: checksum(content),
-                size: content.len() as u64,
-            },
-        );
-    }
-    let artifact = Artifact {
-        proof: Some(release_support::signed_release(vec![(
-            entry,
-            packed.clone(),
-        )])),
-        url: format!(
-            "{}/api/agent/v1/artifacts/runtime/1.0/{}",
-            panel.origin,
-            apsp_protocol::release::native_arch()?
-        ),
-        sha256: checksum(&packed),
-    };
-    let mut descriptor = descriptor();
-    descriptor.auxiliary_files = auxiliary
-        .iter()
-        .map(|(name, _)| (*name).to_owned())
-        .collect();
-    let binary = client
-        .ensure_artifact(&artifact, "1.0", &descriptor, &temporary.0, &SystemOps)
-        .await?;
-    for (name, content) in auxiliary {
-        assert_eq!(std::fs::read(binary.parent().unwrap().join(name))?, content);
-        std::fs::write(binary.parent().unwrap().join(name), b"tampered")?;
-        assert!(
-            client
-                .ensure_artifact(&artifact, "1.0", &descriptor, &temporary.0, &SystemOps)
-                .await
-                .is_err()
-        );
-        std::fs::write(binary.parent().unwrap().join(name), content)?;
-    }
-    assert_eq!(panel.requests.lock().await.len(), 1);
     Ok(())
 }

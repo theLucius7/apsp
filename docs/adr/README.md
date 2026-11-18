@@ -6,6 +6,10 @@
 
 每份 ADR 开头写明状态（已接受、部分被取代、被取代）及取代它的 ADR；下面的条目在括号中注明替代关系。ADR 0128 起不再有插件：较早 ADR 中的 `plugins/ddns/panel`、`plugins/expenses/panel`、`plugins/cloud_api/panel` 是当时的位置，现在分别是 `crates/naming`、`crates/costs`、`crates/cloud-api`；设备上的路径不变，`/api/plugins/...` 接口前缀自 ADR 0132（2026-11-13）起按领域改名，对应表见 [ADR 0132](0132-platform-only-host-and-domain-addresses.md) 第 9 条。阶段 B2a（2026-11-08）起，较早 ADR 中宿主的 `fleet/`、`commands/`、`operations/` 与 `runtime_operations.rs` 在 `crates/operations`（`operations/` 改名 `jobs/`），其中属于其他领域的部分分别移到宿主的 `server_lifecycle.rs`、`batch_enrollment.rs`、`server_monitoring.rs`、`cloud_resources/`、`incidents.rs`、`backups/` 与 `crates/costs`，接口路径不变。阶段 B2b 起，宿主的遥测、拨测、延迟检测、诊断、IP 查询、网络检测、告警（原 `notifications/` 的规则、评估与事件，现为 `alerts/`）、故障事件、统计与看板在 `crates/observability`，`plugins/{ipquality,nodequality,tcpquality}/panel` 的诊断工具代码在它的 `diagnostic_tools/` 下（ADR 0132 之前叫 `diagnostic_plugins/`；打包脚本与上游锁定文件现在在 `crates/observability/upstream/`），sing-box 的 `statistics.rs` 是它的 `statistics/proxy_usage.rs`。阶段 B2c（2026-11-09）起，宿主的 `exchange.rs`（汇率）在 `crates/costs`，`device_config.rs`、`runtime_control/` 与 `runtime_validations.rs` 在 `plugins/singbox/panel`（阶段 C 起是 `crates/traffic`），接口路径不变。ADR 0132（2026-11-13）起，宿主 `crates/panel-host` 只剩平台机制，较早 ADR 中宿主的其余模块在各自的领域 crate：`auth/`、`passkeys/`、`control_center/`、`releases/` 与 `artifacts.rs` 在 `crates/governance`（其中的搜索在应用层 `crates/panel/src/search.rs`）；`servers.rs`、`server_assets.rs`、`retirement.rs`、`installation*`、`batch_enrollment.rs`、`server_lifecycle.rs`、`cloud_resources/` 在 `crates/resources`，Agent 通道 `agent_api.rs` 是它的 `device_channel.rs`；`network_configuration/` 在 `crates/networking`，其中的 ACME、证书、证书部署与 DNS-01 验证在 `crates/naming`；`backups/` 与 `agent_updates.rs` 在 `crates/operations`。编号说明：0043 有两份文件（`0043-runtime-operations.md` 与 `0043-nodequality-offline-rootfs.md`，后者与 0049 主题相同、内容略有差异，索引列 0049）；0052 与 0066、0053 与 0067 主题相同，分别来自主线与作者独立分支的整合，内容有差异，引用时以各自文件为准。编号保持不变。
 
+## 当前整合
+
+- [ADR 0140：领域整合与当前资料收口](0140-domain-consolidation.md)
+
 ## 配置、协议与计量基础
 
 - [ADR 0001：声明式全量快照](0001-declarative-snapshots.md)
@@ -238,3 +242,8 @@
 ## REALITY 仿真补丁（2026-11-17）
 
 - [ADR 0139：在 1.14.4 运行时上恢复 REALITY 仿真补丁](0139-reality-hardening-on-stable-runtime.md)：11-17 集中封锁后恢复 ADR 0104 的补丁（回落转发关闭、模仿握手后记录），并穿透 sing-box 的连接包装、镜像目标站关闭后的 RST；随尚未发布的 `1.14.4-apsp.2` 与 Agent 0.3.9 发布，不改数据库基线；目标站、端口和客户端 MLKEM 属于线路配置
+
+## 领域整合与一体化自带能力 Agent（2026-11-17 / 2026-11-18）
+
+- [ADR 0140：领域整合与当前资料收口](0140-domain-consolidation.md)：按领域统一模型与地址，移除过渡期控制台旧插件地址并保留已发给代理用户的外部链接，Nexus 成员经预览原生采用后退出兼容桥，清理已替代任务书（独立制品页与 `runtime_enabled` 部分由 ADR 0141 更新）
+- [ADR 0141：一体化自带能力 Agent 与服务配置驱动生命周期](0141-self-contained-agent-and-desired-service-config.md)：单文件签名 `apsp-agent` 内嵌对应平台 `sing-box` 与真实受控诊断能力，移除独立制品目录、手工启用表 `runtime_enablements`、运行时制品灰度及阻塞式预检确认，当前有效服务配置作为唯一期望运行状态，支持同配置不健康自动恢复与整包升级原子回退

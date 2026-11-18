@@ -1,8 +1,11 @@
 use crate::{
-    diagnostics::service::{DiagnosticTool, JobPlan, PlanFuture, SectionContext, SectionFuture},
-    error::ApiError,
+    diagnostics::service::{
+        DiagnosticTool, FrozenComponentIdentity, JobPlan, PlanFuture, SectionContext, SectionFuture,
+    },
+    error::{ApiError, ApiResult},
     ip_quality,
 };
+use apsp_governance::releases::VerifiedRunningComponent;
 use apsp_protocol::{DiagnosticResourceBudget, DiagnosticSectionUpdate};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -16,6 +19,8 @@ pub const TOOL_VERSION: &str = "87397e2c3196ec796f5477c83343c2354df601ea-node-r1
 pub const SOURCE_COMMIT: &str = "87397e2c3196ec796f5477c83343c2354df601ea";
 pub const SOURCE_SHA256: &str = "b30df5a3c2204276c54e99dcc5080b46f8a627667730aee7de63b109b8ecaecf";
 pub const CAPABILITY: &str = "diagnostic:ipquality-node-v1";
+pub const LEGACY_PROOF_DENIAL: &str =
+    "历史旧证明格式的节点自查任务已停用，请使用当前一体化 Agent 重新发起自查";
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -43,6 +48,49 @@ impl DiagnosticTool for IpQualityTool {
     }
     fn required_capabilities(&self) -> &'static [&'static str] {
         &[CAPABILITY]
+    }
+    fn start_denial(&self, job: &Value) -> Option<&'static str> {
+        let valid_v2 = FrozenComponentIdentity::from_job(job)
+            .ok()
+            .flatten()
+            .is_some_and(|frozen| {
+                frozen.component == "ipquality"
+                    && frozen.component_version == TOOL_VERSION
+                    && job["options"]["expected_component_sha256"].as_str()
+                        == Some(frozen.component_sha256.as_str())
+            });
+        (!valid_v2).then_some(LEGACY_PROOF_DENIAL)
+    }
+    fn can_dispatch(&self, job: &Value, capabilities: &Value) -> bool {
+        self.start_denial(job).is_none()
+            && capabilities
+                .as_array()
+                .is_some_and(|items| items.iter().any(|item| item.as_str() == Some(CAPABILITY)))
+    }
+    fn freeze_dispatch(
+        &self,
+        verified: &VerifiedRunningComponent,
+        plan: &mut JobPlan,
+    ) -> ApiResult<()> {
+        plan.options.insert(
+            "expected_component_sha256".into(),
+            verified.component_sha256.clone(),
+        );
+        if let Some(meta) = plan
+            .metadata
+            .get_mut("ipquality")
+            .and_then(Value::as_object_mut)
+        {
+            meta.insert(
+                "agent_sha256".into(),
+                Value::String(verified.agent_sha256.clone()),
+            );
+            meta.insert(
+                "component_sha256".into(),
+                Value::String(verified.component_sha256.clone()),
+            );
+        }
+        Ok(())
     }
 
     fn plan<'a>(
@@ -104,7 +152,10 @@ impl DiagnosticTool for IpQualityTool {
                 return Ok(());
             }
             let projection = result::parse(&context, update)?;
-            ip_quality::node::persist(connection, &context, update, projection).await
+            if context.live_verified {
+                ip_quality::node::persist(connection, &context, update, projection).await?;
+            }
+            Ok(())
         })
     }
 }

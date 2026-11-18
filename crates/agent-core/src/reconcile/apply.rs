@@ -76,9 +76,10 @@ impl Reconciler {
                 .get_json::<bool>(&format!("health:{module}"))?
                 .unwrap_or(false);
             anyhow::ensure!(healthy, "current runtime is unhealthy");
-            if self.services.supports_runtime_checkpoint()
-                && let Some(activation) = self.saved_activation()?
-            {
+            if self.services.supports_runtime_checkpoint() {
+                let activation = self
+                    .saved_activation()?
+                    .context("runtime has no certified activation")?;
                 self.validate_activation(&previous, &activation).await?;
             }
             Ok(())
@@ -140,50 +141,67 @@ impl Reconciler {
         if let Some(previous) = &previous {
             self.verify_applied_runtime(previous).await?;
             anyhow::ensure!(
+                target.spec.revision >= previous.spec.revision,
+                "target revision is older than applied runtime"
+            );
+            anyhow::ensure!(
                 previous.spec.revision != target.spec.revision
                     || previous.spec.config_hash == target.spec.config_hash,
                 "same revision changed content"
             );
         }
-        let preserved_activation = if self.services.supports_runtime_checkpoint()
-            && plan == Plan::Noop
-        {
-            match self.saved_activation()? {
-                Some(activation) => {
-                    let prior = previous.as_ref().context("no runtime to preserve")?;
-                    anyhow::ensure!(
-                        activation.bundle_sha256 == target.spec.config_hash,
-                        "unchanged deployment changed its bundle digest"
-                    );
-                    match self.validate_activation(prior, &activation).await {
-                        Ok(()) => Some(activation),
-                        Err(error) => {
-                            if target.spec.revision <= prior.spec.revision {
-                                return Err(error);
-                            }
-                            // Only an explicit higher deployment may replace an invalid
-                            // activation. Observation and same-revision polls never restart.
+        let prior_active = match &previous {
+            Some(_) => self
+                .bounded(self.services.is_active(&descriptor.service_unit))
+                .await
+                .unwrap_or(false),
+            None => false,
+        };
+        let prior_healthy_state = self
+            .state
+            .locked()?
+            .get_json::<bool>(&format!("health:{}", descriptor.module))?
+            .unwrap_or(true);
+        let preserved_activation = if plan == Plan::Noop {
+            let prior = previous.as_ref().context("no runtime to preserve")?;
+            if !prior_active || !prior_healthy_state {
+                plan = Plan::Restart;
+                None
+            } else if self.services.supports_runtime_checkpoint() {
+                match self.saved_activation()? {
+                    Some(activation) => {
+                        anyhow::ensure!(
+                            activation.bundle_sha256 == target.spec.config_hash,
+                            "unchanged deployment changed its bundle digest"
+                        );
+                        if self.validate_activation(prior, &activation).await.is_ok()
+                            && self
+                                .active_component_matches_bundled(&target, Some(&activation))
+                                .await?
+                        {
+                            Some(activation)
+                        } else {
                             plan = Plan::Restart;
                             None
                         }
                     }
+                    None => {
+                        plan = Plan::Restart;
+                        None
+                    }
                 }
-                None => {
-                    anyhow::ensure!(
-                        previous
-                            .as_ref()
-                            .is_none_or(|old| target.spec.revision > old.spec.revision),
-                        "runtime has no certified activation; administrator must create a new deployment"
-                    );
-                    // An explicit new deployment may reapply an unchanged configuration.
-                    // A checkpoint or same-revision poll never restarts legacy traffic.
-                    plan = Plan::Restart;
-                    None
-                }
+            } else if !self.active_component_matches_bundled(&target, None).await? {
+                plan = Plan::Restart;
+                None
+            } else {
+                None
             }
         } else {
             None
         };
+        if plan != Plan::Noop {
+            self.ensure_service_definition().await?;
+        }
         let intent = ApplyIntent {
             previous,
             target,
@@ -198,8 +216,17 @@ impl Reconciler {
             && let Some(previous) = &intent.previous
             && let Err(error) = self.sample_runtime(previous).await
         {
-            self.state.locked()?.finish_intent(op_id)?;
-            return Err(error.context("cannot capture terminal counters; application cancelled"));
+            if prior_active && prior_healthy_state {
+                self.state.locked()?.finish_intent(op_id)?;
+                return Err(
+                    error.context("cannot capture terminal counters; application cancelled")
+                );
+            }
+            tracing::warn!(
+                module = %descriptor.module,
+                %error,
+                "cannot capture terminal counters from unhealthy runtime during recovery"
+            );
         }
         let attempt: Result<()> = async {
             self.switch(&intent.target).await?;
@@ -232,9 +259,25 @@ impl Reconciler {
         .await;
         if let Err(error) = attempt {
             if let Err(rollback) = self.rollback(&intent, op_id).await {
-                self.state
-                    .locked()?
-                    .set_json(&format!("health:{}", descriptor.module), &false)?;
+                if intent.previous.as_ref() == Some(&intent.target) {
+                    self.state.locked()?.complete_intent(
+                        op_id,
+                        &[
+                            (
+                                format!("health:{}", descriptor.module),
+                                serde_json::json!(false),
+                            ),
+                            (
+                                format!("runtime_activation:{}", descriptor.module),
+                                serde_json::Value::Null,
+                            ),
+                        ],
+                    )?;
+                } else {
+                    self.state
+                        .locked()?
+                        .set_json(&format!("health:{}", descriptor.module), &false)?;
+                }
                 return Err(error.context(format!("rollback also failed: {rollback:#}")));
             }
             return Err(error);
@@ -249,7 +292,7 @@ impl Reconciler {
         let kernel_link = self
             .config
             .install_root
-            .join(&descriptor.plugin_name)
+            .join(&descriptor.artifact_name)
             .join("current");
         let kernel_directory = target
             .spec
@@ -264,7 +307,7 @@ impl Reconciler {
         let current = self
             .config
             .runtime_root
-            .join(format!("{}@main", descriptor.plugin_name))
+            .join(format!("{}@main", descriptor.artifact_name))
             .join("current");
         self.bounded(
             self.privileged
@@ -322,14 +365,14 @@ impl Reconciler {
             let runtime_link = self
                 .config
                 .runtime_root
-                .join(format!("{}@main", descriptor.plugin_name))
+                .join(format!("{}@main", descriptor.artifact_name))
                 .join("current");
             self.bounded(self.privileged.remove_symlink(&runtime_link))
                 .await?;
             let kernel_link = self
                 .config
                 .install_root
-                .join(&descriptor.plugin_name)
+                .join(&descriptor.artifact_name)
                 .join("current");
             self.bounded(self.privileged.remove_symlink(&kernel_link))
                 .await?;
@@ -388,7 +431,7 @@ impl Reconciler {
         Ok(result)
     }
 
-    async fn sample_runtime(&self, runtime: &Prepared) -> Result<Option<UsageBatch>> {
+    pub(super) async fn sample_runtime(&self, runtime: &Prepared) -> Result<Option<UsageBatch>> {
         let Some(source) = self.adapter.usage_source() else {
             return Ok(None);
         };

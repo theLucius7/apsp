@@ -38,7 +38,6 @@ async fn explicit_ports_are_validated_and_updates_only_dirty_actual_changes(
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let server = panel.create_server(&cookie, "Ports").await?;
-    panel.enable_runtime(&cookie, server).await?;
     let create = node(server, json!(443));
     assert_eq!(
         panel
@@ -197,7 +196,6 @@ async fn concurrent_port_reservations_are_atomic_and_released_after_deletion(
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let server = panel.create_server(&cookie, "Atomic ports").await?;
-    panel.enable_runtime(&cookie, server).await?;
     let (a, b) = tokio::join!(
         panel.admin(
             Method::POST,
@@ -249,7 +247,6 @@ async fn concurrent_port_reservations_are_atomic_and_released_after_deletion(
     statuses.sort();
     assert_eq!(statuses, vec![200, 409]);
     let another = panel.create_server(&cookie, "Other server").await?;
-    panel.enable_runtime(&cookie, another).await?;
     assert_eq!(
         panel
             .admin(

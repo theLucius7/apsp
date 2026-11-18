@@ -1,5 +1,5 @@
 import { installControlCenterFixtures } from './control-center-fixtures.mjs'
-import { proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
+import { proxyResourceFixtures, runtimeServerFixture } from './proxy-resource-fixtures.mjs'
 // TEST_ONLY: the policy group editor with isolated external-provider fixtures.
 // Users get external nodes only through policy groups: the editor offers adopted
 // nodes from subscription sources, keeps nodes the group already holds even while
@@ -38,7 +38,7 @@ const forceSubmit = dialog => dialog.locator('form').evaluate(form => form.dispa
 const ref = entry => Object.fromEntries(['external_node_id', 'source_id', 'identity_epoch', 'node_version_id', 'update_mode', 'metadata_revision'].map(key => [key, entry[key]]))
 const entry = (id, name, extra = {}) => ({ external_node_id: id, source_id: 8, identity_epoch: 2, node_version_id: id + 10, update_mode: 'follow_node', metadata_revision: 0, name, source_name: 'TEST_ONLY 外部来源', protocol: 'shadowsocks', server: 'provider.example.com', port: 443, available: true, reason: null, current_version_id: id + 10, resolved_version_id: id + 10, source_last_error: null, ...extra })
 const node = { enabled: true, id: 1, name: 'TEST_ONLY 受管入口', server_id: 1, protocol: 'vless-reality', public_host: '127.0.0.1', port: 24443, sni: 'localhost', public_key: 'TEST_ONLY', short_id: '0123abcd' }
-const servers = [{ id: 1, name: 'TEST_ONLY 服务器', enabled: true, online: true, read_only: false }]
+const servers = [runtimeServerFixture(1, { name: 'TEST_ONLY 服务器' })]
 const user = { id: 1, name: 'TEST_ONLY 用户', subscription_token: 'TEST_ONLY', subscription_url: 'http://127.0.0.1/sub/TEST_ONLY' }
 let browser
 try {

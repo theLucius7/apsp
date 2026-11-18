@@ -173,6 +173,14 @@ impl Snapshot {
 }
 
 async fn load(tx: &mut Transaction<'_, Postgres>, user_id: i64) -> ApiResult<Snapshot> {
+    load_with_original(tx, user_id, false).await
+}
+
+async fn load_with_original(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: i64,
+    original: bool,
+) -> ApiResult<Snapshot> {
     let at = apsp_protocol::now_timestamp();
     let entitlement: super::entitlements::Entitlement =
         sqlx::query_as("SELECT * FROM singbox_entitlements($1) WHERE user_id=$2")
@@ -181,7 +189,7 @@ async fn load(tx: &mut Transaction<'_, Postgres>, user_id: i64) -> ApiResult<Sna
             .fetch_optional(&mut **tx)
             .await?
             .ok_or(ApiError::NotFound)?;
-    let granted_nodes: i64 =
+    let mut granted_nodes: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM singbox_desired_accesses WHERE user_id=$1")
             .bind(user_id)
             .fetch_one(&mut **tx)
@@ -204,11 +212,31 @@ async fn load(tx: &mut Transaction<'_, Postgres>, user_id: i64) -> ApiResult<Sna
         }
         current.insert(node_id, (row.get("uuid"), row.get("credential")));
     }
-    let eligible_nodes = current.len();
+    // Shadow compilation uses the exact original identities recorded with an applied
+    // deployment. It does not issue credentials, change the renderer or touch usage.
+    let identity = if original && entitlement.allowed {
+        crate::nexus::bridge::original_identity(tx, user_id).await?
+    } else {
+        None
+    };
+    let original_grants: Vec<i64> = if identity.is_some() {
+        sqlx::query_scalar("SELECT DISTINCT pn.node_id FROM singbox_user_policies up JOIN singbox_policy_nodes pn ON pn.group_id=up.group_id WHERE up.user_id=$1 ORDER BY pn.node_id")
+            .bind(user_id).fetch_all(&mut **tx).await?
+    } else {
+        Vec::new()
+    };
+    let mut ids: Vec<i64> = current.keys().copied().collect();
+    ids.extend(original_grants.iter().copied());
+    ids.sort_unstable();
+    ids.dedup();
+    if original {
+        granted_nodes = granted_nodes.max(ids.len() as i64);
+    }
+    let eligible_nodes = ids.len();
     // A paused migrated host runs its original software again, which knows only the
     // members' original identities (ADR 0138).
     let snapshots: Vec<(i64,i64,serde_json::Value)> = sqlx::query_as(&format!("SELECT d.server_id,d.rev,COALESCE(p.source_json,d.source_json) FROM deployments d LEFT JOIN singbox_deployment_projections p ON p.server_id=d.server_id AND p.rev=d.rev JOIN server_module_status m ON m.server_id=d.server_id AND m.module=d.module AND m.applied_rev=d.rev JOIN servers s ON s.id=d.server_id WHERE m.module='singbox' AND m.healthy AND s.deleted_at IS NULL AND EXISTS (SELECT 1 FROM nodes n WHERE n.server_id=s.id AND n.id=ANY($1)) AND NOT {} ORDER BY d.server_id", apsp_traffic::nexus_nodes::held_host_sql("s.id")))
-        .bind(current.keys().copied().collect::<Vec<_>>()).fetch_all(&mut **tx).await?;
+        .bind(&ids).fetch_all(&mut **tx).await?;
     let mut nodes = Vec::new();
     for (server, revision, snapshot) in snapshots {
         let snapshot = apsp_traffic::ordered_paths::models::public_nodes(snapshot)
@@ -239,9 +267,10 @@ async fn load(tx: &mut Transaction<'_, Postgres>, user_id: i64) -> ApiResult<Sna
             }
             node.users.retain(|access| {
                 access.user_id == user_id
-                    && current.get(&node.id).is_some_and(|(uuid, credential)| {
+                    && (current.get(&node.id).is_some_and(|(uuid, credential)| {
                         *uuid == access.uuid && credential == &access.credential
-                    })
+                    }) || (identity == Some(access.uuid)
+                        && original_grants.binary_search(&node.id).is_ok()))
             });
             if !node.users.is_empty() {
                 nodes.push(node);
@@ -269,6 +298,32 @@ async fn load(tx: &mut Transaction<'_, Postgres>, user_id: i64) -> ApiResult<Sna
         eligible_nodes,
         entitlement,
     })
+}
+
+/// The ordinary compiler's shadow output for a member before native adoption. Only
+/// credentials proven in an applied deployment are returned to the authorized caller.
+pub(crate) async fn native_preview(
+    tx: &mut Transaction<'_, Postgres>,
+    user: i64,
+) -> ApiResult<(Value, Vec<Node>)> {
+    let snapshot = load_with_original(tx, user, true).await?;
+    let mut formats = serde_json::Map::new();
+    let mut unavailable = serde_json::Map::new();
+    for format in ["singbox", "clash", "links"] {
+        match snapshot.content(user, format) {
+            Ok(content) => {
+                formats.insert(format.into(), json!(content));
+            }
+            Err(ApiError::Conflict(reason)) => {
+                unavailable.insert(format.into(), json!(reason));
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    let view = json!({"formats":formats,"unavailable_formats":unavailable,
+        "entitlement":snapshot.entitlement,"granted_nodes":snapshot.granted_nodes,
+        "managed_nodes":snapshot.nodes.len(),"external_nodes":snapshot.external.nodes.len()});
+    Ok((view, snapshot.nodes))
 }
 
 pub(super) async fn diagnostic_on(
@@ -346,7 +401,10 @@ fn amount(row: &sqlx::postgres::PgRow, column: &str) -> ApiResult<u128> {
 /// the raw split is scaled to keep upload + download equal to the enforced usage.
 fn enforced_split(used: u128, upload: u128, download: u128) -> (u128, u128) {
     let raw = upload.saturating_add(download);
-    if used == raw || raw == 0 {
+    if raw == 0 {
+        return (0, used);
+    }
+    if used == raw {
         return (upload, download);
     }
     match used.checked_mul(upload) {

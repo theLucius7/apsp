@@ -1,14 +1,14 @@
 # 文档导航
 
-先读[功能地图](product-map.md)了解 apsp 的定位（自托管的服务器管理与配置面板）、功能分级、六个工作区和各自边界；对象与用语见[对象词典](redesign/03-objects.md)。下面的使用文档按工作区排列（[ADR 0126](adr/0126-workspaces-language-and-addresses.md)），标“实验”的文档对应已降级或冻结的功能。界面在重新设计步骤 4 之前仍是现有的五个分组，对照见功能地图。代码位置见[目录说明](repository.md)，近期实现与验证见 [PROGRESS](../PROGRESS.md)。本文只是导航，具体限制和验收结果以对应专题为准。
+先读[功能地图](product-map.md)了解 apsp 的定位（自托管的服务器管理与配置面板）、功能分级、六个工作区和各自边界；对象与用语见[对象词典](redesign/03-objects.md)。下面的使用文档按工作区排列（[ADR 0126](adr/0126-workspaces-language-and-addresses.md)），标“实验”的文档对应已降级或冻结的功能。界面按六个工作区组织，代码按九个领域维护。代码位置见[目录说明](repository.md)，近期实现与验证见 [PROGRESS](../PROGRESS.md)。本文只是导航，具体限制和验收结果以对应专题为准。
 
 ## 开始使用
 
 | 需要做什么 | 文档 |
 | --- | --- |
 | 了解产品定位、功能分级、工作区、界面用语和不做的事 | [功能地图](product-map.md)、[对象词典](redesign/03-objects.md)、[定位决策](adr/0087-narrow-positioning-proxy-network.md) |
-| 了解后续里程碑、工作包、排期与待决定事项 | [后续路线图](roadmap.md)（提议） |
-| 了解功能划分、核心对象、主线流程、状态与发布的重新设计及执行顺序 | [重新设计方案](redesign/README.md)（第一部分已由 ADR 0126 接受）、[执行计划](redesign/09-execution.md) |
+| 了解当前交付目标、已完成结构收口与上线完成条件 | [当前目标与完成条件](roadmap.md) |
+| 了解领域结构、对象与完整流程 | [领域架构](architecture.md)、[现行产品设计](redesign/README.md) |
 | 安装面板、备份升级、导入签名制品、接入 Agent | [部署与节点接入](deploy.md) |
 | 确认系统、架构、服务管理与升级能力 | [设备平台与能力](platforms.md) |
 | 从旧名称迁移既有安装 | [改名说明](apsp-renaming.md) |
@@ -33,8 +33,8 @@
 | --- | --- |
 | 配置地区、成本、到期、续费及网卡流量额度 | [服务器资产](server-assets.md) |
 | 查看服务器实时状态、历史曲线，开启只读公开看板 | [服务器看板](server-display.md)、[展示数据说明](server-display-data.md) |
-| 让域名跟随服务器公网 IP 自动更新（地址与域名） | [DDNS 插件](ddns.md) |
-| 管理 CDT、ECS 启停、自动策略、带宽及费用缓存（云资源） | [阿里云插件](alicloud.md)、[RAM 权限](alicloud-ram.md)、[原 CDT 脚本迁移](cdt-script-migration.md) |
+| 让域名跟随服务器公网 IP 自动更新（地址与域名） | [动态域名解析](ddns.md) |
+| 管理 CDT、ECS 启停、自动策略、带宽及费用缓存（云资源） | [阿里云资源与 CDT](alicloud.md)、[RAM 权限](alicloud-ram.md)、[原 CDT 脚本迁移](cdt-script-migration.md) |
 | 使用终端、日志与文件、资产生命周期和批量登记（实验） | [日常运维](fleet-operations.md) |
 | 批量任务与定时计划（实验）；面板备份与恢复见「系统」 | [备份恢复与自动化](operations-recovery.md) |
 | 维护域名台账、证书、端点、转发、隧道、组网与防火墙（实验） | [网络配置](network-configuration.md) |
@@ -67,21 +67,21 @@
 
 | 需要做什么 | 文档 |
 | --- | --- |
-| Nexus 用户、节点与运行时迁移，旧订阅兼容桥 | [Nexus 与 Wallos 迁移](nexus-migration.md)、[Nexus 服务器向 apsp Agent 迁移](nexus-agent-migration.md) |
+| Nexus 用户、节点与运行时迁移，旧订阅兼容桥与原生采用 | [Nexus 与 Wallos 迁移](nexus-migration.md)、[Nexus 服务器向 apsp Agent 迁移](nexus-agent-migration.md)、[成员原生采用](native-adoption.md) |
 
 ## 开发与设计
 
-- [协作规则](../AGENTS.md)：现行规则；2026-11-08 整理前的原文与各条去向见[整理记录](history/agents-rules-20261108.md)。
-- [功能划分与逻辑结构](architecture.md)：九个领域、依赖与写入规则、运行模型、代码结构、上游代码归属与迁移阶段（ADR 0128）；每类对象只留一套模型与执行顺序见 [ADR 0131](adr/0131-one-model-per-object.md)；宿主只剩平台机制、接口地址按领域与路由权限表见 [ADR 0132](adr/0132-platform-only-host-and-domain-addresses.md)，2026-11-13 的扫描结论与余下工作在[第 12 节](architecture.md#12-扫描结论与余下工作2026-11-13)。
+- [协作规则](../AGENTS.md)：现行边界、交付与集中验证要求；整合原则见 [ADR 0140](adr/0140-domain-consolidation.md)。
+- [功能划分与逻辑结构](architecture.md)：九个领域、依赖与写入规则、运行模型、代码结构、整合状态与上游代码归属（ADR 0128）；每类对象只留一套模型与执行顺序见 [ADR 0131](adr/0131-one-model-per-object.md)；宿主只剩平台机制、接口地址按领域与路由权限表见 [ADR 0132](adr/0132-platform-only-host-and-domain-addresses.md)，当前优化项在[第 12 节](architecture.md#12-当前优化项)。
 - [领域归属表](domain-map.md)：每项功能属于哪个领域、核心对象、关键约束、协作领域与实现位置。
-- [重新设计方案](redesign/README.md)：设计依据、功能盘点、对象词典、工作区、主线流程、状态设计（已接受）；收敛方案、工程整理与执行计划。
+- [现行产品设计](redesign/README.md)：设计原则、对象词典、工作区与入口、操作流程与状态设计（已接受；旧功能盘点与执行草案见 Git 历史）。
 - [仓库目录与维护约定](repository.md)：修改入口、模块归属、脚本及测试的位置。
 - [本地开发、构建与检查](dev.md)：Rust、PostgreSQL、Bun 与条件测试。
 - [HTTP API](api.md)、[面板与 Agent 协议](protocol.md)、[术语表](glossary.md)：公共契约与技术术语。
 - [架构决策索引](adr/README.md)、[执行中的问题与选择](open-questions.md)：设计依据及范围变更。
 - [数据库基线](database-baseline.md)：当前基线、旧库处理与生产接入。
 - [NodeQuality Debian 输入收集](nodequality-rootfs-collection.md)、[NodeQuality 离线工厂操作边界](nodequality-rootfs-factory.md)。
-- 历史基线：[原始 MVP 任务](requirements.md)、[G1–G9 计划](PLAN.md)；后续授权和现行约束以 [AGENTS.md](../AGENTS.md) 及相应 ADR 为准。
+- 已完成的任务书与执行日志通过 Git 历史查询，当前导航只列现行说明。
 
 ## 发布与验收
 

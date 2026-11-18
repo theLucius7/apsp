@@ -30,6 +30,12 @@ fn conflict(message: &str) -> ApiError {
     ApiError::Conflict(message.into())
 }
 
+fn legacy_candidate(candidate: &Value) -> bool {
+    candidate.get("artifact").is_some()
+        || candidate.get("runtime_version").is_some()
+        || candidate.get("agent_bundle").is_none()
+}
+
 /// The candidate the job bound to a runtime request when it queued the request.
 async fn bound_candidate(
     tx: &mut Transaction<'_, Postgres>,
@@ -62,6 +68,9 @@ pub async fn enqueue_automation_deployment_tx(
     candidate: &Value,
     expires: i64,
 ) -> ApiResult<Uuid> {
+    if legacy_candidate(candidate) {
+        return Err(conflict("旧版独立制品部署候选已失效，请重新预览并确认方案"));
+    }
     for capability in ["operations:write", "proxy:write"] {
         control_center::require_actor_server(state, actor, server, capability).await?;
     }
@@ -83,7 +92,7 @@ pub async fn enqueue_automation_deployment_tx(
     let current = automation::automation_candidate(state, tx, server).await?;
     if &current != candidate {
         return Err(conflict(
-            "预览中的失败部署、固定身份或签名制品已变化，请重新预览",
+            "预览中的失败部署、固定身份或可信 Agent 整包已变化，请重新预览",
         ));
     }
     let request = automation::retry_request(candidate, now, expires)?;
@@ -116,6 +125,9 @@ pub async fn automation_dispatch_matches_tx(
     let Some(candidate) = candidate else {
         return Ok(false);
     };
+    if legacy_candidate(&candidate) {
+        return Ok(false);
+    }
     automation::candidate_is_current(tx, server, &candidate).await
 }
 
@@ -175,6 +187,16 @@ pub async fn automation_deployment_receipt(
         );
     }
     let now = now_timestamp();
+    let candidate = bound_candidate(tx, job, request_id).await?;
+    let invalid_queued_legacy = dispatched.is_none()
+        && result.is_none()
+        && candidate.as_ref().is_some_and(legacy_candidate);
+    if invalid_queued_legacy {
+        cancel_automation_deployment_tx(tx, request_id).await?;
+        return Ok(
+            json!({"state":"failed","executed":false,"error":"旧版独立制品部署候选已失效，请重新预览并确认方案","result":null,"request_id":request_id,"dispatched_at":null,"finished_at":now,"expires_at":request.expires_at,"checkpoint_confirmed":false,"checkpoint_request_id":null,"running_cancel_supported":false,"local_cancelled_before_dispatch":true,"retry_unknown_result":false}),
+        );
+    }
     if dispatched.is_none() && result.is_none() && request.expires_at <= now {
         cancel_automation_deployment_tx(tx, request_id).await?;
     }
@@ -211,7 +233,7 @@ pub async fn automation_deployment_receipt(
             })
         {
             state = "failed";
-        } else if let Some(candidate) = bound_candidate(tx, job, request_id).await? {
+        } else if let Some(candidate) = candidate {
             let dispatched_at = dispatched.unwrap_or(i64::MAX);
             match automation::retry_confirmation(
                 tx,

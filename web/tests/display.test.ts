@@ -1,5 +1,7 @@
+import { nonnegativeNumber as number } from '../src/lib/validate'
+import { segments } from '../src/lib/chart-data'
 import { expect, test } from 'bun:test'
-import { aggregate, filterServers, fresh, network, number, percentage, ratio, sampleGap, segments, size, status } from '../src/observability/display/data'
+import { aggregate, filterServers, fresh, network, percentage, ratio, sampleGap, size, status } from '../src/observability/display/data'
 import type { Sample } from '../src/observability/display/data'
 import type { Server } from '../src/types'
 

@@ -297,9 +297,34 @@ class DerivationTests(unittest.TestCase):
             installer = root / "install.sh"
             installer.write_bytes(b"#!/bin/sh\nexit 0\n")
             output = root / "release"
-            release.assemble(SimpleNamespace(source=source, output=output, agent_version="0.3.0",
-                runtime_version="1.14.4-apsp.1", nodequality_version=artifact.VERSION, arch=None,
-                tag="agent-v0.3.0", installer=installer))
+            output.mkdir()
+            paths, entries = {}, []
+            for name, ver, fmt, bname in (("agent", "0.3.0", "raw", "apsp-agent"),
+                                          ("sing-box", "1.14.4-apsp.1", "tar.gz", "sing-box"),
+                                          ("nodequality", artifact.VERSION, "tar.gz", "nodequality")):
+                for arch in ("amd64", "arm64"):
+                    entry = {"name": name, "version": ver, "arch": arch, "format": fmt, "binary_name": bname}
+                    cpath = release.canonical_path(entry)
+                    data = (source / cpath).read_bytes()
+                    aux = ({fn: {"sha256": release.digest(c), "size": len(c)}
+                            for fn, c in artifact.archive_files(data).items() if fn != bname}
+                           if name == "nodequality" else {})
+                    if aux:
+                        entry["auxiliary_files"] = aux
+                    binary = release.binary_bytes(data, fmt, bname, aux)
+                    entry.update(archive_size=len(data), binary_sha256=release.digest(binary),
+                                 binary_size=len(binary), asset_name=release.asset_name(entry))
+                    (output / entry["asset_name"]).write_bytes(data)
+                    paths[cpath] = release.digest(data)
+                    entries.append(entry)
+            entries.sort(key=release.canonical_path)
+            meta = (json.dumps({"schema": 1, "source_repo": release.REPOSITORY, "tag": "agent-v0.3.0",
+                                "protocol_min": 1, "protocol_max": 1, "artifacts": entries},
+                               sort_keys=True, separators=(",", ":")) + "\n").encode()
+            (output / "release.json").write_bytes(meta)
+            (output / "install.sh").write_bytes(installer.read_bytes())
+            paths.update({"release.json": release.digest(meta), "install.sh": release.digest(installer.read_bytes())})
+            (output / "SHA256SUMS").write_text("".join(f"{paths[p]}  {p}\n" for p in sorted(paths)))
             fixtures = artifact.ROOT / "crates/protocol/tests/fixtures"
             def sign():
                 result = subprocess.run(["minisign", "-S", "-q", "-m", str(output / "SHA256SUMS"),

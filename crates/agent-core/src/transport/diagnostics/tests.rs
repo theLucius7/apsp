@@ -46,7 +46,7 @@ struct TestAdapter;
 impl DiagnosticAdapter for TestAdapter {
     fn describe(&self) -> DiagnosticDescriptor {
         DiagnosticDescriptor {
-            plugin_name: "diagnostic-fixture".into(),
+            artifact_name: "diagnostic-fixture".into(),
             binary_name: "runner".into(),
         }
     }
@@ -267,7 +267,7 @@ fn checkpoint(config: &Config, id: Uuid) -> Checkpoint {
             oom_score_adjust: Default::default(),
         },
         started_at: unix_time(),
-        plugin: "diagnostic-fixture".into(),
+        tool: "diagnostic-fixture".into(),
         start_error: None,
         expires_at: None,
         protection_stop_reason: None,
@@ -280,13 +280,13 @@ fn checkpoint(config: &Config, id: Uuid) -> Checkpoint {
 fn job(id: Uuid) -> DiagnosticJob {
     DiagnosticJob {
         id,
-        plugin: "diagnostic-fixture".into(),
+        tool: "diagnostic-fixture".into(),
         version: "v1".into(),
-        artifact: Artifact {
+        artifact: Some(Artifact {
             proof: None,
             url: "http://127.0.0.1:8080/fixture".into(),
             sha256: "0".repeat(64),
-        },
+        }),
         timeout_secs: 300,
         resource_budget: None,
         expires_at: None,
@@ -303,6 +303,11 @@ async fn legacy_running_checkpoint_recovers_without_restarting_or_losing_report(
         let first = worker(&directory, services.clone())?;
         let mut saved = serde_json::to_value(checkpoint(&first.config, id))?;
         let started = saved["Started"].as_object_mut().unwrap();
+        assert_eq!(
+            started.get("plugin"),
+            Some(&serde_json::json!("diagnostic-fixture"))
+        );
+        assert!(!started.contains_key("tool"));
         started.remove("terminal_update");
         started.remove("cleanup_error");
         let service = saved["Started"]["service"].as_object_mut().unwrap();
@@ -411,11 +416,11 @@ async fn failed_service_keeps_partial_report_and_next_job_is_serialized() -> Res
 }
 
 #[test]
-fn unknown_plugins_and_invalid_timeouts_never_become_services() -> Result<()> {
+fn unknown_tools_and_invalid_timeouts_never_become_services() -> Result<()> {
     let directory = Directory::new();
     let worker = worker(&directory, Arc::new(Services::new(JobStatus::Missing)))?;
     let mut unknown = job(Uuid::new_v4());
-    unknown.plugin = "arbitrary-command".into();
+    unknown.tool = "arbitrary-command".into();
     let mut invalid = job(Uuid::new_v4());
     invalid.timeout_secs = 0;
     worker.accept(vec![unknown, invalid])?;

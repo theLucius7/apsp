@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { RuntimeServer, Server } from '../types'
-import { installationView } from './Runtimes'
+import { runtimeStatusView } from './Runtimes'
 import { cn } from '@/lib/utils'
 import type { Tone } from '../components'
 
-type Placed = { id: number; name: string; group: string; x: number; y: number; r: number; angle: number; tone: Tone; enabled: boolean; online: boolean; state: string }
+type Placed = { id: number; name: string; group: string; x: number; y: number; r: number; angle: number; tone: Tone; configured: boolean; online: boolean; state: string }
 
 const fill: Record<Tone, string> = { good: 'var(--success)', bad: 'var(--destructive)', warm: 'var(--warning)', neutral: 'var(--card)' }
 const height = 400
@@ -29,7 +29,7 @@ export default function NetworkMap({ runtimes, servers = [] }: { runtimes: Runti
     const byId = new Map(servers.map(server => [server.id, server]))
     const entries = runtimes.map(runtime => {
       const server = byId.get(runtime.id)
-      return { runtime, server, view: installationView(runtime), group: server?.asset_settings?.group_name || '未分组', traffic: Number(server?.traffic?.used ?? 0) || 0 }
+      return { runtime, server, view: runtimeStatusView(runtime), group: server?.asset_settings?.group_name || '未分组', traffic: Number(server?.traffic?.used ?? 0) || 0 }
     })
     const groups = [...new Set(entries.map(entry => entry.group))].map(name => ({ name, members: entries.filter(entry => entry.group === name) }))
       .sort((left, right) => right.members.length - left.members.length || left.name.localeCompare(right.name, 'zh-CN'))
@@ -48,7 +48,7 @@ export default function NetworkMap({ runtimes, servers = [] }: { runtimes: Runti
         const angle = cursor + span * (index + 0.5) / group.members.length
         nodes.push({ id: entry.runtime.id, name: entry.runtime.name, group: group.name, angle,
           x: cx + outer.rx * Math.cos(angle), y: cy + outer.ry * Math.sin(angle),
-          r: 4.5 + 6 * Math.sqrt(entry.traffic / peak), tone: entry.view.tone, enabled: entry.runtime.enabled,
+          r: 4.5 + 6 * Math.sqrt(entry.traffic / peak), tone: entry.view.tone, configured: entry.runtime.configured,
           // A server still waiting for enrollment is not "offline".
           online: entry.runtime.online || (entry.server ? !entry.server.device_public_key : false), state: entry.view.label })
       })
@@ -70,7 +70,7 @@ export default function NetworkMap({ runtimes, servers = [] }: { runtimes: Runti
       <circle cx={cx} cy={cy} r="120" fill="url(#network-halo)" />
       {anchors.map(group => <path key={group.name} d={`M${cx},${cy} Q${(cx + group.x) / 2},${cy} ${group.x},${group.y}`} fill="none" stroke="var(--primary)" strokeOpacity=".28" strokeWidth="1.4" />)}
       {nodes.map(node => { const group = anchor(node.group); return <path key={node.id} d={`M${group.x},${group.y} Q${(group.x + node.x) / 2 + (node.y - group.y) * 0.08},${(group.y + node.y) / 2 - (node.x - group.x) * 0.08} ${node.x},${node.y}`}
-        fill="none" stroke={!node.online ? 'var(--destructive)' : node.enabled ? 'var(--primary)' : 'var(--muted-foreground)'} strokeOpacity={node.enabled ? 0.35 : 0.18} strokeWidth="1" strokeDasharray={node.online ? undefined : '3 3'} /> })}
+        fill="none" stroke={!node.online ? 'var(--destructive)' : node.configured ? 'var(--primary)' : 'var(--muted-foreground)'} strokeOpacity={node.configured ? 0.35 : 0.18} strokeWidth="1" strokeDasharray={node.online ? undefined : '3 3'} /> })}
       {anchors.map(group => <g key={group.name}>
         <circle cx={group.x} cy={group.y} r="3" fill="var(--primary)" fillOpacity=".55" />
         <text x={group.x} y={group.y - 9} textAnchor="middle" className="fill-foreground text-[11px] font-medium">{group.name}<tspan className="fill-muted-foreground" dx="4">{group.count}</tspan></text>
@@ -87,7 +87,7 @@ export default function NetworkMap({ runtimes, servers = [] }: { runtimes: Runti
           {!node.online && <circle cx={node.x} cy={node.y} r={node.r + 4} fill="none" stroke="var(--destructive)" strokeWidth="1.2" strokeDasharray="2 2" />}
           <circle cx={node.x} cy={node.y} r={node.r + 6} fill="transparent" className="group-hover/node:fill-[color-mix(in_oklch,var(--primary)_12%,transparent)] group-focus-visible/node:stroke-[var(--ring)]" strokeWidth="2" />
           <circle cx={node.x} cy={node.y} r={node.r} fill={fill[node.tone]} stroke={node.tone === 'neutral' ? 'var(--muted-foreground)' : 'var(--card)'} strokeWidth={node.tone === 'neutral' ? 1.2 : 1.5} />
-          <text x={label.x} y={label.y} textAnchor={side} className={cn('text-[11px] transition-colors group-hover/node:fill-foreground', node.enabled ? 'fill-foreground' : 'fill-muted-foreground')}>{node.name}</text>
+          <text x={label.x} y={label.y} textAnchor={side} className={cn('text-[11px] transition-colors group-hover/node:fill-foreground', node.configured ? 'fill-foreground' : 'fill-muted-foreground')}>{node.name}</text>
         </a>
       })}
     </svg>

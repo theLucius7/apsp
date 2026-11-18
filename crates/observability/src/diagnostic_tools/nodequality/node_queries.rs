@@ -7,8 +7,11 @@ mod parsing;
 #[cfg(test)]
 mod tests;
 
-pub const NODE_QUERY_VERSION: &str = "a92fca6c0067df29ddd03fdc2fee6f3000f64545-r21";
+pub const NODE_QUERY_VERSION: &str = super::TOOL_VERSION;
+pub const LEGACY_NODE_QUERY_VERSION: &str = "a92fca6c0067df29ddd03fdc2fee6f3000f64545-r21";
 pub const NODE_QUERY_CAPABILITY: &str = "diagnostic:nodequality-node-query";
+pub const LEGACY_NODE_QUERY_DENIAL: &str =
+    "历史旧证明格式的正式节点查询任务已停用，请使用当前一体化 Agent 重新发起查询";
 const SCHEMA: &str = "apsp.node-ip-quality.v1";
 
 pub struct NodeSectionResults {
@@ -41,8 +44,18 @@ impl DiagnosticTool for NodeIpQualityTool {
             NODE_QUERY_CAPABILITY,
         ]
     }
+    fn start_denial(&self, job: &Value) -> Option<&'static str> {
+        let valid_v2 = service::FrozenComponentIdentity::from_job(job)
+            .ok()
+            .flatten()
+            .is_some_and(|frozen| {
+                frozen.component == "nodequality" && frozen.component_version == NODE_QUERY_VERSION
+            });
+        (!valid_v2).then_some(LEGACY_NODE_QUERY_DENIAL)
+    }
     fn can_dispatch(&self, job: &Value, capabilities: &Value) -> bool {
-        job["version"].as_str() == Some(NODE_QUERY_VERSION)
+        self.start_denial(job).is_none()
+            && job["version"].as_str() == Some(NODE_QUERY_VERSION)
             && job["options"]["mode"].as_str() == Some("ip")
             && capabilities.as_array().is_some_and(|items| {
                 self.required_capabilities()
@@ -121,22 +134,17 @@ impl DiagnosticTool for NodeIpQualityTool {
 
 pub async fn readiness(state: &AppState, server_id: i64) -> ApiResult<Option<String>> {
     let row = sqlx::query(
-        "SELECT static_info,last_seen,capabilities FROM servers WHERE id=$1 AND deleted_at IS NULL",
+        "SELECT static_info,static_info_received_at,last_seen,capabilities FROM servers WHERE id=$1 AND deleted_at IS NULL",
     )
     .bind(server_id)
     .fetch_optional(&state.pool)
     .await?
     .ok_or(ApiError::NotFound)?;
-    let result = async {
-        let arch = service::ready(&row, &NodeIpQualityTool)?;
-        artifacts::descriptor(state, "nodequality", NODE_QUERY_VERSION, arch).await?;
-        Ok::<(), ApiError>(())
-    }
-    .await;
-    Ok(result.err().map(|error| match error {
-        ApiError::NotFound => "正式节点查询 r21 制品尚未上传；需要对应架构的受控签名制品".into(),
-        error => error.to_string(),
-    }))
+    Ok(
+        service::readiness(state, server_id, &row, &NodeIpQualityTool)
+            .await
+            .reason,
+    )
 }
 
 pub async fn create(

@@ -12,7 +12,7 @@
 
 ## 逐项交付边界
 
-“源码已实现”表示真实 API、参数校验、执行/导入路径与界面已经写入；并不表示下面所列工具已在真实服务器验收。所有 Agent 工具必须先提供完整签名制品与对应架构的离线清单，保持现有诊断签收顺序。
+“源码已实现”表示真实 API、参数校验、执行/导入路径与界面已经写入；并不表示下面所列工具已在真实服务器完成实机签收（当前 `execution_release_state` 仍为准备阶段，见[整改顺序与验收状态](acceptance/ordered-remediation.md)）。按 [ADR 0141](adr/0141-self-contained-agent-and-desired-service-config.md)，Linux 正式发布构建的一体化 `apsp-agent` 已编译期强制内嵌自包含的 `network-workbench` `1.0.0` 离线工具包，日常管理员无需在服务器或面板单独上传、安装二进制工具，只需管理授权探测目标、工具许可台账、方案与运行；现有资源预算、工具许可、在用代理流量与诊断签收门禁继续生效。
 
 | 用户项目 | 源码行为 | 工具或实机边界 |
 |---|---|---|
@@ -73,11 +73,15 @@
 | 结构化报告 | 摘要、步骤、参数、原文、环境、失败及章节 | 来源和缺失状态不隐藏 |
 | 横向比较 | 工具、版本、参数、目标及资源预算一致才能比较 | 来源可不同但逐来源明确，不造统一分数 |
 | 分享 | 脱敏、有效期、随机访问凭据、撤销 | 普通分享不含原始日志/管理数据 |
-| 工具供应 | 签名制品、manifest摘要/版本输出/许可/来源/平台台账 | 正式发布和专用设备验收未执行 |
+| 工具供应 | Linux 正式 Agent 编译期内嵌自包含离线工具包（`tools-manifest.json` 摘要/版本输出/许可/来源）+ 面板许可台账 | 新版一体化 Agent 正式发布和专用设备实机验收未执行 |
 
-## 离线工具供应
+## 离线工具供应与构建闭环
 
-`tools/network_workbench_artifact.py` 仅接收已安装且事先审批摘要的离线 inventory，不下载工具。inventory需包括 schema=1、engine_version=1.0.0、固定 `/usr/bin/python3` 解释器摘要；每个实际工具的绝对路径、sha256、version、license、source_url、licensed=true；磁盘测试需 allowed_test_directories，smartctl需 allowed_health_devices，业务保护可用 protected_processes。打包脚本读取版本输出并固化摘要，生成的tar仍需既有正式签名发布流程签名。尚未准备合格制品时，共用诊断服务会暂停方案，不能把目录登记当作工具安装完成。
+日常管理员不在服务器上安装外部探测工具，也不向面板单独导入工具压缩包：管理员只在控制台维护获准目标（`/api/network-workbench/targets`）、面板侧工具许可与通告台账（`/api/network-workbench/tools`）及检测方案。设备侧工具由维护者在构建 Linux 正式 `apsp-agent`（`APSP_RELEASE_EMBED_REQUIRED=1`）时通过 `tools/network_workbench_artifact.py` 生成离线归档并直接编译内嵌进单文件 Agent：
+
+- 归档必须自包含 `apsp-network-workbench`、`tools-manifest.json`、`LICENSE`、随包捆绑的 Python 解释器（`interpreter.bundled_path` 与 `sha256`）及可选支撑库目录（`bundled_lib_dirs`、`bundled_files`），`schema=1`、`engine_version="1.0.0"`，构建期不联网下载。
+- 必须同时打包全部 8 个受控工具（`ping`、`curl`、`mtr`、`iperf3`、`sysbench`、`fio`、`stress-ng`、`smartctl`）以及至少一个路由追踪工具（`traceroute` 或 `nexttrace`）；每项必须带归档内相对路径 `bundled_path`、`sha256`、`version_output_sha256`、`licensed=true`、`license` 与 `https://` `source_url`（正式 Linux Agent 构建拒绝仅引用宿主机路径 `path` 的清单，任一必需项缺失直接中止构建）。磁盘测试另由清单约束 `allowed_test_directories`，`smartctl` 约束 `allowed_health_devices`，业务保护使用 `protected_processes`。
+- 设备运行任务前仍须通过共用诊断服务的在线能力（`agent:self-contained:v1`、`diagnostic:cpu-ceiling-v1` 等）、面板工具许可台账与系统资源门禁检查；新版一体化 Agent 尚未正式签署发布、专用测试机实机签收尚未完成前，不宣称线上完整执行能力已投产。
 
 测试源码包括模型保护边界、DNS异常报文/压缩循环、离线摘要与许可、到期授权及完整启动门禁。集中验证中，Python网络执行器16项、离线制品6项、核心边界8项离线测试通过，执行器与制品脚本语法检查通过；工具身份调用使用模拟，fio只检查4096字节自有匿名测试文件，没有运行真实吞吐或硬件负载。Rust及浏览器验证单独记录。仍需独立验收双端iperf3端口释放、fio强制取消文件释放、HTTP3工具能力、IPv6来源、异常服务暂停及有效授权供方接口；不得在生产服务器反复高负载验机。
 

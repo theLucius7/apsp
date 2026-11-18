@@ -99,10 +99,7 @@ async fn prepare(
             &snapshot.nodes,
         )
         .await?;
-        // An explicitly disabled runtime also blocks capability-based auto-enable.
         crate::runtime_controls::ensure(&mut tx, snapshot.server_id).await?;
-        sqlx::query("INSERT INTO runtime_enablements(server_id,module,enabled,source,enabled_at) VALUES($1,'singbox',FALSE,'administrator',$2) ON CONFLICT(server_id,module) DO UPDATE SET enabled=FALSE,source='administrator'")
-            .bind(snapshot.server_id).bind(now_timestamp()).execute(&mut *tx).await?;
     }
     tx.commit().await?;
     Ok(Json(
@@ -502,19 +499,20 @@ async fn activate(
     let online = host
         .get::<Option<i64>, _>("last_seen")
         .is_some_and(|at| (0..=60).contains(&now_timestamp().saturating_sub(at)));
-    let capable = caps.as_array().is_some_and(|values| {
-        values.iter().any(|v| v == "singbox")
-            && values
-                .iter()
-                .any(|v| v == apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY)
-    });
+    let component_mismatch = info
+        .get("components")
+        .and_then(|components| components.get("sing-box"))
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .is_some_and(|value| value != crate::RUNTIME_VERSION);
+    let capable = crate::agent::supports_self_contained_singbox(&caps) && !component_mismatch;
     if !online
         || !current
         || !capable
         || host.get::<Option<String>, _>("device_public_key").is_none()
     {
         return Err(ApiError::Conflict(
-            "请先以正式签名的 apsp Agent 0.3.4 或更新版本接入主机并保持在线（旧版不接受自维护运行时）".into(),
+            "请先以自带 sing-box 能力的正式签名一体化 Agent 接入主机并保持在线".into(),
         ));
     }
     let (limited, synchronized) =
@@ -540,8 +538,6 @@ async fn activate(
     if !input.ignore_reachability {
         reachable(&state, &mut tx, server, now_timestamp()).await?;
     }
-    let artifact = crate::agent::runtime_artifact(&state, &info).await?;
-    crate::agent::artifact_capability(&artifact, &caps)?;
     let candidate = runtime_publish::compile(&state, &mut tx, server).await?;
     if candidate.config_hash != input.config_sha256 {
         return Err(ApiError::Conflict(
@@ -556,12 +552,6 @@ async fn activate(
     }
     sqlx::query("UPDATE singbox_nexus_runtime_hosts SET state='active',activated_at=COALESCE(activated_at,$2),last_activated_at=$2,evidence=$3 WHERE server_id=$1")
         .bind(server).bind(now_timestamp()).bind(proof).execute(&mut *tx).await?;
-    sqlx::query(
-        "UPDATE runtime_enablements SET enabled=TRUE WHERE server_id=$1 AND module='singbox'",
-    )
-    .bind(server)
-    .execute(&mut *tx)
-    .await?;
     crate::business::mark_dirty(&mut tx, &[server]).await?;
     tx.commit().await?;
     Ok(Json(
@@ -586,12 +576,7 @@ async fn pause(
     if changed != 1 {
         return Err(ApiError::Conflict("接管状态已改变".into()));
     }
-    sqlx::query(
-        "UPDATE runtime_enablements SET enabled=FALSE WHERE server_id=$1 AND module='singbox'",
-    )
-    .bind(server)
-    .execute(&mut *tx)
-    .await?;
+    crate::business::mark_dirty(&mut tx, &[server]).await?;
     tx.commit().await?;
     Ok(Json(
         json!({"server_id":server,"state":"paused","restart_legacy_only_after_agent_stopped":true}),

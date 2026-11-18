@@ -8,16 +8,13 @@ import { pages as operations } from '../operations/pages'
 import { pages as resources } from '../resources/pages'
 import { pages as traffic } from '../traffic/pages'
 import { pages as own } from './pages'
-import type { PageEntry, Workspace } from '@/lib/pages'
+import type { NavigationItem, Workspace } from '@/lib/pages'
 import type { AppRoute } from './routes'
 
 /** Every administrator page, as the domains declare them (`<domain>/pages.tsx`). */
 export const pageEntries = [...own, ...observability, ...costs, ...traffic, ...access, ...resources, ...naming,
   ...operations, ...networking, ...governance] as const
 export type PageName = (typeof pageEntries)[number]['page']
-
-/** A sidebar page with its workspace's name, and whether the workspace shows that name as a heading. */
-export type NavigationItem = PageEntry & { group: string; heading: boolean }
 
 // Six workspaces, each answering one question, in the order they are used (ADR 0126,
 // docs/redesign/04-workspaces.md): what needs me now, which machines and are they well,

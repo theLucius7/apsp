@@ -18,7 +18,6 @@ pub mod jobs;
 pub mod locks;
 pub mod retention;
 pub mod runtime_operations;
-pub mod runtime_rollouts;
 
 pub(crate) use apsp_governance::{auth, control_center, releases};
 pub(crate) use apsp_observability::{incidents, server_monitoring};
@@ -60,7 +59,6 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .merge(fleet::router())
         .merge(jobs::router())
-        .merge(runtime_rollouts::router())
         .merge(cloud::bandwidth::routes())
         .merge(cloud::power::routes())
         .merge(cloud::eip_rotation::routes())

@@ -4,12 +4,12 @@ import hashlib
 MAX_SOURCE = 2 * 1024 * 1024
 SOURCES = {
     'ip.sh': {
-        'source_sha256': '1ef0b1174230d3497f6bc880263356f0481427bc5b4e1e6b9fea818e81903d83',
-        'patched_sha256': 'ef1640451ffb5ef8f2a0b2059d2e4998eab85388ca8adc5177576ba9c6799e95',
+        'source_sha256': 'd6349c7667235a491de09ce6c949bdc407037788bab826dc6a9a3793ba8dc79f',
+        'patched_sha256': '6460df3e915dbfda81091bcea12f42d1912ff87e839bb91d7ddaf2baa52f597d',
     },
     'net.sh': {
-        'source_sha256': '99f8a26dabdc09163a165edbb9e200f675011d4f7bef5cfe8b0b729b726e861f',
-        'patched_sha256': 'a96ee3580008b04a60fde030689419334a62b0aa7269b24702c3e672012500f9',
+        'source_sha256': 'bd365128d871bbee48dcf18ac17d961ca67912e1bcc4c01c6ecb8dbcd9f7bcd4',
+        'patched_sha256': 'ca28c78c339c3b2a8753dd638ab662fea2c5d2577daf117c6f4236b5ffc26a01',
     },
 }
 WRAPPER = r'''# Apsp modification (2026-10-01): keep curl's native identity.

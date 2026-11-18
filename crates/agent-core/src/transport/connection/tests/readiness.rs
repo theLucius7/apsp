@@ -30,6 +30,7 @@ async fn empty_cache_keeps_host_identity_until_a_real_snapshot_arrives() -> Resu
         connected: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         public_ips: Arc::new(vec![]),
         agent_version: "fixture-agent",
+        bundle: Default::default(),
         retirement: None,
         cancellation: None,
         runtime_control: None,

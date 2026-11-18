@@ -4,6 +4,7 @@ PUT	/api/access/account-mail	proxy:write, all servers, recent proof
 GET	/api/access/external-node-candidates	proxy:read, all servers
 GET	/api/access/invitation-settings	proxy:read, all servers
 PUT	/api/access/invitation-settings	proxy:write, all servers, recent proof
+POST	/api/access/native-adoption/retire	owner session only, recent proof
 POST	/api/access/operations/preview	proxy:write, all servers
 GET	/api/access/operations/privacy	proxy:read, all servers
 PUT	/api/access/operations/privacy	proxy:write, all servers
@@ -65,6 +66,8 @@ GET	/api/access/users/{id}/invitations	proxy:read, all servers
 POST	/api/access/users/{id}/invitations/quota	proxy:write, all servers, recent proof
 GET	/api/access/users/{id}/limits	proxy:read, all servers
 PUT	/api/access/users/{id}/limits	proxy:write, all servers
+POST	/api/access/users/{id}/native-adoption/adopt	proxy:write, all servers, recent proof
+POST	/api/access/users/{id}/native-adoption/preview	proxy:write, all servers, recent proof
 POST	/api/access/users/{id}/package	proxy:write, all servers
 GET	/api/access/users/{id}/policy-groups	proxy:read, all servers
 PUT	/api/access/users/{id}/policy-groups	proxy:write, all servers
@@ -74,7 +77,6 @@ GET	/api/access/users/{id}/sessions	proxy:read, all servers
 POST	/api/access/users/{id}/sessions/{server}	proxy:write, all servers
 GET	/api/access/users/{id}/subscription	proxy:read, all servers
 POST	/api/access/users/{id}/subscription/reset	proxy:write, all servers, recent proof
-GET	/api/agent/v1/artifacts/{name}/{version}/{arch}	own identity
 GET	/api/agent/v1/bundles/{rev}	own identity
 GET	/api/agent/v1/commands	own identity
 GET	/api/agent/v1/commands/lifecycle	own identity
@@ -113,10 +115,6 @@ GET	/api/alert-rules	monitoring:read, all servers
 POST	/api/alert-rules	monitoring:write, all servers
 DELETE	/api/alert-rules/{id}	monitoring:write, all servers, recent proof
 PATCH	/api/alert-rules/{id}	monitoring:write, all servers
-GET	/api/artifacts	owner session only (security)
-GET	/api/artifacts/agent-versions	owner session only (security)
-POST	/api/artifacts/import-release	owner session only (security)
-GET	/api/artifacts/targets	owner session only (security)
 GET	/api/bootstrap/versions	own identity
 GET	/api/bootstrap/{version}/{arch}	own identity
 GET	/api/control-center/administrators	owner session only (security)
@@ -395,7 +393,7 @@ POST	/api/servers/{id}/commands	terminal:write, that server, recent proof
 POST	/api/servers/{id}/commands/{command}/cancel	terminal:write, that server
 GET	/api/servers/{id}/diagnostics	diagnostics:read, that server
 POST	/api/servers/{id}/diagnostics/{job}/cancel	diagnostics:write, that server
-POST	/api/servers/{id}/diagnostics/{plugin}	diagnostics:write, that server
+POST	/api/servers/{id}/diagnostics/{tool}	diagnostics:write, that server
 POST	/api/servers/{id}/enrollment	servers:write, that server, recent proof
 GET	/api/servers/{id}/fleet	servers:read, that server
 PUT	/api/servers/{id}/fleet	servers:write, that server
@@ -434,6 +432,9 @@ POST	/api/servers/{id}/traffic-correction	servers:write, that server
 GET	/api/settings	owner session only (security)
 PATCH	/api/settings	owner session only (security)
 GET	/api/statistics	monitoring:read, all servers
+GET	/api/system/agent-releases	servers:read, any scope
+POST	/api/system/agent-releases/import	owner session only (security), recent proof
+GET	/api/system/agent-releases/targets	owner session only (security)
 GET	/api/telemetry/policy	monitoring:read, all servers
 PATCH	/api/telemetry/policy	monitoring:write, all servers
 POST	/api/traffic/chains/ordered-batch	proxy:write, all servers
@@ -483,23 +484,14 @@ PATCH	/api/traffic/ordered-subscription-sources/{id}/nodes/{node_id}	proxy:write
 POST	/api/traffic/ordered-subscription-sources/{id}/refresh	proxy:write, all servers
 GET	/api/traffic/ordered-subscription-sources/{id}/revisions	proxy:read, all servers
 GET	/api/traffic/ordered-subscription-sources/{id}/revisions/{revision}/nodes	proxy:read, all servers
-GET	/api/traffic/runtime-inventory	proxy:read, all servers
-GET	/api/traffic/runtime-rollouts	proxy:read, all servers
-POST	/api/traffic/runtime-rollouts	proxy:write, all servers
-POST	/api/traffic/runtime-rollouts/{id}/advance	proxy:write, all servers
-POST	/api/traffic/runtime-rollouts/{id}/members/{server}/inspect	proxy:write, all servers
-POST	/api/traffic/runtime-rollouts/{id}/pause	proxy:write, all servers
 GET	/api/traffic/servers	proxy:read, all servers
 GET	/api/traffic/servers/{id}	proxy:read, that server
 GET	/api/traffic/servers/{id}/deployments	proxy:read, that server
 POST	/api/traffic/servers/{id}/deployments/check	proxy:write, that server
 POST	/api/traffic/servers/{id}/deployments/redeploy	proxy:write, that server
-POST	/api/traffic/servers/{id}/enable	proxy:write, that server
 GET	/api/traffic/servers/{id}/operations-view	proxy:read, that server
 POST	/api/traffic/servers/{id}/operations-view/checkpoint	proxy:write, that server
 POST	/api/traffic/servers/{id}/operations-view/preflight	proxy:write, that server
-POST	/api/traffic/servers/{id}/operations-view/preflight/bootstrap	proxy:write, that server
-POST	/api/traffic/servers/{id}/operations-view/preflight/confirm	proxy:write, that server
 GET	/api/traffic/servers/{id}/profile	proxy:read, that server
 PUT	/api/traffic/servers/{id}/profile	proxy:write, that server
 GET	/api/traffic/servers/{id}/runtime-operations	proxy:read, that server

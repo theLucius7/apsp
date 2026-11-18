@@ -75,17 +75,46 @@ impl Reconciler {
     ) -> Result<()> {
         let _guard = self.gate.lock().await;
         self.recover_locked().await?;
-        let descriptor = client.runtime_descriptor(
-            &target.artifact,
-            &target.kernel_version,
-            self.adapter.as_ref(),
-        )?;
-        client.verify_artifact(&target.artifact, &target.kernel_version, &descriptor)?;
+        let effective_version = if let Some(bundled) = &self.bundled {
+            ensure!(
+                target.kernel_version.is_empty() || target.kernel_version == bundled.version,
+                "desired runtime version differs from built-in runtime"
+            );
+            bundled.version.clone()
+        } else {
+            let artifact = target
+                .artifact
+                .as_ref()
+                .context("runtime manifest has no artifact")?;
+            let base = self.adapter.describe();
+            let binary = self
+                .config
+                .install_root
+                .join(&base.artifact_name)
+                .join(&target.kernel_version)
+                .join(&base.binary_name);
+            let descriptor = crate::artifacts::installed_descriptor(
+                self.adapter.as_ref(),
+                &target.kernel_version,
+                &binary,
+                client.keys()?,
+            )
+            .await?;
+            let _ = crate::artifacts::verify_local_cached_artifact(
+                artifact,
+                &target.kernel_version,
+                &descriptor,
+                &self.config.install_root,
+                client.keys()?,
+            )
+            .await?;
+            target.kernel_version.clone()
+        };
         let previous = self.previous()?.context("no applied runtime")?;
         ensure!(
             previous.spec.revision == target.config_rev
                 && previous.spec.config_hash == target.bundle_sha256
-                && previous.spec.kernel_version == target.kernel_version,
+                && previous.spec.kernel_version == effective_version,
             "desired runtime changed"
         );
         self.restart_locked(previous).await

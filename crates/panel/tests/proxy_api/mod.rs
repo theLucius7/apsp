@@ -1,7 +1,7 @@
 //! Console paths of the proxy network, for tests that name routes from their owner's API
 //! root: `/nodes/1` is `/api/traffic/nodes/1`, `/users` is `/api/access/users`.
 
-const TRAFFIC: [&str; 11] = [
+const TRAFFIC: [&str; 9] = [
     "chains",
     "nexus-nodes",
     "node-catalog",
@@ -10,8 +10,6 @@ const TRAFFIC: [&str; 11] = [
     "ordered-subscription-source-jobs",
     "ordered-subscription-source-previews",
     "ordered-subscription-sources",
-    "runtime-inventory",
-    "runtime-rollouts",
     "servers",
 ];
 

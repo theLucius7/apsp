@@ -5,7 +5,7 @@ import { BellRingIcon, ClipboardListIcon, FileTextIcon, GlobeIcon, LayoutGridIco
 import { api, errorMessage } from '../api'
 import { usePreference } from '../governance/control-center/preferences'
 import { useI18n } from '../i18n'
-import type { NavigationItem } from './navigation'
+import type { NavigationItem } from '@/lib/pages'
 import { resolveRoute } from './routes'
 import { cn } from '@/lib/utils'
 import { navigate } from '@/lib/leave-guard'

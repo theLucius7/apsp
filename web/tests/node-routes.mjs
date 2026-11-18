@@ -4,7 +4,7 @@ import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { resolve, extname, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
+import { proxyResourceFixtures, runtimeServerFixture } from './proxy-resource-fixtures.mjs'
 
 const catalogView = resources => resources.map(resource => ({ ...resource, original_name: resource.name, tags: [], note: '', sort_order: resource.id, revision: '1'.repeat(64), metadata_revision: 0 }))
 const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
@@ -23,7 +23,7 @@ try {
     const page = await browser.newPage({ viewport: { width, height:950 } }), errors = [], writes = []
     page.on('pageerror', error => errors.push(error.message))
     const nodes = [1,2].map(id => ({ id, server_id:id, name:`服务器${id}节点`, protocol:'vless-reality', port:443, public_host:`node${id}.example.com`, sni:'www.example.com' }))
-    const servers = [1,2].map(id => ({ id, name:`服务器${id}`, enabled:true, online:true, agent_supported:true, read_only:false }))
+    const servers = [1,2].map(id => runtimeServerFixture(id, { name:`服务器${id}` }))
     await page.route('**/api/**', async route => {
       const path = new URL(route.request().url()).pathname
       if (route.request().method() !== 'GET') { writes.push(path); return route.fulfill({ status:405, json:{} }) }

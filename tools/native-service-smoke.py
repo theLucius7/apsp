@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify native services and real runtime reconciliation on disposable CI hosts only."""
+"""Verify native services and self-contained runtime reconciliation on disposable CI hosts only."""
 import argparse
 import hashlib
 import json
@@ -103,15 +103,24 @@ def transfer(port_number):
             assert received == b'\0\0' + body
 
 
+def tampered_bundled_manifest(raw_bytes):
+    manifest = json.loads(raw_bytes.decode('utf-8'))
+    binary_name = manifest['binary_name']
+    original = manifest['binary_sha256']
+    forged = ('0' if original[0] != '0' else '1') + original[1:]
+    manifest['binary_sha256'] = forged
+    manifest['files'][binary_name]['sha256'] = forged
+    return json.dumps(manifest, separators=(',', ':')).encode('utf-8')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('binary', type=Path)
-    parser.add_argument('runtime_archive', type=Path)
+    parser.add_argument('runtime_archive', type=Path, nargs='?')
     args = parser.parse_args()
     if os.environ.get('CI') != 'true' or SYSTEM not in ('Darwin', 'FreeBSD', 'Windows'):
         parser.error('requires a disposable native CI runner')
     binary = args.binary.resolve()
-    archive = args.runtime_archive.read_bytes()
     version = subprocess.check_output([str(binary), '--version'], text=True).strip().split()[-1]
     root = (Path(os.environ['ProgramData']) if SYSTEM == 'Windows' else Path('/opt')) / ('apsp-test-' + uuid.uuid4().hex[:8])
     root.mkdir(mode=0o755, parents=True)
@@ -132,17 +141,15 @@ def main():
                   outbounds=[dict(type='direct', tag='direct')], route=dict(final='direct'),
                   experimental=dict(v2ray_api=dict(listen=f'127.0.0.1:{stats_port}', stats=dict(enabled=True, users=['u1_n1']))))
     bundle = json.dumps(dict(files={'config.json': json.dumps(native)}), separators=(',', ':')).encode()
-    runtime_path = '/api/agent/v1/artifacts/sing-box/1.14.4-apsp.2/' + RELEASE['target']()
-    panel.downloads = {runtime_path: archive, '/fixture/bundle': bundle}
-    module = dict(kernel_version='1.14.4-apsp.2', artifact=dict(url=panel.origin + runtime_path, sha256=hashlib.sha256(archive).hexdigest(),
-                  proof=RELEASE['proof']('sing-box', '1.14.4-apsp.2', 'sing-box.exe' if SYSTEM == 'Windows' else 'sing-box', archive, 'tar.gz')),
-                  config_rev=1, bundle_url=panel.origin + '/fixture/bundle', bundle_sha256=hashlib.sha256(bundle).hexdigest(), stats_listen=f'127.0.0.1:{stats_port}')
+    panel.downloads = {'/fixture/bundle': bundle}
+    module = dict(kernel_version='1.14.4-apsp.2', config_rev=1, bundle_url=panel.origin + '/fixture/bundle',
+                  bundle_sha256=hashlib.sha256(bundle).hexdigest(), stats_listen=f'127.0.0.1:{stats_port}')
     try:
         if SYSTEM == 'Windows':
             command(['wevtutil.exe', 'sl', 'Microsoft-Windows-TaskScheduler/Operational', '/e:true'])
             original_rights = windows_rights(root)
         print(invoke(binary, config, 'enroll', '--panel', panel.origin, '--token', 'smoke-enrollment'))
-        # Publish after services are registered so launchd's eager startup cannot race the fixture.
+        # Start in pure monitoring mode (empty manifest) and confirm sing-box is never started prematurely.
         print(invoke(binary, config, 'install-service'))
         if SYSTEM == 'Windows':
             account = powershell("$user=Get-LocalUser -Name 'apsp-singbox'; if (-not (Get-LocalGroupMember -SID 'S-1-5-32-545' | Where-Object { $_.SID -eq $user.SID })) { throw 'Runtime is not an ordinary Users member' }; if (Get-LocalGroupMember -SID 'S-1-5-32-544' | Where-Object { $_.SID -eq $user.SID }) { throw 'Runtime must not be an administrator' }; $user.SID.Value").stdout.strip()
@@ -154,12 +161,25 @@ def main():
             transcript = str(root / 'runtime/sing-box@main/data/runtime-transcript.log').replace("'", "''")
             prefix = "Start-Transcript -LiteralPath '" + transcript + "' -Append | Out-Null\n"
             launcher.write_bytes(prefix.encode('utf-8') + launcher.read_bytes())
+        pure_status = wait_for(
+            lambda: (s := status(binary, config)) and s['connected'] and s,
+            'native pure-monitoring connection',
+            90,
+        )
+        assert not pure_status.get('applied', {}).get('singbox'), pure_status
+        assert not pure_status.get('healthy', {}).get('singbox'), pure_status
+        assert not (root / 'runtime/sing-box@main/current').exists()
+        hello = next(m['payload'] for m in panel.messages if m['type'] == 'hello')
+        assert 'agent:self-contained:v1' in hello.get('capabilities', []), hello.get('capabilities')
+        assert 'singbox' in hello.get('capabilities', []), hello.get('capabilities')
+
         panel.manifest = dict(rev=1, modules={'singbox': module})
         revision = 1
         def applied():
             info = status(binary, config)
-            return info and info['healthy'].get('singbox') and info['applied'].get('singbox') == revision
-        wait_for(applied, 'native runtime reconciliation', 180)
+            return info and info.get('bundle_ready') is True and info['healthy'].get('singbox') and info['applied'].get('singbox') == revision
+        wait_for(applied, 'native self-contained runtime reconciliation', 180)
+        assert not any('/api/agent/v1/artifacts/' in path for path in panel.requests), panel.requests
         transfer(proxy_port)
         previous_port = proxy_port
         proxy_port = port()
@@ -177,9 +197,52 @@ def main():
             assert closed.connect_ex(('127.0.0.1', previous_port)) != 0, 'old runtime listener survived reload'
         old = status(binary, config)['pid']
         service('apsp-agent', 'restart')
-        wait_for(lambda: (s := status(binary, config)) and s['pid'] != old and s['connected'], 'Agent service restart', 90)
+        wait_for(lambda: (s := status(binary, config)) and s['pid'] != old and s['connected'] and s.get('bundle_ready') is True, 'Agent service restart', 90)
         transfer(proxy_port)
-        # Reinstalling must preserve identity, service independence and immutable artifacts.
+        # A failed supervised whole-bundle trial must roll back both core/current and
+        # plugins/sing-box/current without breaking the active runtime service.
+        pre_trial = status(binary, config)
+        assert pre_trial.get('bundle_ready') is True and pre_trial.get('bundle_error') is None, pre_trial
+        core_current = root / 'core/current'
+        current_kernel = root / 'plugins/sing-box/current'
+        pre_core_dir = helpers['resolved_reference'](core_current)
+        pre_kernel_dir = helpers['resolved_reference'](current_kernel)
+        bad_kernel_dir = root / 'plugins/sing-box/99.0.0-bad'
+        bad_kernel_dir.mkdir(mode=0o755)
+        failed_trial_dir = root / 'core/99.0.0'
+        pending_trial = helpers['build_failed_trial_candidate'](
+            failed_trial_dir, binary.name, '99.0.0', cache_exit=0, flip_reference=(current_kernel, bad_kernel_dir)
+        )
+        helpers['write_json'](root / 'core/pending-update.json', pending_trial)
+        wait_for(
+            lambda: (
+                (root / 'core/update-state.json').exists()
+                and '99.0.0' in helpers['read_shared_json'](root / 'core/update-state.json').get('failed_versions', [])
+                and helpers['read_shared_json'](root / 'core/update-state.json').get('trial') is None
+                and helpers['read_shared_json'](root / 'core/pending-update.json') is None
+            ),
+            'supervised whole-bundle upgrade rollback',
+            120,
+        )
+        wait_for(
+            lambda: (
+                (s := status(binary, config))
+                and s['agent_version'] == version
+                and s['pid'] != pre_trial['pid']
+                and s['connected']
+                and s['healthy'].get('singbox')
+                and s.get('bundle_ready') is True
+                and s.get('bundle_error') is None
+            ),
+            'restored Agent after failed supervised trial',
+            90,
+        )
+        assert helpers['resolved_reference'](core_current) == pre_core_dir
+        assert helpers['resolved_reference'](current_kernel) == pre_kernel_dir
+        shutil.rmtree(bad_kernel_dir)
+        shutil.rmtree(failed_trial_dir)
+        transfer(proxy_port)
+        # Reinstalling must preserve identity, service independence and materialized runtime.
         identity = (root / 'identity/device.key').read_bytes()
         print(invoke(binary, config, 'install-service'))
         assert (root / 'identity/device.key').read_bytes() == identity
@@ -196,31 +259,32 @@ def main():
             assert command(['sysrc', '-n', 'apsp_agent_enable']).stdout.strip() == 'YES'
         else:
             powershell("$t=Get-ScheduledTask -TaskName 'apsp-singbox@main'; if ($t.Principal.UserId -notmatch 'apsp-singbox') { throw 'Runtime account mismatch' }; if ($t.Triggers.Count -ne 1) { throw 'Missing startup trigger' }")
-        # The independent OS service must recheck cached proof without a running
-        # Agent worker. A valid initial installation must not authorize later bytes.
-        proof_path = root / 'plugins/sing-box/1.14.4-apsp.2/release.json'
+        # The independent OS service must recheck the materialized bundled manifest
+        # without a running Agent worker. A valid initial extraction must not authorize tampered bytes.
+        runtime_dir = helpers['resolved_reference'](current_kernel)
+        proof_path = runtime_dir / '.bundled.json'
         original_proof = proof_path.read_bytes()
         def listening():
             with socket.socket() as connection:
                 connection.settimeout(1)
                 return connection.connect_ex(('127.0.0.1', proxy_port)) == 0
         try:
-            proof_path.write_bytes(original_proof + b' ')
+            proof_path.write_bytes(tampered_bundled_manifest(original_proof))
             try:
                 service('apsp-singbox@main', 'restart')
             except RuntimeError:
                 # Some service managers report the expected startup rejection.
                 pass
-            wait_for(lambda: not listening(), 'runtime rejects corrupted cached proof', 30)
+            wait_for(lambda: not listening(), 'runtime rejects tampered bundled manifest', 30)
             for _ in range(6):
                 time.sleep(0.5)
-                assert not listening(), 'native runtime restarted without verifying its signed proof'
+                assert not listening(), 'native runtime restarted without verifying its bundled manifest'
         finally:
             proof_path.write_bytes(original_proof)
         service('apsp-singbox@main', 'restart')
-        wait_for(listening, 'runtime accepts restored signed proof', 90)
+        wait_for(listening, 'runtime accepts restored bundled manifest', 90)
         transfer(proxy_port)
-        print('Native services: startup registration, privilege separation, runtime artifact/configuration, reload, traffic, Agent restart/reinstall, independent runtime and cache signature rejection passed')
+        print('Native services: pure-monitoring start, privilege separation, self-contained runtime extraction/configuration, reload, traffic, Agent restart/reinstall, independent runtime and bundled manifest verification passed')
     except BaseException as error:
         if isinstance(error, subprocess.CalledProcessError):
             print(error.stdout, error.stderr)

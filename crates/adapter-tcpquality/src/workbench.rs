@@ -43,7 +43,7 @@ fn execution(spec: &DiagnosticSpec) -> Result<Value> {
 impl DiagnosticAdapter for WorkbenchAdapter {
     fn describe(&self) -> DiagnosticDescriptor {
         DiagnosticDescriptor {
-            plugin_name: "network-workbench".into(),
+            artifact_name: "network-workbench".into(),
             binary_name: "apsp-network-workbench".into(),
         }
     }

@@ -10,13 +10,13 @@ import { validatedSnapshot } from '../src/lib/resource-snapshot'
 import type { ProxyResource, PublicHop } from '../src/access/groupTypes'
 import { nodeRoute } from '../src/traffic/nodeRoute'
 import { validSubscriptionSource } from '../src/traffic/orderedSourceTypes'
-import { orderedResourceFixture, pathFixtureUuid, proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
+import { orderedResourceFixture, pathFixtureUuid, proxyResourceFixtures, runtimeServerFixture } from './proxy-resource-fixtures.mjs'
 import { sourceNodeFixture, sourceNodePageFixture, sourceUuid, subscriptionSourceFixture } from './subscription-source-fixtures.mjs'
 
 const requestId = sourceUuid(900), nextId = sourceUuid(901)
 function snapshot(): ProxyWriteSnapshot {
   const nodes = [1, 2, 3].map(id => ({ id, name: `节点 ${id}`, server_id: id, protocol: 'vless-reality', enabled: true, port: 20000 + id, public_host: `proxy${id}.example.com`, sni: 'www.example.com', public_key: 'TEST_ONLY', short_id: 'abcd' }))
-  const servers = [1, 2, 3].map(id => ({ id, name: `服务器 ${id}`, enabled: true, online: false, read_only: false }))
+  const servers = [1, 2, 3].map(id => runtimeServerFixture(id, { online: false }))
   return { nodes: { data: nodes, fresh: true, error: '' }, servers: { data: servers, fresh: true, error: '' }, resources: { data: proxyResourceFixtures(nodes, servers), fresh: true, error: '' }, sources: { data: [subscriptionSourceFixture()], fresh: true, error: '' }, sourceNodes: { 1: { data: sourceNodePageFixture(), fresh: true, error: '' } } }
 }
 function external(mode: 'follow_node' | 'pinned' = 'follow_node'): ChainDraftHop { return { kind: 'subscription', source_id: 1, node: sourceNodeFixture(), update_mode: mode } }
@@ -151,7 +151,7 @@ test('public and version mutation retries keep the original request while curren
   const original = structuredClone(target)
   for (const change of ['entry', 'managed', 'source', 'missing', 'availability'] as const) {
     Object.assign(target, structuredClone(original))
-    if (change === 'entry') target.entry.plugin_enabled = false
+    if (change === 'entry') target.entry.enabled = false
     if (change === 'managed') { const hop = target.hops.find(hop => hop.kind === 'managed')!; if (hop.kind === 'managed') hop.endpoint.node_deleted = true }
     if (change === 'source') { const hop = target.hops.find(hop => hop.kind === 'subscription')!; if (hop.kind === 'subscription') hop.source_archived = true }
     if (change === 'missing') { const hop = target.hops.find(hop => hop.kind === 'subscription')!; if (hop.kind === 'subscription') hop.node_present = false }

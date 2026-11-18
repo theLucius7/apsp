@@ -80,14 +80,17 @@ pub async fn panel_health(state: &AppState, expected: &[&str]) -> ApiResult<Pane
         }
         _ => json!({"status":"unknown","reason":"磁盘观察工具不可用或请求超时"}),
     };
-    let update = match tokio::time::timeout(Duration::from_secs(5), crate::releases::entries(state))
-        .await
+    let update = match tokio::time::timeout(
+        Duration::from_secs(5),
+        crate::releases::signed_agents(state),
+    )
+    .await
     {
         Ok(Ok(entries)) => {
-            json!({"status":"observed","source":"local-signed-artifact-inventory","observed_at":now,"entries":entries,"remote_checked":false})
+            json!({"status":"observed","source":"local-signed-agent-releases","observed_at":now,"entries":entries,"remote_checked":false})
         }
         _ => {
-            json!({"status":"unknown","reason":"本地签名制品清单不可用或读取超时","remote_checked":false})
+            json!({"status":"unknown","reason":"本地签名 Agent 发布清单不可用或读取超时","remote_checked":false})
         }
     };
     Ok(PanelHealth {

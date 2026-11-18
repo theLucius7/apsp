@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 
 type DiagnosticCondition = {
-  plugin: string | null
+  tool: string | null
   version: string | null
   artifact_sha256: string | null
   timeout_secs: number | null
@@ -82,12 +82,12 @@ export default function SupplierComparison({ run, version }: { run: ActionRunner
         <TableCell className="border-b p-2.5 text-left align-top max-sm:min-w-24 max-sm:p-1.5">{supplier.costs.length ? supplier.costs.map(cost => <p key={cost.currency}>{cost.amount_minor} 最小币单位（{cost.currency}）<small className="block max-w-[30rem] opacity-80">{cost.record_count} 条成本记录</small></p>) : '暂无成本记录'}<small className="block max-w-[30rem] opacity-80">保留原最小币单位与币种，不作汇率换算。</small></TableCell>
         <TableCell className="border-b p-2.5 text-left align-top max-sm:min-w-24 max-sm:p-1.5">{!supplier.diagnostics_permission_available ? <p>未授权读取诊断证据。</p> : !supplier.diagnostics.length && <p>暂无同条件诊断记录。</p>}{supplier.diagnostics.map(group => <details key={group.condition_digest}>
           <summary className="cursor-pointer text-sm font-medium">{group.state === 'comparable' ? '已有至少两台服务器的同条件成功结果' : '同条件成功结果不足'} · {group.records.length} 条记录</summary>
-          <p>工具：{group.condition.plugin ?? '未记录'}；版本：{group.condition.version ?? '未记录'}；时长上限：{group.condition.timeout_secs === null ? '未记录' : `${group.condition.timeout_secs} 秒`}。</p>
-          <p>制品摘要：<code>{group.condition.artifact_sha256 ?? '未记录'}</code><small className="block max-w-[30rem] opacity-80">条件摘要：{group.condition_digest}</small><small className="block max-w-[30rem] opacity-80">参数摘要：{group.condition.parameter_digest}</small><small className="block max-w-[30rem] opacity-80">环境摘要：{group.condition.environment_digest}</small></p>
+          <p>工具：{group.condition.tool ?? '未记录'}；版本：{group.condition.version ?? '未记录'}；时长上限：{group.condition.timeout_secs === null ? '未记录' : `${group.condition.timeout_secs} 秒`}。</p>
+          <p>执行组件摘要：<code>{group.condition.artifact_sha256 ?? '未记录'}</code><small className="block max-w-[30rem] opacity-80">条件摘要：{group.condition_digest}</small><small className="block max-w-[30rem] opacity-80">参数摘要：{group.condition.parameter_digest}</small><small className="block max-w-[30rem] opacity-80">环境摘要：{group.condition.environment_digest}</small></p>
           <ul className="list-disc space-y-1 pl-5">{group.records.map(record => <li key={record.id}>服务器 {record.server_id} · {states[record.status] ?? '其他执行状态'} · {time(record.updated_at)}<small className="block max-w-[30rem] opacity-80">报告编号：{record.id} · {record.report_available ? '已有报告可核对' : '报告不可用'}</small></li>)}</ul>
         </details>)}</TableCell>
       </TableRow>)}</TableBody></Table></div>
-      <p>诊断按工具版本、制品、参数和环境摘要分组。仅核对同条件原始报告，不生成统一分数、供应商排名或超售结论。</p>
+      <p>诊断按执行工具版本、组件摘要、参数和环境摘要分组。仅核对同条件原始报告，不生成统一分数、供应商排名或超售结论。</p>
     </>}
   </section>
 }

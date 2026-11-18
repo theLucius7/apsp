@@ -48,7 +48,16 @@ pub async fn get(
     auth::require_admin(&state, &headers).await?;
     let mut tx = state.pool.begin().await?;
     crate::servers::lock(&mut tx, id).await?;
-    super::settings::require_enabled(&mut tx, id).await?;
+    if !super::settings::is_configured(&mut tx, id).await? {
+        tx.commit().await?;
+        return Ok(Json(DeploymentView {
+            status: None,
+            history: Vec::new(),
+            pending: false,
+            enabled_nodes: 0,
+            authorized_nodes: 0,
+        }));
+    }
     let pending = crate::publications::pending(&mut tx, id).await?;
     let enabled_nodes: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM nodes WHERE server_id=$1 AND deleted_at IS NULL AND enabled",
@@ -56,9 +65,25 @@ pub async fn get(
     .bind(id)
     .fetch_one(&mut *tx)
     .await?;
-    let authorized_nodes: i64 = sqlx::query_scalar("SELECT COUNT(DISTINCT n.id) FROM nodes n JOIN singbox_eligible_accesses($2) a ON a.node_id=n.id WHERE n.server_id=$1 AND n.deleted_at IS NULL").bind(id).bind(apsp_protocol::now_timestamp()).fetch_one(&mut *tx).await?;
-    let status = sqlx::query_as("SELECT module,target_rev,applied_rev,last_result_rev,healthy,last_error,updated_at FROM server_module_status WHERE server_id=$1 AND module='singbox'").bind(id).fetch_optional(&mut *tx).await?;
-    let history = sqlx::query_as("SELECT module,rev,bundle_sha256,created_at FROM deployments WHERE server_id=$1 AND module='singbox' ORDER BY rev DESC LIMIT 100").bind(id).fetch_all(&mut *tx).await?;
+    let authorized_nodes: i64 = sqlx::query_scalar(
+        "SELECT COUNT(DISTINCT n.id) FROM nodes n JOIN singbox_eligible_accesses($2) a ON a.node_id=n.id WHERE n.server_id=$1 AND n.deleted_at IS NULL",
+    )
+    .bind(id)
+    .bind(apsp_protocol::now_timestamp())
+    .fetch_one(&mut *tx)
+    .await?;
+    let status = sqlx::query_as(
+        "SELECT module,target_rev,applied_rev,last_result_rev,healthy,last_error,updated_at FROM server_module_status WHERE server_id=$1 AND module='singbox' AND target_rev>0",
+    )
+    .bind(id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let history = sqlx::query_as(
+        "SELECT module,rev,bundle_sha256,created_at FROM deployments WHERE server_id=$1 AND module='singbox' ORDER BY rev DESC LIMIT 100",
+    )
+    .bind(id)
+    .fetch_all(&mut *tx)
+    .await?;
     tx.commit().await?;
     Ok(Json(DeploymentView {
         status,
@@ -74,6 +99,7 @@ pub struct Readiness {
     pub ready: bool,
     pub checks: Vec<Check>,
 }
+
 #[derive(Serialize)]
 pub struct Check {
     pub name: &'static str,
@@ -81,7 +107,6 @@ pub struct Check {
     pub detail: String,
 }
 
-// Explicit inspection avoids re-verifying archives on every status poll.
 pub async fn check(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -90,82 +115,81 @@ pub async fn check(
     auth::require_admin(&state, &headers).await?;
     let mut tx = state.pool.begin().await?;
     crate::servers::lock(&mut tx, id).await?;
-    super::settings::require_enabled(&mut tx, id).await?;
-    let row = sqlx::query("SELECT device_public_key IS NOT NULL AS registered,last_seen,capabilities,static_info FROM servers WHERE id=$1").bind(id).fetch_one(&mut *tx).await?;
+    let row = sqlx::query(
+        "SELECT device_public_key IS NOT NULL AS registered,last_seen,capabilities,static_info FROM servers WHERE id=$1",
+    )
+    .bind(id)
+    .fetch_one(&mut *tx)
+    .await?;
     tx.commit().await?;
     let registered: bool = row.get("registered");
     let online = row
         .get::<Option<i64>, _>("last_seen")
         .is_some_and(|at| apsp_protocol::now_timestamp().saturating_sub(at) <= 60);
-    let supported = row
-        .get::<Value, _>("capabilities")
-        .as_array()
-        .is_some_and(|caps| caps.iter().any(|cap| cap == "singbox"));
-    let signature_supported = row
-        .get::<Value, _>("capabilities")
-        .as_array()
-        .is_some_and(|caps| {
-            caps.iter().any(|cap| {
-                cap.as_str() == Some(apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY)
-            })
-        });
-    let mut checks = vec![
+    let capabilities: Value = row.get("capabilities");
+    let static_info: Value = row.get("static_info");
+    let supported = super::agent::supports_self_contained_singbox(&capabilities);
+    let raw_component = static_info
+        .get("components")
+        .and_then(|components| components.get("sing-box"))
+        .and_then(Value::as_str)
+        .filter(|version| !version.is_empty());
+    let component_mismatch = raw_component.is_some_and(|version| {
+        super::agent::embedded_runtime_version(&static_info).as_deref()
+            != Some(crate::RUNTIME_VERSION)
+            || version != crate::RUNTIME_VERSION
+    });
+    let embedded = super::agent::embedded_runtime_version(&static_info);
+    let active = super::agent::reported_runtime_version(&static_info);
+    let builtin_ready = supported && !component_mismatch;
+    let builtin_detail = if builtin_ready {
+        match (embedded.as_deref(), active.as_deref()) {
+            (Some(embedded), Some(running)) => {
+                format!("设备已声明一体化内置 sing-box（内置 {embedded}，当前运行 {running}）")
+            }
+            (Some(embedded), None) => {
+                format!("设备已声明一体化内置 sing-box（内置 {embedded}，当前尚未运行）")
+            }
+            (None, Some(running)) => {
+                format!("设备已声明一体化内置 sing-box 能力（当前运行 {running}）")
+            }
+            (None, None) => "设备已声明一体化内置 sing-box 能力".into(),
+        }
+    } else if component_mismatch {
+        format!(
+            "设备上报的内置 sing-box 版本与面板固定版本 {} 不一致，请升级 Agent",
+            crate::RUNTIME_VERSION
+        )
+    } else if registered {
+        "当前 Agent 未声明内置 sing-box 一体化能力（旧版或仅监控模式），请升级或调整 Agent".into()
+    } else {
+        "等待设备接入后确认内置 sing-box 能力".into()
+    };
+    let checks = vec![
         Check {
             name: "Agent 接入",
             passed: registered,
             detail: if registered {
-                "已接入"
+                "设备已接入并绑定身份公钥".into()
             } else {
-                "先在服务器详情页安装并接入 Agent"
-            }
-            .into(),
+                "先在服务器详情页安装并接入一体化 Agent".into()
+            },
         },
         Check {
             name: "设备在线",
             passed: online,
             detail: if online {
-                "近期已收到设备连接"
+                "近期已收到设备连接".into()
             } else {
-                "设备离线，配置将在重新连接后下发"
-            }
-            .into(),
+                "设备离线，配置将在重新连接后自动下发应用".into()
+            },
         },
         Check {
-            name: "运行时能力",
-            passed: supported,
-            detail: if supported {
-                "设备已声明 sing-box 支持"
-            } else {
-                "尚未收到 sing-box 能力声明，请检查 Agent 版本与安装参数"
-            }
-            .into(),
-        },
-        Check {
-            name: "制品验签能力",
-            passed: signature_supported,
-            detail: if signature_supported {
-                "设备支持独立制品验签"
-            } else {
-                "此 Agent 尚不支持制品验签，请先使用可信安装器升级；已运行配置和流量上报继续保留"
-            }
-            .into(),
+            name: "内置运行时能力",
+            passed: builtin_ready,
+            detail: builtin_detail,
         },
     ];
-    let artifact = if registered {
-        match super::agent::runtime_artifact(&state, &row.get("static_info")).await {
-            Ok(_) => Check { name: "签名运行时", passed: true, detail: "已找到与设备平台匹配的 sing-box 1.14.4-apsp.2 制品，签名验证通过".into() },
-            Err(ApiError::NotFound) => Check { name: "签名运行时", passed: false, detail: "面板缺少此平台的签名运行时，请维护者按部署文档导入匹配 Release；插件目录可查看已收录版本".into() },
-            Err(ApiError::BadRequest(message)) => Check { name: "签名运行时", passed: false, detail: message },
-            Err(error) => return Err(error),
-        }
-    } else {
-        Check {
-            name: "签名运行时",
-            passed: false,
-            detail: "等待设备上报平台后检查制品".into(),
-        }
-    };
-    checks.push(artifact);
     Ok(Json(Readiness {
         ready: checks.iter().all(|item| item.passed),
         checks,
@@ -178,9 +202,7 @@ pub struct Redeployed {
 }
 
 /// Publishes the server's current configuration again as a new revision (see
-/// `publisher::redeploy`). When the service manager restarted the runtime outside the Agent,
-/// for example on a host reboot, the Agent restarts it once under its control and certifies
-/// the new instance; a runtime that is still the certified one is not restarted.
+/// `publisher::redeploy`) as an explicit administrator recovery action.
 pub async fn redeploy(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -191,7 +213,7 @@ pub async fn redeploy(
     crate::control_center::require_recent_proof(&state, &headers).await?;
     let mut tx = state.pool.begin().await?;
     crate::servers::lock(&mut tx, id).await?;
-    super::settings::require_enabled(&mut tx, id).await?;
+    super::settings::require_configured(&mut tx, id).await?;
     let deployed: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM deployments WHERE server_id=$1 AND module='singbox')",
     )
@@ -204,11 +226,13 @@ pub async fn redeploy(
             "此服务器还没有部署过配置，不需要重新部署".into(),
         ));
     }
-    let revision = super::publisher::redeploy(&state, id).await?.ok_or_else(|| {
-        ApiError::Conflict(
-            "暂时不能生成新版本：配置正在发布，或有等待确认的部署预检。请稍后重试，或先完成部署预检".into(),
-        )
-    })?;
+    let revision = super::publisher::redeploy(&state, id)
+        .await?
+        .ok_or_else(|| {
+            ApiError::Conflict(
+                "暂时不能生成新版本：配置正在合并发布或服务器当前无活跃服务配置，请稍后重试".into(),
+            )
+        })?;
     Ok(Json(Redeployed { revision }))
 }
 
@@ -225,10 +249,12 @@ pub async fn applied_state(
     connection: &mut sqlx::PgConnection,
     server_id: i64,
 ) -> sqlx::Result<Option<AppliedState>> {
-    let row = sqlx::query("SELECT m.applied_rev,m.target_rev,m.healthy,d.bundle FROM server_module_status m LEFT JOIN deployments d ON d.server_id=m.server_id AND d.module=m.module AND d.rev=m.applied_rev WHERE m.server_id=$1 AND m.module='singbox'")
-        .bind(server_id)
-        .fetch_optional(connection)
-        .await?;
+    let row = sqlx::query(
+        "SELECT m.applied_rev,m.target_rev,m.healthy,d.bundle FROM server_module_status m LEFT JOIN deployments d ON d.server_id=m.server_id AND d.module=m.module AND d.rev=m.applied_rev WHERE m.server_id=$1 AND m.module='singbox'",
+    )
+    .bind(server_id)
+    .fetch_optional(connection)
+    .await?;
     Ok(row.map(|row| AppliedState {
         applied_rev: row.get("applied_rev"),
         target_rev: row.get("target_rev"),
@@ -246,9 +272,9 @@ struct RuntimeDeployment {
 }
 
 /// Whether a runtime operation fits the server's current sing-box deployment, for the
-/// runtime operations operations queues. A read always does; anything else needs the
-/// expected target revision with no publication pending, a restart needs the target applied
-/// and a retry needs a failed deployment of the target.
+/// runtime operations queues. A read always does; anything else needs a positive expected
+/// target revision with no publication pending, a restart needs the target applied and a
+/// retry needs a failed deployment of the target.
 pub async fn require_runtime_operation_fits(
     connection: &mut sqlx::PgConnection,
     server_id: i64,
@@ -258,7 +284,14 @@ pub async fn require_runtime_operation_fits(
     if request.operation == RuntimeOperation::Inspect {
         return Ok(());
     }
-    let deployment: RuntimeDeployment = sqlx::query_as("SELECT target_rev,applied_rev,last_result_rev,last_error FROM server_module_status WHERE server_id=$1 AND module='singbox'").bind(server_id).fetch_optional(connection).await?.ok_or_else(|| ApiError::Conflict("尚无可操作的运行时部署".into()))?;
+    let deployment: RuntimeDeployment = sqlx::query_as(
+        "SELECT target_rev,applied_rev,last_result_rev,last_error FROM server_module_status WHERE server_id=$1 AND module='singbox'",
+    )
+    .bind(server_id)
+    .fetch_optional(connection)
+    .await?
+    .filter(|row: &RuntimeDeployment| row.target_rev > 0)
+    .ok_or_else(|| ApiError::Conflict("尚无可操作的运行时部署".into()))?;
     if publication_pending || request.expected_revision != u64::try_from(deployment.target_rev).ok()
     {
         return Err(ApiError::Conflict(

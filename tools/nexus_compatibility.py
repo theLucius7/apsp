@@ -111,8 +111,9 @@ def apply_usage(connection, import_id, deliveries):
 
 
 def deliver_usage(config, connection):
+    import_id = str(uuid.UUID(config['import_id']))
     deliveries = database(config, "SELECT COALESCE(jsonb_agg(to_jsonb(p)),'[]'::jsonb) FROM (SELECT id,user_id,uplink::text,downlink::text,rate::text,period_start,period_end FROM singbox_nexus_usage_deliveries WHERE delivered_at IS NULL ORDER BY id LIMIT 500) p;")
-    ids = apply_usage(connection, config['import_id'], deliveries)
+    ids = apply_usage(connection, import_id, deliveries)
     if ids:
         # A crash here is harmless: SQLite receipts make the next delivery a
         # no-op, and the acknowledgement can be repeated independently.
@@ -120,9 +121,14 @@ def deliver_usage(config, connection):
     return len(ids)
 
 
-def apply_members(connection, members):
+def apply_members(connection, members, retired_members=None):
     if not isinstance(members, list) or len(members) > 20000:
         raise BridgeError('Invalid desired member list')
+    retired_members = [] if retired_members is None else retired_members
+    if (not isinstance(retired_members, list) or len(retired_members) > 20000
+            or any(type(user) is not int or user <= 0 for user in retired_members)
+            or len(set(retired_members)) != len(retired_members)):
+        raise BridgeError('Invalid retired member list')
     connection.execute('BEGIN IMMEDIATE')
     changed = created = 0
     try:
@@ -131,6 +137,8 @@ def apply_members(connection, members):
             user = member['id']
             if not isinstance(user, int) or user <= 0 or user in ids:
                 raise BridgeError('Invalid or duplicate member ID')
+            if user in retired_members:
+                raise BridgeError('Native and legacy member sets overlap')
             ids.add(user)
             identity = str(uuid.UUID(member['uuid']))
             quota = int(member['quota_bytes'])
@@ -158,15 +166,23 @@ def apply_members(connection, members):
                     connection.execute('UPDATE v2_user SET email=?,banned=?,member_status=?,plan_id=?,group_id=?,transfer_enable=?,expired_at=?,invite_user_id=?,nexus_sponsor_required=?,nexus_first_purchase_at=?,updated_at=?,member_version=member_version+1 WHERE id=?', (*values, now, user))
                     changed += 1
             else:
-                connection.execute('INSERT INTO v2_user(email,banned,member_status,plan_id,group_id,transfer_enable,expired_at,invite_user_id,nexus_sponsor_required,nexus_first_purchase_at,id,uuid,token,password,created_at,updated_at,balance) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)', (*values, user, identity, member['subscription_token'], '!APSP-MANAGED!' + secrets.token_hex(24), now, now))
+                connection.execute('INSERT INTO v2_user(email,banned,member_status,plan_id,group_id,transfer_enable,expired_at,invite_user_id,nexus_sponsor_required,nexus_first_purchase_at,id,uuid,token,password,created_at,updated_at,balance,u,d,member_version) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,0,0,1)', (*values, user, identity, member['subscription_token'], '!APSP-MANAGED!' + secrets.token_hex(24), now, now))
                 created += 1
             if member['plan_id'] is not None and (not old_plan or old_plan[0] != member['plan_id']):
                 limits = connection.execute('SELECT speed_limit,device_limit FROM v2_plan WHERE id=?', (member['plan_id'],)).fetchone()
                 if limits is None:
                     raise BridgeError('Mapped legacy plan no longer exists')
                 connection.execute('UPDATE v2_user SET speed_limit=?,device_limit=? WHERE id=?', (*limits, user))
+        # Native adoption keeps the historical UUID, counters and billing records,
+        # but the old control plane must no longer authorize or renew the account.
+        retired = 0
+        for user in retired_members:
+            retired += connection.execute(
+                "UPDATE v2_user SET banned=1,member_status=CASE WHEN member_status='ARCHIVED' THEN 'ARCHIVED' ELSE 'SUSPENDED' END,updated_at=?,member_version=member_version+1 "
+                "WHERE id=? AND (banned<>1 OR member_status NOT IN ('SUSPENDED','ARCHIVED'))",
+                (int(time.time()), user)).rowcount
         connection.commit()
-        return {'members': len(members), 'created': created, 'changed': changed}
+        return {'members': len(members), 'created': created, 'changed': changed, 'retired': retired}
     except Exception:
         connection.rollback()
         raise
@@ -176,9 +192,11 @@ def initialize_cycles(config, members, refresh_nodes=False):
     # The legacy scheduler remains the authority for its billing dates. Initialize
     # only missing schedules; never reset a counter or replace an existing date.
     ids = [str(int(member['id'])) for member in members]
-    if not ids:
+    if not ids and not refresh_nodes:
         return
-    code = "<?php require '/www/vendor/autoload.php'; $app=require '/www/bootstrap/app.php'; $app->make(Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap(); $service=app(App\\Services\\TrafficResetService::class); foreach(App\\Models\\User::whereIn('id',[" + ','.join(ids) + "])->whereNull('next_reset_at')->whereNotNull('plan_id')->where('banned',0)->get() as $user) { $service->setInitialResetTime($user); }"
+    code = "<?php require '/www/vendor/autoload.php'; $app=require '/www/bootstrap/app.php'; $app->make(Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();"
+    if ids:
+        code += " $service=app(App\\Services\\TrafficResetService::class); foreach(App\\Models\\User::whereIn('id',[" + ','.join(ids) + "])->whereNull('next_reset_at')->whereNotNull('plan_id')->where('banned',0)->get() as $user) { $service->setInitialResetTime($user); }"
     if refresh_nodes:
         # Refresh only user lists; node configuration and credentials stay intact.
         # A periodic full list also removes users from a previous permission group.
@@ -400,20 +418,31 @@ def synchronize(config):
     path = Path(config['legacy_database']).resolve(strict=True)
     connection = sqlite3.connect(f'{path.as_uri()}?mode=rw', uri=True, timeout=20, isolation_level=None)
     try:
+        # Mark the complete exchange before any delivery: adoption must never
+        # capture the previous meter after delivery acknowledgment but before sampling.
+        import_id = str(uuid.UUID(config['import_id']))
+        started = database(config, f"SELECT singbox_nexus_bridge_begin('{import_id}'::uuid);")
+        if not isinstance(started, dict) or started.get('started') is not True:
+            raise BridgeError('Compatibility bridge begin was not confirmed')
         deliver_usage(config, connection)
-        sample = observe(connection, str(uuid.UUID(config['import_id'])))
+        sample = observe(connection, import_id)
         desired = database(config, f'SELECT singbox_nexus_bridge_exchange({json_sql(sample)});')
-        generation = str(uuid.UUID(desired['generation']))
-        result = apply_members(connection, desired['members'])
-        config['_node_sync_pending'] = config.get('_node_sync_pending', True) or bool(result['created'] or result['changed'])
+        if not isinstance(desired, dict) or 'generation' not in desired or 'members' not in desired:
+            raise BridgeError('Invalid compatibility exchange payload')
+        try:
+            generation = str(uuid.UUID(desired['generation']))
+        except (TypeError, ValueError, AttributeError):
+            raise BridgeError('Invalid compatibility generation identity') from None
+        result = apply_members(connection, desired['members'], desired.get('retired_members', []))
+        config['_node_sync_pending'] = config.get('_node_sync_pending', True) or bool(result['created'] or result['changed'] or result['retired'])
         refresh = config['_node_sync_pending'] or time.monotonic() - config.get('_last_node_sync', 0) >= 60
         initialize_cycles(config, desired['members'], refresh)
+        ack = database(config, f"WITH acknowledged AS (UPDATE singbox_nexus_bridge SET last_sync_at=EXTRACT(EPOCH FROM clock_timestamp())::bigint,pending_generation=NULL WHERE singleton AND enabled AND pending_generation='{generation}'::uuid RETURNING 1), retired AS (UPDATE singbox_native_adoptions SET legacy_retired_at=EXTRACT(EPOCH FROM clock_timestamp())::bigint WHERE legacy_retired_generation='{generation}'::uuid AND legacy_retired_at IS NULL AND EXISTS(SELECT 1 FROM acknowledged) RETURNING user_id) SELECT jsonb_build_object('acknowledged',EXISTS(SELECT 1 FROM acknowledged),'retired', (SELECT COUNT(*) FROM retired));")
+        if not isinstance(ack, dict) or ack.get('acknowledged') is not True:
+            raise BridgeError('Generation acknowledgment failed; check for another bridge process')
         if refresh:
             config['_node_sync_pending'] = False
             config['_last_node_sync'] = time.monotonic()
-        ack = database(config, f"WITH acknowledged AS (UPDATE singbox_nexus_bridge SET last_sync_at=EXTRACT(EPOCH FROM clock_timestamp())::bigint,pending_generation=NULL WHERE singleton AND enabled AND pending_generation='{generation}'::uuid RETURNING 1) SELECT jsonb_build_object('acknowledged',EXISTS(SELECT 1 FROM acknowledged));")
-        if not ack.get('acknowledged'):
-            raise BridgeError('Generation acknowledgment failed; check for another bridge process')
         try:
             result['device_nodes'] = exchange_devices(config, connection)
             result['machine_heartbeats'] = config['_machine_heartbeats']

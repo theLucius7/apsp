@@ -19,15 +19,15 @@ EXPECTED = {
     'ip-dnsbl.list': ('ref/dnsbl.list', 'a92ca482843310167309c82f05cb7e208d7decc7f8bb7eada0f96af42f1143ad', 8812),
 }
 POLICIES = {
-    'report': '468311a213e820f920a9f556dfaaf6883002232d459c9e36d2622db2d7b43b26',
-    'dependency': 'e8828b3929aaeabd7b0fc615205998f9e21a6403fa96a9400bc81fe06e02f9f2',
-    'data': '0115f90f8ce521eab1472d8426b8f8dfbf1fefca427ae0fdfd557b346a8fdab3',
-    'ip-score': '9ef1a5cf9a6c442d5abdf8ee91f2b42458c940a49f74c6d13a649cc5fb2ce303',
-    'browser': '0b4ad0d200bae6b6919f5ae3d2b69b1c46c7f388dc29f4d4f25e95d6ec3c9723',
-    'query': 'fe459061e903f815369f637a42e5197661f160c0ec2a1b24915317a37e68453b',
-    'access': '7520a325667855eaa9ab3535a3d65045e9a6ee006b6eae39e1cf2653908c4b2b',
-    'netflix': '9b1a56cd71af3370d990d89be5c1a937a8de6f788f1e2da2e86738e42db0cd22',
-    'openai': 'b7390471a552dee857414214dec3d5c5f5870caab27a357ef4b66780474ded7b',
+    'report': '755e4738cf5fe207333e609981266bfb80eb28857e60b2568b6df10af9b8f0ab',
+    'dependency': 'daba77b1d322282b6f552aa1847a88931451e62ac889f7620d3883e8b7bfb32e',
+    'data': '0f64d5606af850d5d6dd9113c2507dc8c2995cfd770d7421173de82cf5b87047',
+    'ip-score': '280a4fcd1dad8dc4282b8d308afb829551c49e39f4abb0401e632466c3affdeb',
+    'browser': 'a577b3293c788d5b232a9bcf6c1367d92b23e4197b5b211dd58063382af2ed5a',
+    'query': '91fc230b6fd6313994eae7ca1de630b583d51006d1437053620e080cf8b189cc',
+    'access': 'b2da46ed837216e17d429616b5b0724231a0f4d2802bd8f9906f387baf0b8c21',
+    'netflix': '8097c2608303cce5a7cd280620a9822f32bc7118332a7d53659d3355b2da20c6',
+    'openai': 'feb22c2b351bff95a7e8525b22c80892434f210dc20f5b8cfbced21805665e9c',
 }
 REVIEWED_POLICY_FILES = {'browser': 'native-browser-policy.py',
                          'netflix': 'native-netflix-policy.py'}

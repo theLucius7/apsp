@@ -1,6 +1,6 @@
 # 核心对象词典
 
-- 状态：已接受（[ADR 0126](../adr/0126-workspaces-language-and-addresses.md)，2026-11-08）。代码与数据的归属自 2026-11-08 起以 [ADR 0128](../adr/0128-domain-architecture.md) 的九个领域为准，文中的 ADR 0125 功能模块按[重新设计方案的对照](README.md#与-adr-0125-的关系)理解。本文是对象与界面用语的唯一出处；[术语表](../glossary.md)只保留技术术语，[功能地图](../product-map.md)的“核心对象”“界面用语”两节引用本文。
+- 状态：已接受（[ADR 0126](../adr/0126-workspaces-language-and-addresses.md)，2026-11-08）。代码与数据的归属自 2026-11-08 起以 [ADR 0128](../adr/0128-domain-architecture.md) 的九个领域为准，文中的 ADR 0125 功能模块按[重新设计方案的对照](https://github.com/theLucius7/apsp/blob/8fb798b14761681607973604c0ba15e605e18b4c/docs/redesign/README.md#与-adr-0125-的关系)与[领域归属表](../domain-map.md)理解。本文是对象与界面用语的唯一出处；[术语表](../glossary.md)只保留技术术语，[功能地图](../product-map.md)的“核心对象”“界面用语”两节引用本文。
 - 依据：[设计依据](01-principles.md) R1、R3、R5、R13、R14、R17；扫描基线 main `d24bd135`。表名、函数名出自 `crates/panel/migrations/0001_current.sql`，Agent 状态库出自 `crates/agent-core/src/state/schema.sql`。
 
 ## 1. 怎样读这份词典
@@ -15,7 +15,7 @@
 | 身份与版本 | 用什么标识；哪些变化产生新版本 |
 | 关系 | 引用谁、被谁引用 |
 | 当前模型 | 新建与日常使用的唯一模型（R5） |
-| 历史模型 | 仍在库中的旧模型、进入方式与退出条件，详见[收敛方案](07-convergence.md) |
+| 历史模型 | 仍在库中的旧模型、进入方式与退出条件，详见[收敛方案](https://github.com/theLucius7/apsp/blob/8fb798b14761681607973604c0ba15e605e18b4c/docs/redesign/07-convergence.md) |
 | 用语 | 界面与文档该用的词，以及要停用的词 |
 
 对象的状态怎样表达统一在[状态设计](06-states.md)中说明，本文只列每个对象有哪些状态来源。
@@ -32,7 +32,7 @@
 | 网络服务 | 提供哪些服务，给谁用 | 运行时、节点、链路、外部来源、用户、策略组、套餐、计量账本、客户端订阅、门户 | `proxy`：`proxy-nodes`（节点、外部来源、链路、编译器）、`proxy-users`（用户、策略组、套餐、用量）、`proxy-delivery`（客户端订阅、专属地址）、`proxy-portal`（门户、邀请）、`proxy-runtime`（运行时，Agent 侧 `adapter-singbox`）、`proxy-legacy`（Nexus 兼容） | 网络服务 |
 | 监测与诊断 | 哪里出了问题，为什么 | 告警事件与规则、维护窗口、拨测、诊断报告、线路质量观测 | `alerts`；`lines`（含三个诊断插件与 `tcp-probe`）；诊断任务的生命周期与通知发件箱是内核机制（ADR 0028、ADR 0125 §4.1） | 监测与诊断 |
 | 费用与续费 | 花多少钱，什么时候续 | 续费项目、付款记录、分类与标签、提醒 | `costs` | 费用与续费 |
-| 系统 | 面板本身怎样运行 | 管理员、会话、API 令牌、凭据存储、审计、备份记录、制品与版本、面板设置 | 内核·身份、内核·平台服务、内核·设备（签名制品） | 系统 |
+| 系统 | 面板本身怎样运行 | 管理员、会话、API 令牌、凭据存储、审计、备份记录、签名 Agent 发布目录、面板设置 | 平台治理（`crates/governance`）；备份归作业（`crates/operations`） | 系统 |
 
 概览对应 `overview` 模块，只汇总各功能登记的待办与摘要；实验功能所在的 `lab` 模块是叶子，界面上显示在所属工作区（[六工作区方案 §5](04-workspaces.md#5-实验与冻结功能的位置)）。
 
@@ -44,10 +44,10 @@
 
 | 外部上下文 | 关系 | 翻译位置 | 进入 apsp 后是 | 不进入 apsp 的 |
 | --- | --- | --- | --- | --- |
-| Nexus（旧代理面板） | 一次性导入与兼容桥 | `nexus_nodes` 模块、兼容桥（目前散在多个模块中，见[收敛方案 §3.2](07-convergence.md#32-兼容流程怎样独立)）与 `tools/nexus_*.py` | 受管节点、用户、策略组（“原权限组”） | machine、host、plan 等原用语；钱包与订单（ADR 0113 已删除运营功能） |
+| Nexus（旧代理面板） | 一次性导入与兼容桥 | `nexus_nodes` 模块、兼容桥（目前散在多个模块中，见[收敛方案 §3.2](https://github.com/theLucius7/apsp/blob/8fb798b14761681607973604c0ba15e605e18b4c/docs/redesign/07-convergence.md#32-兼容流程怎样独立)）与 `tools/nexus_*.py` | 受管节点、用户、策略组（“原权限组”） | machine、host、plan 等原用语；钱包与订单（ADR 0113 已删除运营功能） |
 | Xboard 一类面板 | 计划的导入（功能地图“适合谁”） | 尚无 | 用户、套餐、策略组 | 公开注册、订单、佣金、工单 |
 | Wallos | 导入导出格式 | `tools/export_wallos.py`、`crates/costs` 的导入 | 续费项目、付款记录 | Wallos 的界面与数据结构 |
-| 机场订阅与分享链接 | 外部节点格式 | 外部来源的解析器（当前 A、B 两套各一份，收敛后只留一份） | 外部节点的不可变版本 | 提供方的分组、规则与客户端配置 |
+| 机场订阅与分享链接 | 外部节点格式 | `crates/traffic/src/subscription_parser/`（单一外部来源解析器，ADR 0131） | 外部节点的不可变版本 | 提供方的分组、规则与客户端配置 |
 | 云 DNS 提供方（Cloudflare、腾讯云、阿里云、华为云） | 提供方接口 | `crates/naming` 的各提供方适配（`cloudflare.rs`、`providers/`） | 解析规则与 DNS 记录的观测 | 提供方的账户模型 |
 | 阿里云 API | 提供方接口 | `crates/cloud-api`，以及资源、成本、作业等领域 crate 的 `cloud` 模块 | 云资源、CDT 用量、启停与 EIP 操作记录 | 云厂商控制台的其余能力 |
 | 上游实现参考：NodeFlare、CDT-Monitor、IPFlare、ddns-go、妙妙屋、3X-UI/S-UI、Sub-Store | 设计参考，部分有许可声明（如 `web/public/notices/NodeFlare.txt`） | 无运行时依赖 | 按本词典重建的模型 | 上游的模型、用语与状态 |
@@ -62,11 +62,11 @@
 | --- | --- |
 | 定义 | 一台接入了 Agent 的机器，是运行时、节点、监控、地址与费用的承载单位。 |
 | 不是 | 节点（一台服务器可以有多个节点）；面板主机（面板进程本身不是服务器，承载节点也要单独接入 Agent）；云资源（经 `operations_cloud_links` 关联到服务器）。 |
-| 家 | 服务器 › 服务器详情。所有者 `panel-host`（`servers`、`enrollment_tokens`、`server_retirements`、遥测与网卡流量表、`server_traffic_corrections`）；设备身份密钥由 Agent 的身份目录持有，不进 SQLite。 |
+| 家 | 服务器 › 服务器详情。所有者 `crates/resources`（`servers`、`enrollment_tokens`、`server_retirements`、`device_sessions`），遥测与网卡流量表（`server_network_*`、`server_traffic_corrections`）归 `crates/observability`；设备身份密钥由 Agent 的身份目录持有，不进 SQLite。 |
 | 身份与版本 | `servers.id`；接入时登记设备公钥；`manifest_rev` 是单调递增的期望状态修订号（流量服务的 `runtime_publications`）。 |
 | 关系 | 承载一个运行时与其上的节点；链路段通过节点引用它；被解析规则、云资源、费用记录引用。 |
-| 当前模型 | 「添加服务器」生成一次性接入令牌，Agent 执行 `enroll`（`web/src/servers/ServerSetup.tsx`）。批量接入是同一模型的实验入口。 |
-| 历史模型 | 无旧代模型。有两处重复需要合并：资产记录有 `servers.asset_settings` 与运维区的 `fleet_profiles.asset` 两份（路线图 4.4）；生命周期有真实退役（`server_retirements`）与运维区标签 `fleet_profiles.lifecycle`（active、maintenance、draining、retired）两套，后者与 `deleted_at` 无关。 |
+| 当前模型 | 「添加服务器」生成一次性接入令牌，Agent 执行 `enroll`（`web/src/resources/servers/ServerSetup.tsx`）。批量接入是同一模型的实验入口。 |
+| 历史模型 | 无旧代模型。原运维区的 `fleet_profiles.asset` 已于 2026-11-14 并入 `servers.asset_settings.procurement`；生命周期仍有真实退役（`server_retirements`）与运维区标记 `fleet_profiles.lifecycle`（active、maintenance、draining、retired）两处，后者与 `deleted_at` 无关。 |
 | 用语 | 用“服务器”，不用“机器”“主机”。“退役”只指真实退役；运维区的维护、排空是**运维标记**，不是生命周期，界面不再写 retired。Nexus 的 host 在翻译时对应服务器，machine 对应节点。 |
 
 状态来源：在线由最近一次连接推导（60 秒内有消息）；待发布由流量服务 `runtime_publications` 的 `dirty_at` 表示；退役有 pending、failed、confirmed、offline_unconfirmed 四种结果。
@@ -76,15 +76,15 @@
 | 项 | 说明 |
 | --- | --- |
 | 定义 | 服务器上由 Agent 管理的一个代理内核服务实例（当前为 sing-box，服务单元 `apsp-singbox@main`），执行面板编译好的完整配置。每台服务器至多一个。 |
-| 不是 | 节点（运行时承载多个节点）；面板插件（sing-box 面板插件是业务模块，运行时是服务器上的进程）；制品（运行时制品是随 Agent 签名发布的二进制，运行时是安装后的实例）。 |
-| 家 | 服务器详情 › 网络服务（运行时卡片）；全部服务器的汇总在网络服务首页。所有者 `proxy-runtime`（安装、预检、发布、部署与运行时升级的业务规则）；部署记录、模块状态与运行时控制表（`deployments`、`server_module_status`、`runtime_*`，启用记录 `runtime_enablements`）是内核·设备的机制（ADR 0125 §4.1），现在由 sing-box 插件直接写入，目标是经内核的运行时模块接口写入；Agent（core 对账 + `adapter-singbox`）持有设备上的已应用状态。 |
-| 身份与版本 | 以（服务器，模块 `singbox`）标识，没有单独的表。两个独立的版本维度：**配置修订**（`deployments.rev`，字节相同的配置不产生新修订，部署行作为证据永久保留，ADR 0083）与**内核版本**（如 `1.14.4-apsp.1`，记在 `singbox_runtime_manifest_facts`）。 |
-| 关系 | 属于一台服务器；承载该服务器上的受管节点与链路入口；内核版本决定可用能力（如逐用户限速需要 `1.14.4-apsp.1`，ADR 0124）。 |
-| 当前模型 | 管理员在服务器上“安装运行时”，面板写入安装意图并安排第一次发布，Agent 下载、校验、应用并回报后才算安装完成。配置由原生编译生成（`crates/compiler`）。 |
-| 历史模型 | **发布路径两代**：原生编译与 Nexus 保留配置（`crates/compiler/src/preserved.rs`，服务器有 `singbox_nexus_runtime_hosts` 记录时使用），后者在 Nexus 接管完成后退出。**内核四代**（1.14.2、1.14.2-apsp.1、1.14.0-apsp.1、1.14.4-apsp.1）全部写在数据库 `CHECK` 约束中，解耦见[收敛方案 §4](07-convergence.md#4-运行时版本与数据库结构解耦)。`runtime_enablements.source` 的 `agent_capability`、`legacy_nodes`、`legacy_deployments` 三个取值约束仍允许，但已不再写入。 |
-| 用语 | “运行时”指实例，“内核版本”指它的上游版本加补丁号，“运行时制品”指签名的二进制。界面说“安装运行时”，不说“启用插件”；插件标识 `sing-box`、模块名 `singbox`、接口路径中的 `enable` 只是内部标识。 |
+| 不是 | 节点（运行时承载多个节点）；面板插件（不存在面板插件，功能属于流量服务领域）；独立下载制品（运行时随一体化 Agent 内嵌交付，运行时指服务器上的受管实例）。 |
+| 家 | 服务器详情 › 网络服务（运行时卡片）；全部服务器的汇总在网络服务 › 运行时视图。所有者 `crates/traffic`（发布、部署与运行时运维规则）；部署记录、模块状态与运行时控制表（`deployments`、`server_module_status`、`runtime_*`）归属 `traffic`；Agent（core 对账 + `adapter-singbox`）持有设备上的已应用状态。 |
+| 身份与版本 | 以（服务器，模块 `singbox`）标识，没有单独的启用表（原 `runtime_enablements` 已按 ADR 0141 移除）。两个独立的版本维度：**配置修订**（`deployments.rev`，字节相同的配置不产生新修订，部署行作为证据永久保留，ADR 0083）与**内核版本**（如 `1.14.4-apsp.2`，由一体化 Agent 内置并经 `static_info` 上报）。 |
+| 关系 | 属于一台服务器；承载该服务器上的受管节点与链路入口；内核版本决定可用能力（如逐用户限速需要 `1.14.4-apsp.1` 及以上，ADR 0124）。 |
+| 当前模型 | 管理员在服务器上配置有效启用节点或链路即声明运行需求（`configured = true`），面板编译并安排发布，一体化 Agent 幂等确保系统服务定义、提取内置运行时、应用并回报健康（ADR 0141）。删除或禁用全部有效服务后下发空模块期望停止运行时。 |
+| 历史模型 | **发布路径两代**：原生编译与 Nexus 保留配置（`crates/compiler/src/preserved.rs`，服务器有 `singbox_nexus_runtime_hosts` 记录时使用），后者在 Nexus 接管与兼容桥退出后清理。**历史内核版本**（1.14.2、1.14.2-apsp.1、1.14.0-apsp.1、1.14.4-apsp.1、1.14.4-apsp.2），解耦背景见[收敛方案 §4](https://github.com/theLucius7/apsp/blob/8fb798b14761681607973604c0ba15e605e18b4c/docs/redesign/07-convergence.md#4-运行时版本与数据库结构解耦)。原手工启用表 `server_plugins` / `runtime_enablements` 已随 ADR 0141 移除。 |
+| 用语 | “运行时”指服务器上的服务实例，“内核版本”指它的上游版本加补丁号。界面按服务配置与运行状态表达（未配置、等待 Agent、需升级 Agent、设备离线、待应用、运行中、失败），不再设“启用插件”或“单独安装 sing-box”步骤。 |
 
-状态来源：安装状态由意图与回报推导（未安装、已安排、等待设备、设备离线、等待应用、运行中、失败）；目标修订、已应用修订、健康分别记录；验证来自运行时检查点（[状态设计](06-states.md)）。
+状态来源：运行需求 `configured` 与 `status` 由当前有效服务配置及设备回报推导（`unconfigured`、`waiting_agent`、`upgrade_required`、`offline`、`pending`、`ready`、`sync_blocked`、`failed`），`current_healthy` 区分当前已运行配置是否健康；目标修订、已应用修订、健康分别记录；验证来自运行时检查点（[状态设计](06-states.md)）。
 
 ### 3.3 节点
 
@@ -136,13 +136,13 @@
 | 项 | 说明 |
 | --- | --- |
 | 定义 | 使用网络服务的人（代理用户）。持有客户端订阅、各资源上的凭据与门户账号；能用什么由策略组决定，能用多少、用多久由套餐决定。 |
-| 不是 | 管理员（登录控制台的人，独立模型 `admins` + `administrator_profiles`，家在系统 › 管理员与权限，所有者 `panel-host`）；成员（现有“成员”是用户的登录资料，属于用户这个聚合，不是另一种人）。 |
+| 不是 | 管理员（登录控制台的人，独立模型 `admins` + `administrator_profiles`，家在系统 › 管理员与权限，所有者 `crates/governance`）；成员（现有“成员”是用户的登录资料，属于用户这个聚合，不是另一种人）。 |
 | 家 | 网络服务 › 用户 › 用户详情。所有者 `proxy-users`。 |
 | 聚合 | **用户聚合**（`proxy-users`）：用户（`users`，含订阅令牌）+ 凭据（`accesses`，每个可用资源一份）+ 限制（`singbox_user_limits`）+ 资格缓存（`singbox_entitlement_state`），写入一律经用户这个根对象。引用用户的两个从属对象各有所有者：门户账号与登录资料（`singbox_portal_accounts`、Passkey、`singbox_members`）属于 `proxy-portal`；客户端订阅的输出与专属地址（`singbox_subscription_hosts`）属于 `proxy-delivery`。用户详情把三者显示在一起，编辑各自经所有者。 |
 | 身份与版本 | `users.id`；订阅令牌可重置；每个资源上的凭据有独立身份，重置凭据不改变用户身份。 |
 | 关系 | 属于零到多个策略组；有一个当前套餐快照；用量来自计量账本；可以邀请他人（邀请名额）。 |
 | 当前模型 | 两条进入方式，产生同一种用户：管理员「新建用户」；被邀请人在门户接受邀请（`/#/join`，一个事务内创建用户、登录资料与门户账号，并应用邀请的默认套餐与策略组）。 |
-| 历史模型 | Nexus 迁移用户（`singbox_nexus_identities` 等）与兼容桥（`singbox_nexus_bridge`）：其订阅仍由旧渲染器生成，随兼容桥下线退出（路线图 1.5）。成员运营的钱包表仍在写入，因为兼容桥读取它；订单与充值表已不再写入（ADR 0113，[执行计划 C17](09-execution.md#3-当前规范冲突清单)）。 |
+| 历史模型 | Nexus 迁移用户（`singbox_nexus_identities` 等）与兼容桥（`singbox_nexus_bridge`）：尚未原生采用的成员其订阅仍由旧渲染器生成，按[成员原生采用](../native-adoption.md)逐户预览采用并核对旧端停用后随兼容桥下线退出（见[路线图](../roadmap.md)）。成员运营的钱包表仍在写入，因为兼容桥读取它；订单与充值表已不再写入（ADR 0113，[执行计划 C17](https://github.com/theLucius7/apsp/blob/8fb798b14761681607973604c0ba15e605e18b4c/docs/redesign/09-execution.md#3-当前规范冲突清单)）。 |
 | 用语 | 网络服务内“用户”就是代理用户；需要与管理员并列时写“代理用户”；不写“成员”“会员”。“兼容桥成员”“迁移用户”只出现在迁移与兼容中，用户详情最多显示一个“兼容”标记并链接过去。表名 `users` 不改（ADR 0023：数据库表先不改名）。 |
 
 状态来源：资格（见 3.7）；客户端订阅最近一次拉取；门户账号是否已开通；凭据在各服务器上的下发状态（经运行时）。
@@ -175,7 +175,7 @@
 | 规则 | 所属对象 | 账本 | 是否执行 | 家 |
 | --- | --- | --- | --- | --- |
 | 流量额度、重置周期、到期 | 用户（套餐快照） | 代理流量账本 `usage_batches` / `usage_records`，日汇总 `singbox_usage_daily`；只在公开入口计量 | 执行：资格变化后重新发布，停用凭据 | 用户详情、策略与套餐 |
-| 速率与连接数限制 | 用户 | 无（运行时按服务器执行） | 执行；需要内核 `1.14.4-apsp.1` 的能力 | 用户详情 |
+| 速率与连接数限制 | 用户 | 无（运行时按服务器执行） | 执行；需要内核 `1.14.4-apsp.1` 及以上（当前目标 `1.14.4-apsp.2`）的能力 | 用户详情 |
 | 设备数限制 | 兼容桥用户 | 运行时会话地址 | 执行；只在已接管的服务器上 | 迁移与兼容 |
 | 网卡流量额度 | 服务器 | `server_network_daily` 与流量矫正 | 只显示与告警，不执行（ADR 0036） | 服务器详情 › 资产与流量 |
 | CDT 流量阈值与启停计划 | 云资源 | 阿里云 CDT 用量 | 执行：降带宽或启停实例 | 服务器 › 云资源 |
@@ -183,25 +183,25 @@
 
 ## 4. 写入权
 
-写入权以 [ADR 0125](../adr/0125-feature-modules.md) 为准：每张表只有一个所有者（清单在 `tools/feature-boundaries.toml`）；所有者之外的代码只读，或经所有者公开的接口提出变更；功能可以读内核的表，不能写；功能之间经内核登记的端口取得对方的能力（R1、R14）。下表是本词典的对象与所有者的对应，以及已知需要收敛的越界：
+写入权以 [ADR 0128](../adr/0128-domain-architecture.md) 与 [功能划分与逻辑结构 §5](../architecture.md#5-依赖与写入规则) 为准：每张表只有一个所有者（清单在 `tools/feature-boundaries.toml`）；所有者之外的代码只读公开身份表，或经所有者公开的接口与类型化端口协作（R1、R14）。下表是本词典的对象与所有者的对应：
 
-| 对象 | 所有者 | 现在的代码位置 | 已知越界与去向 |
+| 对象 | 所有者领域 | 现在的代码位置 | 边界与剩余收敛项 |
 | --- | --- | --- | --- |
-| 服务器、接入、遥测、网卡流量 | 内核·设备 | `crates/resources`（服务器、接入与设备连接）、`crates/observability`（遥测、网卡流量）；Agent 侧 `agent-core` | — |
-| 运行时 | `proxy-runtime`；部署记录与模块状态是内核机制 | `crates/traffic`（`settings.rs`、`publisher.rs`、`deployments.rs`）；`adapter-singbox` | 插件直接写内核的部署与模块状态表，改经运行时模块接口（architecture.md §1、§4.1） |
-| 节点、链路、外部来源 | `proxy-nodes` | `crates/traffic`（`nodes*`、`catalog/`、`ordered_paths/`、`subscription_sources/`）；`crates/compiler` | 已只剩一套链路与来源模型（ADR 0131） |
-| 用户、策略组、套餐、计量账本 | `proxy-users` | `proxy_users.rs`、`policies.rs`、`packages.rs`、`entitlements.rs`、`usage.rs` | — |
-| 客户端订阅、专属地址 | `proxy-delivery` | `subscriptions.rs`、`subscription_hosts.rs` | 专属地址的 DNS 记录经名称领域的 `zone_records` 写入（ADR 0135） |
-| 门户账号、邀请 | `proxy-portal` | `portal/`、`user_accounts/` | — |
-| Nexus 兼容桥与接管 | `proxy-legacy` | `nexus_nodes/` 与散在 10 个源文件中的兼容桥查询 | 收拢为一个模块后随兼容桥下线删除（[收敛方案 §3.2](07-convergence.md#32-兼容流程怎样独立)） |
-| 解析规则、DNS 记录 | `dns` | `crates/naming` | 应用层的搜索与基础网络的网络配置直接查询 DNS 的表，改经所有者的接口（architecture.md §12） |
-| 云资源 | `cloud` | `crates/resources` 的 `cloud/`（账号与资源），成本、作业、基础网络与观测 crate 里各自的云模块；云接口客户端 `crates/cloud-api` | — |
-| 续费项目 | `costs` | `crates/costs`（含供应商与取消提醒）；服务器费用记录的接口在 `crates/resources` 的 `server_lifecycle.rs` | 费用归一（ADR 0125 阶段 5） |
-| 告警规则与事件 | `alerts` | `crates/observability` 的 `alerts/`；发送渠道与发件箱在平台 `crates/panel-host/src/notifications/` | 各功能各建发件箱，改为内核的统一发件箱 |
-| 拨测、诊断报告、线路质量观测 | `lines` | `crates/observability` 的 `network_workbench`、`ip_quality`、`probes.rs`、`latency_tasks.rs`、`reachability/`；三个诊断工具在它的 `diagnostic_tools/` | 诊断工具已是观测 crate 里的模块；中国可达性已迁入观测（表名仍以 `singbox_` 开头），节点信息读流量服务的表 |
-| 管理员、会话、凭据、审计、备份、设置、制品 | 内核·身份、内核·平台服务、内核·设备 | `crates/governance`（管理员、会话、凭据、审计、设置的管理接口、制品）；备份在 `crates/operations` 的 `backups`；设置存储在平台 `crates/panel-host` | 备份的计划、执行与记录归作业领域（[ADR 0132](../adr/0132-platform-only-host-and-domain-addresses.md)）；领域归属不决定功能分级（ADR 0128 第 8 条） |
+| 服务器、接入、遥测、网卡流量 | `resources`、`observability` | `crates/resources`（服务器、接入与设备连接）、`crates/observability`（遥测、网卡流量）；Agent 侧 `agent-core` | — |
+| 运行时 | `traffic` | `crates/traffic`（`settings.rs`、`publisher.rs`、`deployments.rs`、`device_config.rs`、`runtime_control/`）；`adapter-singbox` | `deployments`、`server_module_status` 与 `runtime_*` 均归 `traffic`；手工启用表已按 ADR 0141 移除 |
+| 节点、链路、外部来源 | `traffic` | `crates/traffic`（`nodes*`、`catalog/`、`ordered_paths/`、`subscription_sources/`）；`crates/compiler` | 已只剩一套链路与来源模型（ADR 0131） |
+| 用户、策略组、套餐、计量账本 | `access` | `crates/access`（`proxy_users.rs`、`policies.rs`、`packages.rs`、`entitlements.rs`、`usage.rs`） | — |
+| 客户端订阅、专属地址 | `access` | `crates/access`（`subscriptions.rs`、`subscription_hosts.rs`） | 专属地址的 DNS 记录经名称领域的 `zone_records` 写入（ADR 0135） |
+| 门户账号、邀请 | `access` | `crates/access`（`portal/`、`user_accounts/`） | — |
+| Nexus 兼容桥与接管 | `traffic`、`access` | `crates/traffic/src/nexus_nodes/`、`crates/access/src/nexus/` | 成员原生采用与兼容桥退出后删除（[成员原生采用](../native-adoption.md)） |
+| 解析规则、DNS 记录 | `naming` | `crates/naming` | `acme.rs` 读取 `network_documents` 记在基线（architecture.md §12） |
+| 云资源 | `resources` | `crates/resources` 的 `cloud/`（账号与资源），成本、作业、基础网络与观测 crate 里各自的云模块；云接口客户端 `crates/cloud-api` | — |
+| 续费项目 | `costs` | `crates/costs`（含服务器费用记录 `records.rs`、供应商与取消提醒） | `suppliers.rs` 只读诊断表记在基线（architecture.md §12） |
+| 告警规则与事件 | `observability` | `crates/observability` 的 `alerts/`（含告警发件箱 `alerts::outbox`）；统一投递机制在平台 `crates/panel-host/src/notifications/` | 统一通知投递器已完成（ADR 0134） |
+| 拨测、诊断报告、线路质量观测 | `observability` | `crates/observability` 的 `network_workbench`、`ip_quality`、`probes.rs`、`latency_tasks.rs`、`reachability/`；三个诊断工具在它的 `diagnostic_tools/` | 中国可达性已迁入观测（表名仍以 `singbox_` 开头），节点信息按依赖顺序读流量服务 |
+| 管理员、会话、凭据、审计、备份、设置、签名 Agent 发布 | `governance`、`operations` | `crates/governance`（管理员、会话、凭据、审计、设置的管理接口、签名 Agent 发布 `releases.rs` 与 `releases/`）；备份在 `crates/operations` 的 `backups`；设置存储在平台 `crates/panel-host` | 独立制品目录已随 ADR 0141 移除；备份的计划、执行与记录归作业领域（[ADR 0132](../adr/0132-platform-only-host-and-domain-addresses.md)） |
 
-不属于任何上下文、但有写入约束的部分：`compiler` 不写库，只把模型确定性地编译成配置包；`adapter-singbox` 无持久化，状态由 Agent core 保存；组装 crate `apsp-panel` 登记功能、合成唯一的数据库基线并提供命令行入口，命令逻辑在功能内（[工程整理 §2.1](08-engineering.md#21-面板组装层的命令入口不是放错的业务代码)）。
+不属于任何上下文、但有写入约束的部分：`compiler` 不写库，只把模型确定性地编译成配置包；`adapter-singbox` 无持久化，状态由 Agent core 保存；组装 crate `apsp-panel` 登记功能、合成唯一的数据库基线并提供命令行入口，命令逻辑在功能内（[工程整理 §2.1](https://github.com/theLucius7/apsp/blob/8fb798b14761681607973604c0ba15e605e18b4c/docs/redesign/08-engineering.md#21-面板组装层的命令入口不是放错的业务代码)）。
 
 ## 5. 多义词的处理
 
@@ -209,7 +209,7 @@
 | --- | --- | --- |
 | 订阅 | ① 用户拿到的配置链接；② 作为节点来源的机场订阅；③ 管理员付费的服务（订阅看板、费用接口路径 `/subscriptions`）；④ 兼容桥的旧订阅渲染；⑤ 专属地址 | ① **客户端订阅**；② **外部来源**；③ **付费服务**（续费项目的一种）；④ 只在迁移与兼容中称“旧订阅渲染”；⑤ **专属地址**（客户端订阅的主机名） |
 | 节点 | 代理入口；有时指服务器（节点验机等） | 只指代理入口 |
-| 插件 | 面板业务模块；服务器上的外部程序；插件中心（制品） | 停用（ADR 0128、0131）：代码与界面按领域组织；服务器上的是**运行时**；签名二进制是**制品**，入口为「系统 › 制品与版本」 |
+| 插件 | 面板业务模块；服务器上的外部程序；插件中心（制品） | 停用（ADR 0128、0131、0140、0141）：代码与界面按领域组织；服务器上的是**运行时**（随一体化 Agent 内置并按有效服务配置自动管理）；签名 Agent 发布经 `/api/system/agent-releases*` 收录，不再设独立制品页 |
 | 外插 | 术语表定义为“原样安装、不做修改的外部程序” | 停用。sing-box 自 ADR 0104 起是带补丁的自维护构建 |
 | 套餐 | 模板；用户的快照；销售套餐 | 模板叫**套餐**，用户身上的叫**当前套餐**，销售套餐已删除 |
 | 周期 / epoch | 计数器代次；套餐重置周期；来源身份代次 | **计数器代次**（内部，不进界面）；**重置周期**；**来源身份更换** |

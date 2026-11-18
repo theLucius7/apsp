@@ -47,30 +47,6 @@ struct Host {
     runtime_healthy: bool,
 }
 
-/// Maps a probe's carrier label onto the three carriers the catalogue shows.
-pub(crate) fn carrier(label: &str) -> Option<&'static str> {
-    let label = label.trim().to_lowercase();
-    if label.contains("电信") || label.contains("telecom") || label.contains("chinanet") {
-        Some("telecom")
-    } else if label.contains("联通") || label.contains("unicom") {
-        Some("unicom")
-    } else if label.contains("移动") || label.contains("mobile") || label.contains("cmcc") {
-        Some("mobile")
-    } else {
-        None
-    }
-}
-
-/// A probe's carrier: its monitored network, else its free-form carrier label.
-fn probe_carrier(spec: &Value) -> Option<&'static str> {
-    match spec["monitor"]["network"].as_str() {
-        Some("telecom") => Some("telecom"),
-        Some("unicom") => Some("unicom"),
-        Some("mobile") => Some("mobile"),
-        _ => spec["carrier"].as_str().and_then(carrier),
-    }
-}
-
 /// Protocol name, transport and security only; no SNI, key or short id.
 fn protocol(display: &Value) -> Value {
     let name = display["protocol"]
@@ -112,10 +88,9 @@ fn rounded(value: &Value) -> Value {
         .unwrap_or(Value::Null)
 }
 
-/// The network attributes a member may see for a host, measured by observability from
-/// the addresses the host reported: network identity, usage class, risk flags and
-/// scores, without the addresses, cities, coordinates or time zones. Observability
-/// answers and the application connects it.
+/// The network attributes and carrier probe latencies a member may see for a host,
+/// measured by observability without the addresses, monitor identifiers, cities,
+/// coordinates or time zones. Observability answers and the application connects it.
 pub trait HostNetwork: Send + Sync {
     fn member_network<'a>(
         &'a self,
@@ -123,6 +98,13 @@ pub trait HostNetwork: Send + Sync {
         server: i64,
         static_info: &'a Value,
     ) -> BoxFuture<'a, ApiResult<Value>>;
+
+    fn carrier_latencies<'a>(
+        &'a self,
+        connection: &'a mut sqlx::PgConnection,
+        servers: &'a [i64],
+        since_ms: i64,
+    ) -> BoxFuture<'a, ApiResult<BTreeMap<i64, Value>>>;
 }
 
 static HOST_NETWORK: Port<dyn HostNetwork> = Port::new();
@@ -140,43 +122,21 @@ async fn member_network(state: &AppState, server: i64, static_info: &Value) -> A
     }
 }
 
-/// Latest, one-hour average and loss per carrier from the host's own probes.
-fn probe_latency(rows: &[(Value, Value)]) -> Option<Value> {
-    let mut carriers = serde_json::Map::new();
-    let mut updated = None::<i64>;
-    for (spec, results) in rows {
-        let Some(carrier) = probe_carrier(spec) else {
-            continue;
-        };
-        let results = results.as_array().cloned().unwrap_or_default();
-        if results.is_empty() || carriers.contains_key(carrier) {
-            continue;
+async fn carrier_latencies(
+    connection: &mut sqlx::PgConnection,
+    servers: &[i64],
+    since_ms: i64,
+) -> ApiResult<BTreeMap<i64, Value>> {
+    match HOST_NETWORK.get() {
+        Some(network) => {
+            network
+                .carrier_latencies(connection, servers, since_ms)
+                .await
         }
-        let latencies: Vec<f64> = results
-            .iter()
-            .filter_map(|result| result["latency_ms"].as_f64())
-            .collect();
-        let losses: Vec<f64> = results
-            .iter()
-            .filter_map(|result| result["loss_percent"].as_f64())
-            .collect();
-        let average = |values: &[f64]| {
-            (!values.is_empty()).then(|| values.iter().sum::<f64>() / values.len() as f64)
-        };
-        updated = updated.max(results[0]["sampled_at"].as_i64().map(|ms| ms / 1000));
-        carriers.insert(
-            carrier.into(),
-            json!({
-                "latest":results[0]["latency_ms"].as_f64().map(f64::round),
-                "average":average(&latencies).map(f64::round),
-                "loss":average(&losses).map(|loss| (loss * 10.0).round() / 10.0),
-            }),
-        );
+        None => Err(ApiError::Conflict(
+            "线路网络属性的提供方未登记，不能显示主机的网络属性".into(),
+        )),
     }
-    (!carriers.is_empty()).then(|| {
-        json!({"source":"apsp_probe","monitored":true,"updated_at":updated,"window_minutes":60,
-            "direction":"node_to_carrier","carriers":carriers})
-    })
 }
 
 fn legacy_latency(status: &Value) -> Option<Value> {
@@ -292,8 +252,12 @@ pub(super) async fn view(
             }))
         })
         .collect::<Result<_, sqlx::Error>>()?;
-    let probes: Vec<(i64, Value, Value)> = sqlx::query_as("SELECT p.server_id,p.spec,COALESCE((SELECT jsonb_agg(r.result ORDER BY r.sampled_at DESC) FROM (SELECT result,sampled_at FROM probe_results WHERE server_id=p.server_id AND probe_id=p.id AND sampled_at>$2 ORDER BY sampled_at DESC LIMIT 120) r),'[]'::JSONB) FROM network_probes p WHERE p.server_id=ANY($1) ORDER BY p.server_id,p.id")
-        .bind(&server_ids).bind(apsp_protocol::telemetry::now_millis() - LATENCY_WINDOW_MS).fetch_all(&mut *tx).await?;
+    let mut latencies = carrier_latencies(
+        &mut tx,
+        &server_ids,
+        apsp_protocol::telemetry::now_millis() - LATENCY_WINDOW_MS,
+    )
+    .await?;
     tx.commit().await?;
 
     // Topology: shared-ingress inference only from direct lines with status.
@@ -376,12 +340,8 @@ pub(super) async fn view(
         } else {
             (false, None, json!({}), "unknown")
         };
-        let own: Vec<(Value, Value)> = probes
-            .iter()
-            .filter(|(id, ..)| id == server)
-            .map(|(_, spec, results)| (spec.clone(), results.clone()))
-            .collect();
-        let latency = probe_latency(&own)
+        let latency = latencies
+            .remove(server)
             .or_else(|| statuses.iter().find_map(|status| legacy_latency(status)))
             .unwrap_or_else(|| json!({"monitored":false}));
         host_latency.insert(*server, latency.clone());
@@ -509,14 +469,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn probe_labels_map_onto_the_three_carriers() {
-        assert_eq!(carrier("广东电信"), Some("telecom"));
-        assert_eq!(carrier("China Unicom Guangdong"), Some("unicom"));
-        assert_eq!(carrier("CMCC"), Some("mobile"));
-        assert_eq!(carrier("Cloudflare"), None);
-    }
-
-    #[test]
     fn protocol_summaries_never_carry_sni_keys_or_short_ids() {
         let display = json!({"protocol":"vless","protocol_summary":{"network":"tcp","tls":2,"reality_sni":"example.invalid","public_key":"TEST_ONLY","short_id":"aa"}});
         let value = protocol(&display);
@@ -528,35 +480,5 @@ mod tests {
             protocol(&json!({"protocol":"hysteria","protocol_summary":{}}))["network"],
             "udp"
         );
-    }
-
-    #[test]
-    fn carrier_latency_summarizes_the_latest_hour_per_carrier() {
-        let rows = vec![
-            (
-                json!({"carrier":"电信"}),
-                json!([{"latency_ms":40.4,"loss_percent":0.0,"sampled_at":2000},{"latency_ms":60.0,"loss_percent":10.0,"sampled_at":1000}]),
-            ),
-            (
-                json!({"carrier":"Example"}),
-                json!([{"latency_ms":1.0,"loss_percent":0.0,"sampled_at":3000}]),
-            ),
-            (
-                json!({"carrier":"","monitor":{"network":"mobile"}}),
-                json!([{"latency_ms":70.0,"loss_percent":null,"sampled_at":1000}]),
-            ),
-        ];
-        let latency = probe_latency(&rows).unwrap();
-        assert_eq!(
-            latency["carriers"]["telecom"],
-            json!({"latest":40.0,"average":50.0,"loss":5.0})
-        );
-        assert_eq!(latency["updated_at"], 2);
-        assert!(latency["carriers"].get("unicom").is_none());
-        assert_eq!(
-            latency["carriers"]["mobile"],
-            json!({"latest":70.0,"average":70.0,"loss":null})
-        );
-        assert!(probe_latency(&[]).is_none());
     }
 }

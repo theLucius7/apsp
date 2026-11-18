@@ -3,13 +3,16 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
-/// A fixed, registered diagnostic plugin task; never an arbitrary shell command.
+/// A fixed, registered diagnostic tool task; never an arbitrary shell command.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DiagnosticJob {
     pub id: Uuid,
-    pub plugin: String,
+    // Published Agents use this wire key; the Rust model names the diagnostic tool.
+    #[serde(rename = "plugin")]
+    pub tool: String,
     pub version: String,
-    pub artifact: Artifact,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artifact: Option<Artifact>,
     pub timeout_secs: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expires_at: Option<i64>,
@@ -99,7 +102,9 @@ pub struct DiagnosticCancelRequest {
 pub struct DiagnosticCancelResult {
     pub server_id: crate::ServerId,
     pub id: Uuid,
-    pub plugin: String,
+    // Published Agents use this wire key; the Rust model names the diagnostic tool.
+    #[serde(rename = "plugin")]
+    pub tool: String,
     pub confirmed: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub report: Option<DiagnosticReport>,

@@ -154,18 +154,18 @@ pub(super) async fn register(
     if let Some(descriptor) = descriptor {
         let runtime = config
             .runtime_root
-            .join(format!("{}@main", descriptor.plugin_name));
+            .join(format!("{}@main", descriptor.artifact_name));
         let script = root.join("runtime-launcher.ps1");
         let contents = runtime_launcher(
             &root.join("current"),
             &config
                 .install_root
-                .join(&descriptor.plugin_name)
+                .join(&descriptor.artifact_name)
                 .join("current"),
             &runtime.join("current"),
             &runtime.join("data"),
             &descriptor.binary_name,
-            &descriptor.plugin_name,
+            &descriptor.artifact_name,
         );
         ops.write_file(&script, contents.as_bytes(), 0o755, None)
             .await?;
@@ -189,13 +189,63 @@ pub(super) async fn register(
     Ok(())
 }
 
+pub(in crate::system::deploy) async fn ensure_runtime(
+    ops: &dyn Privileged,
+    spec: &apsp_adapter_sdk::RuntimeServiceSpec,
+) -> Result<()> {
+    let name = spec
+        .descriptor
+        .service_unit
+        .strip_suffix(".service")
+        .unwrap_or(&spec.descriptor.service_unit);
+    let check_script = format!(
+        "$ErrorActionPreference='Stop'; $scheduler=[Activator]::CreateInstance([Type]::GetTypeFromProgID('Schedule.Service')); $scheduler.Connect(); $null=$scheduler.GetFolder('\\').GetTask({})",
+        quote(name)
+    );
+    if powershell(ops, &check_script).await.is_ok() {
+        return Ok(());
+    }
+    let runtime = spec
+        .runtime_root
+        .join(format!("{}@main", spec.descriptor.artifact_name));
+    ops.create_dir(&spec.agent_root, 0o755, None).await?;
+    let script = spec.agent_root.join("runtime-launcher.ps1");
+    let contents = runtime_launcher(
+        &spec.agent_root.join("current"),
+        &spec
+            .install_root
+            .join(&spec.descriptor.artifact_name)
+            .join("current"),
+        &runtime.join("current"),
+        &runtime.join("data"),
+        &spec.descriptor.binary_name,
+        &spec.descriptor.artifact_name,
+    );
+    ops.write_file(&script, contents.as_bytes(), 0o755, None)
+        .await?;
+    let account = (!spec.descriptor.service_group.is_empty())
+        .then_some(spec.descriptor.service_group.as_str());
+    task(
+        ops,
+        name,
+        Path::new("powershell.exe"),
+        &format!(
+            "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"{}\"",
+            script.display()
+        ),
+        account,
+        &runtime.join("data"),
+    )
+    .await
+}
+
 fn runtime_launcher(
     agent_reference: &Path,
     kernel_reference: &Path,
     configuration_reference: &Path,
     data: &Path,
     binary_name: &str,
-    plugin: &str,
+    artifact_name: &str,
 ) -> String {
     format!(
         r#"$ErrorActionPreference='Stop'
@@ -223,7 +273,7 @@ while ($true) {{
         quote(&configuration_reference.to_string_lossy()),
         quote(&agent_reference.to_string_lossy()),
         quote(binary_name),
-        quote(plugin),
+        quote(artifact_name),
         quote(&data.to_string_lossy()),
     )
 }

@@ -6,16 +6,56 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use uuid::Uuid;
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Debug, Serialize)]
 pub struct Step {
     pub kind: String,
     pub service: Option<String>,
     pub timeout_secs: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub runtime_version: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backup_schedule_id: Option<Uuid>,
+    /// True only when a persisted historical row carried the removed `runtime_version` key.
+    #[serde(skip)]
+    legacy_runtime_version: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WireStep {
+    kind: String,
+    service: Option<String>,
+    timeout_secs: u32,
+    #[serde(
+        default,
+        rename = "runtime_version",
+        deserialize_with = "deserialize_legacy_runtime_version"
+    )]
+    legacy_runtime_version: bool,
+    #[serde(default)]
+    backup_schedule_id: Option<Uuid>,
+}
+
+fn deserialize_legacy_runtime_version<'de, D>(deserializer: D) -> Result<bool, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let _ = Option::<String>::deserialize(deserializer)?;
+    Ok(true)
+}
+
+impl<'de> Deserialize<'de> for Step {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let wire = WireStep::deserialize(deserializer)?;
+        Ok(Self {
+            kind: wire.kind,
+            service: wire.service,
+            timeout_secs: wire.timeout_secs,
+            backup_schedule_id: wire.backup_schedule_id,
+            legacy_runtime_version: wire.legacy_runtime_version,
+        })
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -30,6 +70,25 @@ pub struct Plan {
 }
 
 impl Step {
+    pub fn new(
+        kind: impl Into<String>,
+        service: Option<String>,
+        timeout_secs: u32,
+        backup_schedule_id: Option<Uuid>,
+    ) -> Self {
+        Self {
+            kind: kind.into(),
+            service,
+            timeout_secs,
+            backup_schedule_id,
+            legacy_runtime_version: false,
+        }
+    }
+
+    pub(super) fn has_legacy_runtime_version(&self) -> bool {
+        self.legacy_runtime_version
+    }
+
     pub fn is_runtime(&self) -> bool {
         runtime_step_policy(&self.kind).is_some()
     }
@@ -41,33 +100,35 @@ impl Step {
     }
 
     pub fn validate(&self) -> ApiResult<()> {
+        if self.legacy_runtime_version {
+            return Err(ApiError::BadRequest(
+                "部署恢复步骤不再接受独立运行时版本参数，请移除 runtime_version 后重新建立方案"
+                    .into(),
+            ));
+        }
         if self.is_panel() {
             if self.service.is_some()
-                || self.runtime_version.is_some()
                 || self.backup_schedule_id.is_none()
                 || !(60..=1800).contains(&self.timeout_secs)
             {
                 return Err(ApiError::BadRequest(
-                    "完整面板备份须选择已登记备份计划、60–1800秒预算，且不能附加服务或运行时参数"
-                        .into(),
+                    "完整面板备份须选择已登记备份计划、60–1800秒预算，且不能附加服务参数".into(),
                 ));
             }
             return Ok(());
         }
-        if let Some(policy) = runtime_step_policy(&self.kind) {
+        if runtime_step_policy(&self.kind).is_some() {
             if self.service.is_some()
                 || self.backup_schedule_id.is_some()
-                || self.runtime_version.as_deref() != Some(policy.version)
                 || !(1..=600).contains(&self.timeout_secs)
             {
                 return Err(ApiError::BadRequest(
-                    "部署步骤须匹配提供方固定签名版本、1–600秒预算，且不能附加服务或备份参数"
-                        .into(),
+                    "固定失败配置恢复步骤须使用 1–600 秒预算，且不能附加服务或备份参数".into(),
                 ));
             }
             return Ok(());
         }
-        if self.runtime_version.is_some() || self.backup_schedule_id.is_some() {
+        if self.backup_schedule_id.is_some() {
             return Err(ApiError::BadRequest(
                 "此服务或盘点步骤不能附加其他执行器参数".into(),
             ));
@@ -121,6 +182,10 @@ impl Step {
 }
 
 impl Plan {
+    pub(super) fn has_legacy_runtime_version(&self) -> bool {
+        self.steps.iter().any(Step::has_legacy_runtime_version)
+    }
+
     pub fn validate(&self, targets: &[i64]) -> ApiResult<()> {
         label(&self.name, 128)?;
         if !(1..=256).contains(&targets.len())
@@ -170,20 +235,17 @@ mod tests {
     fn service_parameters_cannot_introduce_shell_or_option_syntax() {
         for service in ["--help", "foo;id", "$(id)", "../foo", "foo\nbar", "foo'bar"] {
             assert!(
-                Step {
-                    kind: "service_restart".into(),
-                    service: Some(service.into()),
-                    timeout_secs: 30,
-                    runtime_version: None,
-                    backup_schedule_id: None
-                }
-                .operation()
-                .is_err()
+                Step::new("service_restart", Some(service.into()), 30, None)
+                    .operation()
+                    .is_err()
             );
         }
-        assert!(
-            matches!(Step { kind: "service_status".into(), service: Some("demo@node.service".into()), timeout_secs: 30,runtime_version:None,backup_schedule_id:None }.operation().unwrap(),Operation::Service{unit,action} if unit=="demo@node.service" && action=="status")
-        );
+        assert!(matches!(
+            Step::new("service_status", Some("demo@node.service".into()), 30, None)
+                .operation()
+                .unwrap(),
+            Operation::Service { unit, action } if unit == "demo@node.service" && action == "status"
+        ));
     }
 
     #[test]
@@ -195,20 +257,51 @@ mod tests {
     }
 
     #[test]
-    fn runtime_step_requires_the_traffic_service_fixed_version() {
+    fn runtime_step_omits_runtime_version_and_rejects_legacy_version_inputs() {
         let mut step: Step = serde_json::from_value(serde_json::json!({
-            "kind":"singbox_retry_deployment", "service":null, "timeout_secs":300,
-            "runtime_version":"1.14.4-apsp.2"
+            "kind": "singbox_retry_deployment",
+            "service": null,
+            "timeout_secs": 300
         }))
         .unwrap();
         assert!(step.is_runtime());
         assert!(step.validate().is_ok());
         assert_eq!(step.permission(), "proxy:write");
-        step.runtime_version = Some("latest".into());
-        assert!(step.validate().is_err());
-        step.runtime_version = Some("1.14.4-apsp.2".into());
+        let serialized = serde_json::to_value(&step).unwrap();
+        assert!(serialized.get("runtime_version").is_none());
+
         step.service = Some("other.service".into());
         assert!(step.validate().is_err());
+
+        for legacy in [
+            serde_json::json!({
+                "kind": "singbox_retry_deployment",
+                "service": null,
+                "timeout_secs": 300,
+                "runtime_version": "1.14.4-apsp.2"
+            }),
+            serde_json::json!({
+                "kind": "singbox_retry_deployment",
+                "service": null,
+                "timeout_secs": 300,
+                "runtime_version": null
+            }),
+        ] {
+            let historical: Step = serde_json::from_value(legacy).unwrap();
+            assert!(historical.is_runtime());
+            assert!(historical.has_legacy_runtime_version());
+            assert!(historical.validate().is_err());
+        }
+
+        assert!(
+            serde_json::from_value::<Step>(serde_json::json!({
+                "kind": "singbox_retry_deployment",
+                "service": null,
+                "timeout_secs": 300,
+                "unexpected": true
+            }))
+            .is_err()
+        );
     }
 
     #[test]
@@ -218,13 +311,7 @@ mod tests {
         )
         .unwrap();
         assert!(legacy.validate().is_ok());
-        let backup = Step {
-            kind: "panel_backup".into(),
-            service: None,
-            timeout_secs: 600,
-            runtime_version: None,
-            backup_schedule_id: Some(Uuid::new_v4()),
-        };
+        let backup = Step::new("panel_backup", None, 600, Some(Uuid::new_v4()));
         assert!(backup.validate().is_ok());
         assert!(backup.operation().is_err());
         let mut plan = Plan {

@@ -8,7 +8,7 @@ use sqlx::{PgConnection, Postgres, Transaction};
 
 /// The members of the enabled bridge, joinable as `i` (their Nexus identity) and `b` (the
 /// bridge): each user with an identity whose import the bridge currently serves.
-pub const MEMBERS: &str = "singbox_nexus_identities i JOIN singbox_nexus_bridge b ON b.import_id=i.import_id AND b.enabled";
+pub const MEMBERS: &str = "singbox_nexus_identities i JOIN singbox_nexus_bridge b ON b.import_id=i.import_id AND b.enabled AND NOT EXISTS(SELECT 1 FROM singbox_native_adoptions adopted WHERE adopted.user_id=i.user_id)";
 
 /// SQL that is true when the user named by `user` (a column or a parameter) is a member of
 /// the enabled bridge.
@@ -40,7 +40,7 @@ pub async fn enabled(connection: &mut PgConnection) -> sqlx::Result<bool> {
 /// Whether the enabled bridge has synchronized since the given time.
 pub async fn synced_since(connection: &mut PgConnection, since: i64) -> sqlx::Result<bool> {
     sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM singbox_nexus_bridge WHERE enabled AND last_sync_at>=$1)",
+        "SELECT NOT EXISTS(SELECT 1 FROM singbox_legacy_served_users() served JOIN users u ON u.id=served.user_id WHERE u.deleted_at IS NULL) OR EXISTS(SELECT 1 FROM singbox_nexus_bridge WHERE enabled AND last_sync_at>=$1)",
     )
     .bind(since)
     .fetch_one(connection)
@@ -85,7 +85,7 @@ pub async fn enqueue_usage(
     if nodes.is_empty() {
         return Ok(());
     }
-    sqlx::query("INSERT INTO singbox_nexus_usage_deliveries(server_id,epoch,seq,stat_name,user_id,uplink,downlink,rate,period_start,period_end) SELECT u.server_id,u.epoch,u.seq,u.stat_name,u.user_id,u.uplink,u.downlink,r.rate::numeric,u.period_start,u.period_end FROM usage_records u JOIN unnest($4::bigint[],$5::text[]) AS r(node_id,rate) ON r.node_id=u.node_id WHERE u.server_id=$1 AND u.epoch=$2 AND u.seq=$3::text::numeric AND EXISTS(SELECT 1 FROM singbox_nexus_identities i WHERE i.user_id=u.user_id) ON CONFLICT(server_id,epoch,seq,stat_name) DO NOTHING")
+    sqlx::query("INSERT INTO singbox_nexus_usage_deliveries(server_id,epoch,seq,stat_name,user_id,uplink,downlink,rate,period_start,period_end) SELECT u.server_id,u.epoch,u.seq,u.stat_name,u.user_id,u.uplink,u.downlink,r.rate::numeric,u.period_start,u.period_end FROM usage_records u JOIN unnest($4::bigint[],$5::text[]) AS r(node_id,rate) ON r.node_id=u.node_id WHERE u.server_id=$1 AND u.epoch=$2 AND u.seq=$3::text::numeric AND EXISTS(SELECT 1 FROM singbox_nexus_identities i WHERE i.user_id=u.user_id) AND NOT EXISTS(SELECT 1 FROM singbox_native_adoptions adopted WHERE adopted.user_id=u.user_id) ON CONFLICT(server_id,epoch,seq,stat_name) DO NOTHING")
         .bind(server)
         .bind(batch.epoch)
         .bind(batch.seq.to_string())
@@ -94,4 +94,15 @@ pub async fn enqueue_usage(
         .execute(&mut **tx)
         .await?;
     Ok(())
+}
+
+/// Original wire identity, retained as provenance even after native adoption.
+pub async fn original_identity(
+    connection: &mut PgConnection,
+    user: i64,
+) -> sqlx::Result<Option<uuid::Uuid>> {
+    sqlx::query_scalar("SELECT legacy_uuid FROM singbox_nexus_identities WHERE user_id=$1")
+        .bind(user)
+        .fetch_optional(connection)
+        .await
 }

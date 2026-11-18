@@ -28,6 +28,7 @@ impl Default for Config {
             panel_ca_file: None,
             identity_dir: "/etc/apsp/identity".into(),
             state_db: "/var/lib/apsp/core/state.db".into(),
+            // Installed paths are persistent identities shared with published Agents.
             runtime_root: "/var/lib/apsp/plugins".into(),
             install_root: "/opt/apsp/plugins".into(),
             agent_root: "/opt/apsp/core".into(),

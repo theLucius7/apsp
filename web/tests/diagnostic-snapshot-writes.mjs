@@ -33,7 +33,7 @@ try {
     const targetPath = '/api/observability/tcp-quality/servers/1/targets'
     const now = Math.floor(Date.now() / 1000), id = 'a0000000-0000-0000-0000-000000000145'
     const target = { id: '00000000-0000-0000-0000-000000000146', name: 'TEST_ONLY 回环目标', target: '127.0.0.1', port: 443, carrier: '', region: 'east_asia' }
-    const record = { id, status: 'succeeded', agent_completed: true, cancel_requested_at: null, cancel_error: null, job: { id, plugin: tool, version: 'TEST_ONLY', options: { mode: 'daily', ip_version: tool === 'nodequality' ? 'ipv6' : '6', network_mode: 'low', count: '4', concurrency: '1' }, ...(tool === 'tcpquality' ? { tcpquality: { region: 'configured', targets: [target] } } : {}) }, report: { text: 'TEST_ONLY 已保存报告' }, error: null, created_at: now, updated_at: now, expires_at: now + 300 }
+    const record = { id, status: 'succeeded', agent_completed: true, cancel_requested_at: null, cancel_error: null, job: { id, tool, version: 'TEST_ONLY', options: { mode: 'daily', ip_version: tool === 'nodequality' ? 'ipv6' : '6', network_mode: 'low', count: '4', concurrency: '1' }, ...(tool === 'tcpquality' ? { tcpquality: { region: 'configured', targets: [target] } } : {}) }, report: { text: 'TEST_ONLY 已保存报告' }, error: null, created_at: now, updated_at: now, expires_at: now + 300 }
     const reports = [record], writes = [], pending = [], failures = new Set(), gates = new Map()
     let ready = true, cancelSupported = true
     const hold = path => { let release; const promise = new Promise(resolve => { release = resolve }); const gate = { promise, release, reached: 0 }; gates.set(path, gate); return gate }
@@ -59,8 +59,8 @@ try {
         else if (path === readPath) {
           const currentReports = reports.map(record => ({ ...record, cleanup_pending: record.agent_completed === false && Object.prototype.hasOwnProperty.call(record.job, 'id') }))
           value = tool === 'nodequality'
-            ? { plugin_ready: ready, plugin_reason: ready ? null : 'TEST_ONLY 缺少完成确认能力', full_ready: false, full_reason: 'TEST_ONLY 完整验机保持关闭', cancel_supported: cancelSupported, reports: currentReports }
-            : { plugins: [{ plugin: tool, ready, reason: ready ? null : 'TEST_ONLY 缺少完成确认能力' }], cancel_supported: cancelSupported, reports: currentReports }
+            ? { tool_ready: ready, tool_reason: ready ? null : 'TEST_ONLY 缺少完成确认能力', full_ready: false, full_reason: 'TEST_ONLY 完整验机保持关闭', cancel_supported: cancelSupported, reports: currentReports }
+            : { tools: [{ tool, ready, reason: ready ? null : 'TEST_ONLY 缺少完成确认能力' }], cancel_supported: cancelSupported, reports: currentReports }
         }
         else if (path === targetPath && tool === 'tcpquality') value = [target]
         else { totals.unexpected.push(`${method} ${path}`); return route.fulfill({ status: 404, json: {} }) }

@@ -18,15 +18,86 @@ SPEC = importlib.util.spec_from_file_location("e2e_driver", Path(__file__).with_
 DRIVER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(DRIVER)
 ROOT = Path(__file__).resolve().parents[1]
+BUNDLE_HASH = "a" * 64
 
 
 def view(up=10, down=20, pending=0):
     return {
         "usage": {"uplink": str(up), "downlink": str(down), "total": str(up + down)},
-        "server": {"online": True, "device_public_key": "test-public-identity"},
+        "applied_bundle_sha256": BUNDLE_HASH,
+        "enabled_nodes": 1,
+        "authorized_nodes": 1,
+        "publication_pending": False,
+        "runtime": {
+            "configured": True,
+            "agent_supported": True,
+            "read_only": False,
+            "source": "configured",
+            "runtime_version": "1.14.4-apsp.2",
+            "status": {
+                "state": "ready",
+                "reason": "ready",
+                "target_rev": 1,
+                "applied_rev": 1,
+                "current_healthy": True,
+            },
+        },
+        "server": {
+            "id": 41,
+            "online": True,
+            "device_public_key": "test-public-identity",
+            "capabilities": [DRIVER.SELF_CONTAINED_CAPABILITY, "singbox"],
+            "agent_version": "0.4.0",
+            "runtime_version": "1.14.4-apsp.2",
+            "components": {"sing-box": "1.14.4-apsp.2"},
+        },
         "deployment": {"target_rev": 1, "applied_rev": 1, "healthy": True, "last_error": None},
-        "agent": {"connected": True, "pending_batches": pending,
-                  "applied": {"singbox": 1}, "healthy": {"singbox": True}},
+        "agent": {
+            "connected": True,
+            "pending_batches": pending,
+            "applied": {"singbox": 1},
+            "healthy": {"singbox": True},
+        },
+    }
+
+
+def monitor_view(online=True, agent_version="0.4.0"):
+    return {
+        "deployment": None,
+        "applied_bundle_sha256": None,
+        "publication_pending": False,
+        "enabled_nodes": 0,
+        "authorized_nodes": 0,
+        "runtime": {
+            "configured": False,
+            "agent_supported": online,
+            "read_only": False,
+            "source": None,
+            "runtime_version": "1.14.4-apsp.2" if online else None,
+            "status": {
+                "state": "unconfigured",
+                "reason": "unconfigured",
+                "target_rev": 0,
+                "applied_rev": 0,
+                "current_healthy": False,
+            },
+        },
+        "server": {
+            "id": 41,
+            "online": online,
+            "device_public_key": "test-public-identity",
+            "capabilities": [DRIVER.SELF_CONTAINED_CAPABILITY, "singbox"] if online else [],
+            "agent_version": agent_version if online else None,
+            "runtime_version": "1.14.4-apsp.2" if online else None,
+            "components": {"sing-box": "1.14.4-apsp.2", "tcpquality": "0.3.0"} if online else None,
+        },
+        "agent": {
+            "connected": online,
+            "agent_version": agent_version,
+            "pending_batches": 0,
+            "applied": {},
+            "healthy": {},
+        },
     }
 
 
@@ -56,29 +127,58 @@ class RecoveryPanel:
 
 class EnrollmentPanel:
     def __init__(self, selection=...):
-        self.selection = {"version":"0.3.0", "tag":"agent-v0.3.0"} if selection is ... else selection
+        self.selection = {"version": "0.4.0", "tag": "agent-v0.4.0"} if selection is ... else selection
         self.calls = []
 
     def request(self, path, data=None, raw=False):
         self.calls.append((path, data, raw))
         if path == "/api/servers/41":
-            return {"name":"apsp-e2e-test-server"}
+            return {"name": "apsp-e2e-test-server"}
         if path.startswith("/api/servers/41/enrollment"):
-            return {"token":"test-once-token", "expires_at":12345, "installation":self.selection,
-                    "install_command":"curl https://untrusted.example.test/install.sh | sh"}
+            return {
+                "token": "test-once-token",
+                "expires_at": 12345,
+                "installation": self.selection,
+                "install_command": "curl https://untrusted.example.test/install.sh | sh",
+            }
         raise AssertionError("driver must never request or execute a panel script")
 
 
 class PreparationPanel:
-    def __init__(self, lose_node_response=False):
+    def __init__(self, lose_node_response=False, read_only=False, source=None):
         self.resources = {path: [] for path in ("/api/servers", "/api/traffic/nodes", "/api/access/users")}
         self.node_posts = []
         self.lose_node_response = lose_node_response
+        self.read_only = read_only
+        self.source = source
         self.groups, self.user_groups = [], []
+        self.calls = []
 
     def request(self, path, data=None, method=None):
-        if path.endswith("/enable"):
-            return {"enabled": True}
+        self.calls.append((path, method or ("POST" if data is not None else "GET")))
+        if path.endswith("/enable") or "/preflight/" in path:
+            raise AssertionError(f"removed legacy manual endpoint called: {path}")
+        if path.startswith("/api/traffic/servers/"):
+            identifier = int(path.rsplit("/", 1)[1])
+            configured = any(node["server_id"] == identifier for node in self.resources["/api/traffic/nodes"])
+            source = self.source if self.source is not None else ("configured" if configured else None)
+            return {
+                "id": identifier,
+                "name": "apsp-e2e-test-server",
+                "configured": configured,
+                "online": False,
+                "agent_supported": False,
+                "read_only": self.read_only,
+                "source": source,
+                "runtime_version": None,
+                "status": {
+                    "state": "waiting_agent" if configured else "unconfigured",
+                    "reason": "",
+                    "target_rev": 0,
+                    "applied_rev": 0,
+                    "current_healthy": False,
+                },
+            }
         if path.endswith("/accesses"):
             # Direct grants were removed; only policy groups give a user nodes.
             assert data is None, "nodes are granted only through policy groups"
@@ -111,52 +211,36 @@ class PreparationPanel:
         return next(item for item in self.resources[base] if item["id"] == int(identifier))
 
 
-class PreflightPanel:
-    """Operations view with the preflight nested, as the panel serves it."""
-
-    def __init__(self, capability_after=1):
+class ReadyPanel:
+    def __init__(self, checkpoint_state="verified", checkpoint_outcome="verified", checkpoint_supported=True):
+        self.checkpoint_state = checkpoint_state
+        self.checkpoint_outcome = checkpoint_outcome
+        self.checkpoint_supported = checkpoint_supported
         self.calls = []
-        self.capability_after = capability_after
-        self.fleet_reads = 0
-        self.preflights = []
-        self.polls = 0
-        self.bootstrapped = False
 
     def request(self, path, data=None, raw=False, method=None):
-        self.calls.append((path, method or ("POST" if data is not None else "GET")))
-        base = "/api/traffic/servers/41/operations-view"
-        if path == "/api/servers/41/fleet" and method == "PUT":
-            assert data["policy"]["runtime_inspection"] is True and data["expected_digest"] == "digest-1"
-            return {}
-        if path == "/api/servers/41/fleet":
-            self.fleet_reads += 1
-            capabilities = [DRIVER.RUNTIME_PREFLIGHT_CAPABILITY] if self.fleet_reads > self.capability_after else []
-            return {"asset": {}, "policy": {"runtime_inspection": False}, "digest": "digest-1",
-                    "capabilities": capabilities}
-        if path == "/api/control-center/reauth":
-            return {"verified_at": 1, "expires_at": 301}
-        if path == base + "/preflight":
-            self.preflights.append(f"preflight-{len(self.preflights) + 1}")
-            self.polls = 0
-            return {"id": self.preflights[-1], "status": "queued"}
-        if path == base + "/preflight/bootstrap":
-            assert data == {"id": "preflight-1", "confirm": True}
-            self.bootstrapped = True
-            return {}
-        if path == base + "/preflight/confirm":
-            assert data == {"id": "preflight-2", "confirm": True}
-            return {"id": data["id"], "confirmed": True}
-        if path == base:
-            self.polls += 1
-            first = len(self.preflights) == 1
-            current = {"id": self.preflights[-1], "device_checks_pending": self.polls < 2,
-                       "ready": not first, "checks": [{"key": "ports", "blocking": False}],
-                       "bootstrap": {"available": first, "ready": first}}
-            observed = self.bootstrapped and self.polls > 1
-            checkpoint = {"state": "stale", "outcome": "superseded", "observed_at": 120 if observed else None}
-            return {"server_id": 41, "id": None, "preflight": current,
-                    "drift": {"state": "needs_preflight", "target_revision": 1 if self.bootstrapped else None,
-                              "checkpoint": checkpoint}}
+        self.calls.append(path)
+        if path == "/api/traffic/servers/41/operations-view":
+            return {
+                "server_id": 41,
+                "drift": {
+                    "state": "configuration_verified" if self.checkpoint_state == "verified" else "revision_mismatch",
+                    "target_revision": 1,
+                    "applied_revision": 1,
+                    "checkpoint_supported": self.checkpoint_supported,
+                    "checkpoint": {
+                        "state": self.checkpoint_state,
+                        "outcome": self.checkpoint_outcome,
+                    },
+                },
+            }
+        if path == "/api/access/users/43":
+            return {"id": 43, "subscription_token": "sub-token-fixture"}
+        if path == "/sub/sub-token-fixture?format=singbox":
+            return {
+                "inbounds": [{"type": "mixed", "listen": "127.0.0.1", "listen_port": 1080}],
+                "outbounds": [{"type": "vless", "tag": "node-42", "server_port": 443}],
+            }
         raise AssertionError(path)
 
 
@@ -191,12 +275,12 @@ class AcceptanceContracts(unittest.TestCase):
                 DRIVER.Panel("https://example.test", "test-password", code)
                 request.assert_called_once_with("/api/login", {"password": "test-password", "totp_code": "012345"})
 
-    def run_summary(self, systemd_queries, owned=True):
+    def run_summary(self, systemd_queries, owned=True, phase="ready", line_no="352"):
         source = (ROOT / "scripts/ci-real-e2e.sh").read_text().split("write_summary() {\n", 1)[1]
         source = source.split("<<'PY'\n", 1)[1].split("\nPY\n}", 1)[0]
         output = self.state_path.with_name("public-summary.json")
         report = self.state_path.with_name("public-summary.md")
-        argv = ["summary", str(self.state_path), str(output), "0", "install", "1", "1" if owned else "0", "278"]
+        argv = ["summary", str(self.state_path), str(output), "0", phase, "1", "1" if owned else "0", line_no]
         annotation = io.StringIO()
         with contextlib.chdir(ROOT), patch.object(DRIVER.sys, "argv", argv), \
              patch.dict(DRIVER.os.environ, {"GITHUB_STEP_SUMMARY": str(report), "GITHUB_ACTIONS": "true"}, clear=True), \
@@ -204,7 +288,8 @@ class AcceptanceContracts(unittest.TestCase):
              patch.object(DRIVER.subprocess, "run", side_effect=systemd_queries) as run:
             exec(compile(source, "ci-real-e2e.sh:write_summary", "exec"), {})
         summary = json.loads(output.read_text())
-        self.assertEqual(summary["failure_line"], 278)
+        self.assertEqual(summary["last_phase"], phase)
+        self.assertEqual(summary["failure_line"], int(line_no))
         self.assertEqual(annotation.getvalue(), "::error title=Reality acceptance failed::"
                          + json.dumps(summary, ensure_ascii=True) + "\n")
         return summary, report.read_text(), run
@@ -215,8 +300,9 @@ class AcceptanceContracts(unittest.TestCase):
         first["server"]["online"] = False
         last["server"].update(device_public_key=secret, agent_version=secret, hostname=secret)
         last["deployment"].update(target_rev=2, healthy=False, last_error=secret)
+        last["runtime"]["status"].update(state="pending", reason=secret)
         last["agent"]["token"] = secret
-        args = argparse.Namespace(state=self.state_path, timeout=2, agent_version="0.3.0", client_port=None)
+        args = argparse.Namespace(state=self.state_path, timeout=2, agent_version="0.4.0", client_port=None)
         clock = Clock()
         with patch.object(DRIVER, "snapshot", side_effect=[first, last]), \
              patch.object(DRIVER.time, "monotonic", clock.monotonic), \
@@ -228,16 +314,30 @@ class AcceptanceContracts(unittest.TestCase):
         self.assertEqual(json.loads(private.read_text())["snapshot"], last)
         self.assertIn(secret, private.read_text())
         self.assertNotIn(secret, str(error.exception))
-        expected = {"online": True, "deployment_present": True, "target_rev": 2, "applied_rev": 1,
-                    "target_positive": True, "revisions_match": False, "healthy": False,
-                    "has_last_error": True, "version_required": True, "version_matches": False}
+        expected = {
+            "online": True,
+            "deployment_present": True,
+            "target_rev": 2,
+            "applied_rev": 1,
+            "target_positive": True,
+            "revisions_match": False,
+            "healthy": False,
+            "has_last_error": True,
+            "version_required": True,
+            "version_matches": False,
+            "configured": True,
+            "agent_supported": True,
+            "read_only": False,
+            "runtime_state": "pending",
+            "publication_pending": False,
+        }
         self.assertEqual(json.loads(str(error.exception).split("状态=", 1)[1]), expected)
         queries = [subprocess.CompletedProcess([], 0,
                    "ActiveState=failed\nSubState=failed\nResult=exit-code\nExecMainStatus=1\nDescription=" + secret,
                    secret), subprocess.CompletedProcess([], 0,
                    "ActiveState=" + secret + "\nSubState=" + secret + "\nResult=" + secret
                    + "\nExecMainStatus=" + secret, secret)]
-        summary, report, run = self.run_summary(queries)
+        summary, report, run = self.run_summary(queries, phase="ready", line_no="278")
         self.assertEqual(summary["readiness"], expected)
         self.assertEqual(summary["systemd"], {
             "apsp-agent.service": {"query_succeeded": True, "ActiveState": "failed", "SubState": "failed",
@@ -276,27 +376,195 @@ class AcceptanceContracts(unittest.TestCase):
         self.assertIsNone(status["healthy"])
         self.assertIsNone(status["has_last_error"])
 
-    def test_explicit_installation_failure_is_not_an_indefinite_wait_or_secret_leak(self):
+    def test_explicit_runtime_failure_and_sync_blocked_fail_fast_without_secret_leak(self):
+        secret = "TEST_ONLY-private-runtime-failure-detail"
+        for stage in ("failed", "sync_blocked"):
+            with self.subTest(stage=stage):
+                sample = view()
+                sample["runtime"]["status"] = {
+                    "state": stage,
+                    "reason": secret,
+                    "target_rev": 2,
+                    "applied_rev": 1,
+                    "current_healthy": stage == "sync_blocked",
+                }
+                args = argparse.Namespace(state=self.state_path, timeout=600, agent_version=None, client_port=None)
+                with patch.object(DRIVER, "snapshot", return_value=sample), patch.object(DRIVER.time, "sleep") as sleep:
+                    with self.assertRaisesRegex(DRIVER.AcceptanceError, "已明确失败") as error:
+                        DRIVER.ready(None, self.state, args)
+                    sleep.assert_not_called()
+                self.assertNotIn(secret, str(error.exception))
+                private = self.state_path.with_name("ready-timeout.json")
+                self.assertIn(secret, private.read_text())
+                self.assertEqual(private.stat().st_mode & 0o777, 0o600)
+                self.assertEqual(DRIVER.readiness_status(sample, None)["runtime_state"], stage)
         sample = view()
-        secret = "TEST_ONLY-private-installation-detail"
-        sample["installation"] = {"state": "failed", "reason": secret}
-        args = argparse.Namespace(state=self.state_path, timeout=600, agent_version=None, client_port=None)
-        with patch.object(DRIVER, "snapshot", return_value=sample), patch.object(DRIVER.time, "sleep") as sleep:
-            with self.assertRaisesRegex(DRIVER.AcceptanceError, "安装已明确失败") as error:
-                DRIVER.ready(None, self.state, args)
-            sleep.assert_not_called()
-        self.assertNotIn(secret, str(error.exception))
-        private = self.state_path.with_name("ready-timeout.json")
-        self.assertIn(secret, private.read_text())
-        self.assertEqual(private.stat().st_mode & 0o777, 0o600)
-        self.assertEqual(DRIVER.readiness_status(sample, None)["installation_state"], "failed")
-        sample["installation"]["state"] = secret
-        self.assertNotIn("installation_state", DRIVER.readiness_status(sample, None))
-        sample["installation"]["state"] = "pending"
+        sample["runtime"]["status"]["state"] = secret
+        self.assertNotIn("runtime_state", DRIVER.readiness_status(sample, None))
+        sample["runtime"]["status"]["state"] = "pending"
         self.assertFalse(DRIVER.healthy(sample))
-        sample["installation"]["state"] = "ready"
+        sample["runtime"]["status"]["state"] = "ready"
         sample["publication_pending"] = True
         self.assertFalse(DRIVER.healthy(sample))
+
+    def test_signed_legacy_agent_cannot_masquerade_as_self_contained_in_monitor_or_ready(self):
+        secret = "TEST_ONLY-legacy-agent-0.3.9-detail"
+        legacy_monitor = monitor_view(online=True, agent_version="0.3.9")
+        legacy_monitor["server"]["capabilities"] = ["singbox", "artifact:minisign-v1"]
+        legacy_monitor["runtime"]["agent_supported"] = False
+        monitor_args = argparse.Namespace(state=self.state_path, agent_version="0.3.9",
+                                          status_command="apsp-agent status", settle=6, timeout=120)
+        with patch.object(DRIVER, "snapshot", return_value=legacy_monitor), patch.object(DRIVER.time, "sleep") as sleep:
+            with self.assertRaisesRegex(DRIVER.AcceptanceError, "已签旧 Agent 不能冒充新自带能力"):
+                DRIVER.monitor(None, {"schema": 1, "prefix": "apsp-e2e-test", "server_id": 41, "checkpoints": {}}, monitor_args)
+            sleep.assert_not_called()
+
+        for mutation in (
+            lambda s: s["runtime"]["status"].update(state="upgrade_required", reason=secret),
+            lambda s: s["runtime"].update(agent_supported=False),
+            lambda s: s["server"].update(capabilities=["singbox", "artifact:minisign-v1"]),
+        ):
+            legacy_ready = view()
+            mutation(legacy_ready)
+            ready_args = argparse.Namespace(state=self.state_path, timeout=600, agent_version="0.3.9", client_port=None)
+            with patch.object(DRIVER, "snapshot", return_value=legacy_ready), patch.object(DRIVER.time, "sleep") as sleep:
+                with self.assertRaisesRegex(DRIVER.AcceptanceError, "已签旧 Agent 不能冒充新自带能力") as error:
+                    DRIVER.ready(None, self.state, ready_args)
+                sleep.assert_not_called()
+            self.assertNotIn(secret, str(error.exception))
+            self.assertFalse(DRIVER.healthy(legacy_ready))
+
+    def test_read_only_nexus_server_is_refused_across_prepare_configure_monitor_and_ready(self):
+        for read_only, source in ((True, "nexus"), (False, "nexus"), (True, "configured")):
+            with self.subTest(read_only=read_only, source=source):
+                panel = PreparationPanel(read_only=read_only, source=source)
+                state = self.preparation_state()
+                with patch.object(DRIVER, "install"), contextlib.redirect_stdout(io.StringIO()):
+                    with self.assertRaisesRegex(DRIVER.AcceptanceError, "只读 Nexus"):
+                        DRIVER.prepare(panel, state, self.args)
+                self.assertEqual(panel.node_posts, [])
+
+                state["server_id"] = 41
+                panel.resources["/api/servers"].append({"id": 41, "name": state["prefix"] + "-server"})
+                with self.assertRaisesRegex(DRIVER.AcceptanceError, "只读 Nexus"):
+                    DRIVER.configure(panel, state, self.args)
+                self.assertEqual(panel.node_posts, [])
+
+        nexus_monitor = monitor_view()
+        nexus_monitor["runtime"].update(read_only=True, source="nexus")
+        monitor_args = argparse.Namespace(state=self.state_path, agent_version="0.4.0",
+                                          status_command="apsp-agent status", settle=6, timeout=60)
+        with patch.object(DRIVER, "snapshot", return_value=nexus_monitor):
+            with self.assertRaisesRegex(DRIVER.AcceptanceError, "只读 Nexus"):
+                DRIVER.monitor(None, {"schema": 1, "prefix": "apsp-e2e-test", "server_id": 41, "checkpoints": {}}, monitor_args)
+
+        nexus_ready = view()
+        nexus_ready["runtime"].update(read_only=True, source="nexus")
+        ready_args = argparse.Namespace(state=self.state_path, timeout=60, agent_version="0.4.0", client_port=None)
+        with patch.object(DRIVER, "snapshot", return_value=nexus_ready), patch.object(DRIVER.time, "sleep") as sleep:
+            with self.assertRaisesRegex(DRIVER.AcceptanceError, "只读 Nexus"):
+                DRIVER.ready(None, self.state, ready_args)
+            sleep.assert_not_called()
+
+    def test_pure_monitoring_flow_verifies_unconfigured_settle_and_then_configures_auto_published_node(self):
+        panel = PreparationPanel()
+        state = self.preparation_state(443)
+        prepare_args = argparse.Namespace(state=self.state_path, server_only=True, agent_version="0.4.0")
+        with patch.object(DRIVER, "install") as install, contextlib.redirect_stdout(io.StringIO()):
+            DRIVER.prepare(panel, state, prepare_args)
+            install.assert_called_once_with(panel, state, self.state_path, agent_version="0.4.0")
+        self.assertEqual(state["server_id"], 41)
+        self.assertNotIn("node_id", state)
+        self.assertEqual(panel.node_posts, [])
+        self.assertFalse(any(path.endswith("/enable") for path, _ in panel.calls))
+
+        clock = Clock()
+        offline = monitor_view(online=False)
+        online_1 = monitor_view(online=True, agent_version="0.4.0")
+        online_2 = monitor_view(online=True, agent_version="0.4.0")
+        monitor_args = argparse.Namespace(state=self.state_path, agent_version="0.4.0",
+                                          status_command="apsp-agent status", settle=6, timeout=120)
+        with patch.object(DRIVER, "snapshot", side_effect=[offline, online_1, online_2]), \
+             patch.object(DRIVER.time, "monotonic", clock.monotonic), \
+             patch.object(DRIVER.time, "sleep", clock.sleep), \
+             contextlib.redirect_stdout(io.StringIO()):
+            DRIVER.monitor(panel, state, monitor_args)
+        self.assertEqual(clock.seconds, 8)
+        self.assertIn("monitor", state["checkpoints"])
+        self.assertTrue(self.state_path.with_name("monitor.json").is_file())
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            DRIVER.configure(panel, state, argparse.Namespace(state=self.state_path))
+        self.assertEqual(state["node_id"], 42)
+        self.assertEqual(state["user_id"], 43)
+        self.assertEqual(state["port"], 443)
+        self.assertEqual(state["stat_name"], "u43_n42")
+
+        ready_panel = ReadyPanel()
+        ready_args = argparse.Namespace(state=self.state_path, timeout=60, agent_version="0.4.0", client_port=None)
+        with patch.object(DRIVER, "snapshot", return_value=view()), \
+             contextlib.redirect_stdout(io.StringIO()):
+            DRIVER.ready(ready_panel, state, ready_args)
+        self.assertEqual(state["checkpoints"]["ready"]["drift"]["checkpoint_state"], "verified")
+        client = json.loads(self.state_path.with_name("client.json").read_text())
+        self.assertEqual(client["inbounds"][0]["listen_port"], 2080)
+        self.assertEqual(client["outbounds"][0]["server_port"], 443)
+
+        self.state_path.with_name("embedded-components.json").write_text(json.dumps({
+            "sing-box": "1.14.4-apsp.2",
+            "nodequality": "a92fca6c0067df29ddd03fdc2fee6f3000f64545-r22",
+            "network-workbench": "1.0.0",
+            "tcpquality": "0.3.0",
+            "private-secret-component": "must-not-appear",
+        }))
+        summary, report, _ = self.run_summary([], owned=False, phase="first-traffic", line_no="402")
+        self.assertTrue(summary["pure_monitoring_verified"])
+        self.assertEqual(summary["last_phase"], "first-traffic")
+        self.assertEqual(summary["release_fixture"], "TEST_ONLY")
+        self.assertEqual(summary["e2e_scope"], "singbox-first-config-reality-accounting")
+        self.assertEqual(summary["embedded_components"], ["network-workbench", "nodequality", "sing-box", "tcpquality"])
+        self.assertFalse(summary["full_release_closure"])
+        self.assertNotIn("private-secret-component", json.dumps(summary) + report)
+
+    def test_pure_monitoring_immediately_fails_if_singbox_is_enabled_or_started(self):
+        for mutate in (
+            lambda s: s["runtime"].update(configured=True),
+            lambda s: s["runtime"]["status"].update(state="pending"),
+            lambda s: s["runtime"]["status"].update(target_rev=1),
+            lambda s: s.update(deployment={"target_rev": 1, "applied_rev": 0, "healthy": False}),
+            lambda s: s["agent"].update(applied={"singbox": 1}),
+            lambda s: s["agent"].update(healthy={"singbox": True}),
+        ):
+            with self.subTest():
+                sample = monitor_view(online=True)
+                mutate(sample)
+                args = argparse.Namespace(state=self.state_path, agent_version="0.4.0",
+                                          status_command="apsp-agent status", settle=6, timeout=60)
+                with patch.object(DRIVER, "snapshot", return_value=sample):
+                    with self.assertRaises(DRIVER.AcceptanceError):
+                        DRIVER.monitor(None, {"schema": 1, "prefix": "apsp-e2e-test", "server_id": 41, "checkpoints": {}}, args)
+
+    def test_ready_requires_verified_checkpoint_and_bundle_digest_evidence(self):
+        state = {
+            "schema": 1,
+            "prefix": "apsp-e2e-test",
+            "server_id": 41,
+            "node_id": 42,
+            "user_id": 43,
+            "port": 443,
+            "checkpoints": {},
+        }
+        args = argparse.Namespace(state=self.state_path, timeout=60, agent_version="0.4.0", client_port=None)
+        unverified_panel = ReadyPanel(checkpoint_state="mismatch", checkpoint_outcome="mismatch")
+        with patch.object(DRIVER, "snapshot", return_value=view()):
+            with self.assertRaisesRegex(DRIVER.AcceptanceError, "checkpoint"):
+                DRIVER.ready(unverified_panel, state, args)
+
+        missing_hash = view()
+        missing_hash["applied_bundle_sha256"] = None
+        with patch.object(DRIVER, "snapshot", return_value=missing_hash):
+            with self.assertRaisesRegex(DRIVER.AcceptanceError, "SHA256 证据"):
+                DRIVER.ready(ReadyPanel(), state, args)
 
     def test_systemd_public_status_rejects_ambiguous_out_of_range_and_failed_queries(self):
         for value in ("-1", "256", "65536", "01", "1.0", "secret"):
@@ -319,7 +587,7 @@ class AcceptanceContracts(unittest.TestCase):
     def test_ready_retry_removes_old_timeout_evidence_and_refuses_symlink(self):
         path = self.state_path.with_name("ready-timeout.json")
         DRIVER.save(path, {"snapshot": "old private failure"})
-        args = argparse.Namespace(state=self.state_path, timeout=2, agent_version="0.3.0", client_port=None)
+        args = argparse.Namespace(state=self.state_path, timeout=2, agent_version="0.4.0", client_port=None)
         with patch.object(DRIVER, "snapshot", side_effect=DRIVER.AcceptanceError("panel unavailable")):
             with self.assertRaisesRegex(DRIVER.AcceptanceError, "panel unavailable"):
                 DRIVER.ready(None, self.state, args)
@@ -404,7 +672,7 @@ class AcceptanceContracts(unittest.TestCase):
         descriptor = self.state_path.with_name("enrollment.json")
         saved = json.loads(descriptor.read_text())
         self.assertEqual(saved["token"], "test-once-token")
-        self.assertEqual(saved["tag"], "agent-v0.3.0")
+        self.assertEqual(saved["tag"], "agent-v0.4.0")
         self.assertEqual(descriptor.stat().st_mode & 0o777, 0o600)
         self.assertEqual(self.state_path.stat().st_mode & 0o777, 0o600)
         self.assertNotIn("token", state["installation"])
@@ -419,15 +687,15 @@ class AcceptanceContracts(unittest.TestCase):
         with patch.object(DRIVER, "save", side_effect=OSError("state write failed")):
             with self.assertRaises(OSError):
                 DRIVER.install(panel, state, self.state_path)
-        recovered = {key:value for key,value in state.items() if key != "installation"}
+        recovered = {key: value for key, value in state.items() if key != "installation"}
         calls = list(panel.calls)
         with contextlib.redirect_stdout(io.StringIO()):
             DRIVER.install(panel, recovered, self.state_path)
         self.assertEqual(panel.calls, calls)
-        self.assertEqual(recovered["installation"]["version"], "0.3.0")
+        self.assertEqual(recovered["installation"]["version"], "0.4.0")
 
     def test_install_accepts_portable_latest_and_keeps_explicit_upgrade_selection(self):
-        panel = EnrollmentPanel({"version":"latest", "tag":None})
+        panel = EnrollmentPanel({"version": "latest", "tag": None})
         state = self.installation_state()
         with contextlib.redirect_stdout(io.StringIO()):
             DRIVER.install(panel, state, self.state_path)
@@ -439,29 +707,29 @@ class AcceptanceContracts(unittest.TestCase):
             DRIVER.install(panel, state, self.state_path)
         self.assertEqual(panel.calls, calls)
         with self.assertRaisesRegex(DRIVER.AcceptanceError, "指定的 Agent 版本"):
-            DRIVER.install(panel, state, self.state_path, agent_version="0.2.0")
+            DRIVER.install(panel, state, self.state_path, agent_version="0.3.0")
         with contextlib.redirect_stdout(io.StringIO()):
-            DRIVER.install(EnrollmentPanel({"version":"0.2.0", "tag":"agent-v0.2.0"}),
-                           state, self.state_path, refresh=True, agent_version="0.2.0")
+            DRIVER.install(EnrollmentPanel({"version": "0.3.0", "tag": "agent-v0.3.0"}),
+                           state, self.state_path, refresh=True, agent_version="0.3.0")
         saved = json.loads(self.state_path.with_name("enrollment.json").read_text())
-        self.assertEqual(saved["version"], "0.2.0")
-        self.assertEqual(saved["tag"], "agent-v0.2.0")
+        self.assertEqual(saved["version"], "0.3.0")
+        self.assertEqual(saved["tag"], "agent-v0.3.0")
 
     def test_latest_descriptor_rejects_fabricated_or_missing_tags(self):
-        for selection in ({"version":"latest", "tag":"agent-vlatest"}, {"version":"latest"},
-                          {"version":"0.3.0", "tag":None}):
+        for selection in ({"version": "latest", "tag": "agent-vlatest"}, {"version": "latest"},
+                          {"version": "0.4.0", "tag": None}):
             with self.subTest(selection=selection), self.assertRaises(DRIVER.AcceptanceError):
                 DRIVER.install(EnrollmentPanel(selection), self.installation_state(), self.state_path)
             self.assertFalse(self.state_path.with_name("enrollment.json").exists())
 
     def test_install_refuses_missing_mismatched_or_other_requested_release(self):
-        for selection in (None, {}, {"version":"0.3.0", "tag":"agent-v0.2.0"}, {"version":"../escape", "tag":"agent-v../escape"}):
+        for selection in (None, {}, {"version": "0.4.0", "tag": "agent-v0.3.0"}, {"version": "../escape", "tag": "agent-v../escape"}):
             with self.subTest(selection=selection):
                 with self.assertRaises(DRIVER.AcceptanceError):
                     DRIVER.install(EnrollmentPanel(selection), self.installation_state(), self.state_path)
                 self.assertFalse(self.state_path.with_name("enrollment.json").exists())
         with self.assertRaises(DRIVER.AcceptanceError):
-            DRIVER.install(EnrollmentPanel(), self.installation_state(), self.state_path, agent_version="0.2.0")
+            DRIVER.install(EnrollmentPanel(), self.installation_state(), self.state_path, agent_version="0.3.0")
 
     def test_install_refuses_symlink_or_public_cached_descriptors(self):
         descriptor = self.state_path.with_name("enrollment.json")
@@ -480,8 +748,8 @@ class AcceptanceContracts(unittest.TestCase):
     def test_install_refresh_selects_explicit_version_without_shell_interpolation(self):
         panel = EnrollmentPanel()
         with contextlib.redirect_stdout(io.StringIO()):
-            DRIVER.install(panel, self.installation_state(), self.state_path, refresh=True, agent_version="0.3.0")
-        self.assertEqual(panel.calls[-1][0], "/api/servers/41/enrollment?agent_version=0.3.0")
+            DRIVER.install(panel, self.installation_state(), self.state_path, refresh=True, agent_version="0.4.0")
+        self.assertEqual(panel.calls[-1][0], "/api/servers/41/enrollment?agent_version=0.4.0")
 
     def test_lost_creation_response_recovers_without_duplicate_or_touching_other_resources(self):
         panel = RecoveryPanel()
@@ -508,22 +776,28 @@ class AcceptanceContracts(unittest.TestCase):
         with self.assertRaisesRegex(DRIVER.AcceptanceError, "身份发生变化"):
             self.verify([changed])
 
-    def test_changed_configuration_cannot_pass_upgrade_continuity_with_unchanged_ledger(self):
+    def test_changed_configuration_or_bundle_digest_cannot_pass_same_config_continuity(self):
         changed = view()
         changed["deployment"].update(target_rev=2, applied_rev=2)
+        changed["runtime"]["status"].update(target_rev=2, applied_rev=2)
         changed["agent"]["applied"]["singbox"] = 2
         with self.assertRaisesRegex(DRIVER.AcceptanceError, "配置版本发生变化"):
             self.verify([changed])
 
+        changed_bundle = view()
+        changed_bundle["applied_bundle_sha256"] = "b" * 64
+        with self.assertRaisesRegex(DRIVER.AcceptanceError, "配置包摘要发生变化"):
+            self.verify([changed_bundle])
+
     def test_upgrade_requires_both_actual_version_reports_and_a_new_process(self):
-        self.args.agent_version, self.args.agent_restarted = "0.3.1", True
+        self.args.agent_version, self.args.agent_restarted = "0.4.1", True
         baseline = self.state["checkpoints"]["before"]
-        baseline["agent"].update(pid=100, agent_version="0.3.0")
-        baseline["server"].update(id=41, agent_version="0.3.0", runtime_version="1.14.4-apsp.2")
+        baseline["agent"].update(pid=100, agent_version="0.4.0")
+        baseline["server"].update(id=41, agent_version="0.4.0", runtime_version="1.14.4-apsp.2")
         upgraded = view()
-        upgraded["agent"].update(pid=200, agent_version="0.3.1")
-        upgraded["server"].update(id=41, agent_version="0.3.1", runtime_version="1.14.4-apsp.2")
-        for field, mutation in (("agent", {"agent_version": "0.3.0"}), ("agent", {"pid": 100}),
+        upgraded["agent"].update(pid=200, agent_version="0.4.1")
+        upgraded["server"].update(id=41, agent_version="0.4.1", runtime_version="1.14.4-apsp.2")
+        for field, mutation in (("agent", {"agent_version": "0.4.0"}), ("agent", {"pid": 100}),
                                 ("server", {"id": 42}), ("server", {"runtime_version": "1.14.3"})):
             changed = json.loads(json.dumps(upgraded))
             changed[field].update(mutation)
@@ -552,52 +826,11 @@ class AcceptanceContracts(unittest.TestCase):
             with self.assertRaisesRegex(DRIVER.AcceptanceError, "双向代理用量"):
                 DRIVER.traffic(None, self.state, args)
 
-
-    def test_preflight_reads_the_nested_view_bootstraps_once_and_reauthenticates_before_confirming(self):
-        panel = PreflightPanel()
-        state = {"schema": 1, "prefix": "apsp-e2e-test", "server_id": 41, "checkpoints": {}}
-        args = argparse.Namespace(state=self.state_path, timeout=600, totp=False)
-        clock = Clock()
-        # Saved business nodes keep the server dirty, so the empty revision is
-        # never certified as applied; the answered checkpoint is the signal.
-        pending = view()
-        pending["deployment"] = {"target_rev": 1, "applied_rev": 0, "healthy": False}
-        with patch.object(DRIVER, "snapshot", return_value=pending), \
-             patch.object(DRIVER, "password", return_value="test-password"), \
-             patch.object(DRIVER.time, "monotonic", clock.monotonic), \
-             patch.object(DRIVER.time, "sleep", clock.sleep), \
-             contextlib.redirect_stdout(io.StringIO()):
-            DRIVER.preflight(panel, state, args)
-        self.assertTrue(panel.bootstrapped)
-        self.assertEqual(panel.preflights, ["preflight-1", "preflight-2"])
-        paths = [path for path, _ in panel.calls]
-        for action in ("/preflight/bootstrap", "/preflight/confirm"):
-            index = next(i for i, path in enumerate(paths) if path.endswith(action))
-            self.assertEqual(paths[index - 1], "/api/control-center/reauth")
-        self.assertEqual(state["checkpoints"]["preflight"]["id"], "preflight-2")
-        self.assertEqual(json.loads(self.state_path.read_text())["checkpoints"]["preflight"]["id"], "preflight-2")
-
-    def test_preflight_timeout_reports_operation_states_without_values(self):
-        panel = PreflightPanel(capability_after=0)
-        panel.request = (lambda original: lambda path, data=None, raw=False, method=None: (
-            {"preflight": {"id": "preflight-1", "device_checks_pending": True,
-                           "operations": [{"status": "queued"}, {"status": "running"}]}}
-            if path.endswith("/operations-view") else original(path, data, raw, method)))(panel.request)
-        state = {"schema": 1, "prefix": "apsp-e2e-test", "server_id": 41, "checkpoints": {}}
-        args = argparse.Namespace(state=self.state_path, timeout=10, totp=False)
-        clock = Clock()
-        with patch.object(DRIVER.time, "monotonic", clock.monotonic), \
-             patch.object(DRIVER.time, "sleep", clock.sleep):
-            with self.assertRaisesRegex(DRIVER.AcceptanceError, "匹配请求=True 操作状态=queued,running"):
-                DRIVER.preflight(panel, state, args)
-
-
     def test_origin_header_matches_the_panel_canonical_public_origin(self):
         self.assertEqual(DRIVER.origin_header("http://127.0.0.1:18080"), "http://127.0.0.1:18080")
         self.assertEqual(DRIVER.origin_header("HTTPS://Panel.Example.Test:443"), "https://panel.example.test")
         self.assertEqual(DRIVER.origin_header("https://panel.example.test:8443"), "https://panel.example.test:8443")
         self.assertEqual(DRIVER.origin_header("http://[::1]:18080"), "http://[::1]:18080")
-
 
     def test_http_failures_name_token_free_routes_and_the_panel_message_only(self):
         def failure(body):
@@ -609,64 +842,26 @@ class AcceptanceContracts(unittest.TestCase):
         for path in ("/sub/secret-token?format=singbox", "/api/servers/41/enrollment", "/api/tokens/7"):
             self.assertEqual(DRIVER.failure_detail(path, failure(message)), "")
 
-
     def test_stalled_install_reports_fixed_vocabulary_but_never_error_text(self):
         status = {"target_rev": 1, "applied_rev": 0, "healthy": False,
-                  "last_error": "runtime health check timed out at /var/lib/apsp/plugins/TEST_ONLY-secret"}
+                  "last_error": "bundled runtime health check timed out at /var/lib/apsp/plugins/TEST_ONLY-secret"}
         drift = {"state": "revision_mismatch", "checkpoint_supported": True,
                  "checkpoint": {"state": "pending", "outcome": None, "failure_kind": "free text not allowed",
                                 "reason": "实际运行时健康检查未通过"}}
         summary = DRIVER.install_status(status, drift)
-        self.assertEqual(summary, {"target_rev": 1, "applied_rev": 0, "healthy": False,
-                                   "error_categories": ["health", "timeout"], "drift": "revision_mismatch",
-                                   "checkpoint_supported": True, "checkpoint_state": "pending",
-                                   "checkpoint_outcome": None, "checkpoint_failure_kind": None})
+        self.assertEqual(summary, {
+            "target_rev": 1,
+            "applied_rev": 0,
+            "healthy": False,
+            "error_categories": ["health", "runtime_identity", "timeout"],
+            "drift": "revision_mismatch",
+            "checkpoint_supported": True,
+            "checkpoint_state": "pending",
+            "checkpoint_outcome": None,
+            "checkpoint_failure_kind": None,
+        })
         self.assertNotIn("TEST_ONLY-secret", json.dumps(summary))
         self.assertEqual(DRIVER.install_status(None, None)["error_categories"], [])
-
-
-    def test_bootstrap_install_needs_an_applied_revision_or_an_answered_checkpoint_for_it(self):
-        applied = {"target_rev": 1, "applied_rev": 1, "healthy": True}
-        waiting = {"target_rev": 1, "applied_rev": 0, "healthy": False}
-        answered = {"target_revision": 1, "checkpoint": {"outcome": "superseded", "observed_at": 120}}
-        self.assertTrue(DRIVER.bootstrap_installed(applied, {}))
-        self.assertTrue(DRIVER.bootstrap_installed(waiting, answered))
-        self.assertFalse(DRIVER.bootstrap_installed(waiting, {"target_revision": 1, "checkpoint": {"outcome": None, "observed_at": None}}))
-        self.assertFalse(DRIVER.bootstrap_installed(waiting, {**answered, "target_revision": 2}))
-        self.assertFalse(DRIVER.bootstrap_installed(waiting, {"target_revision": 1, "checkpoint": {"outcome": "failed", "observed_at": 120}}))
-        self.assertFalse(DRIVER.bootstrap_installed({"target_rev": None}, answered))
-
-
-    def test_preflight_collection_retries_only_a_fingerprint_change_during_sampling(self):
-        clock = Clock()
-        calls = []
-
-        class Changing:
-            def request(self, path, data=None, raw=False, method=None):
-                calls.append(path)
-                if path.endswith("/preflight") and len(calls) < 3:
-                    raise DRIVER.AcceptanceError("面板请求失败，HTTP 409 /api/x：业务、授权、入口或制品在采集期间发生变化，请重新预检")
-                if path.endswith("/preflight"):
-                    return {"id": "preflight-1"}
-                return {"preflight": {"id": "preflight-1", "device_checks_pending": False}}
-
-        with patch.object(DRIVER.time, "monotonic", clock.monotonic), \
-             patch.object(DRIVER.time, "sleep", clock.sleep):
-            view = DRIVER.collect_preflight(Changing(), "/base", 600)
-        self.assertEqual(view["id"], "preflight-1")
-        self.assertEqual(calls.count("/base/preflight"), 3)
-
-        class Refused:
-            def request(self, path, data=None, raw=False, method=None):
-                calls.append(path)
-                raise DRIVER.AcceptanceError("面板请求失败，HTTP 409 /api/x：设备、能力、授权、制品或配置条件未满足")
-
-        calls.clear()
-        with patch.object(DRIVER.time, "monotonic", clock.monotonic), \
-             patch.object(DRIVER.time, "sleep", clock.sleep):
-            with self.assertRaisesRegex(DRIVER.AcceptanceError, "条件未满足"):
-                DRIVER.collect_preflight(Refused(), "/base", 600)
-        self.assertEqual(calls, ["/base/preflight"])
 
     def test_totals_preserve_large_integer_precision_and_reject_inconsistent_ledger(self):
         amount = 2 ** 64 + 17

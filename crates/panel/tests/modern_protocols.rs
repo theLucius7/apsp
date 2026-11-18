@@ -27,7 +27,6 @@ async fn new_protocol_credentials_snapshots_and_revocation(pool: PgPool) -> Resu
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let server = panel.create_server(&cookie, "Modern protocols").await?;
-    panel.enable_runtime(&cookie, server).await?;
     let first = panel.create_user(&cookie, "First").await?;
     let second = panel.create_user(&cookie, "Second").await?;
     let first_id = id(&first)?;
@@ -239,7 +238,6 @@ async fn certificate_conflicts_and_protocol_changes_are_atomic(pool: PgPool) -> 
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let server = panel.create_server(&cookie, "Certificates").await?;
-    panel.enable_runtime(&cookie, server).await?;
     let create = |port, config| json!({"name":"TLS node", "server_id":server, "public_host":"proxy.example.com", "sni":"proxy.example.com", "port":port, "protocol_config":config});
     let response = panel
         .admin(

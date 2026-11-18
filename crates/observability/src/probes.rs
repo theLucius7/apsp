@@ -4,7 +4,8 @@ use crate::{
 };
 use apsp_protocol::{
     AuthorizedProbe, MAX_PROBE_LEASE_SECS, PROBE_LEASE_CAPABILITY, ProbeBatch, ProbeLease,
-    ProbeResult, ProbeSpec, TaskAck, now_timestamp, telemetry::now_millis,
+    ProbeResult, ProbeSpec, TaskAck, now_timestamp,
+    telemetry::{TelemetrySettings, now_millis},
 };
 use axum::{
     Json,
@@ -245,6 +246,144 @@ pub fn prepare_write(spec: &mut ProbeSpec) -> ApiResult<()> {
         ));
     }
     Ok(())
+}
+
+/// Initializes observability records for a new server in the transaction that creates it:
+/// telemetry settings, configured probes, per-server alert rules and default latency tasks.
+pub async fn initialize_server_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    server: i64,
+    telemetry: &TelemetrySettings,
+    probes: &[ProbeSpec],
+    alerts: &[serde_json::Value],
+) -> ApiResult<()> {
+    if !telemetry.valid() {
+        return Err(ApiError::BadRequest("历史写入间隔须为 15–3600 秒".into()));
+    }
+    if probes.len() > 32 {
+        return Err(ApiError::BadRequest("每台服务器最多配置 32 个拨测".into()));
+    }
+    crate::telemetry::save_settings_tx(tx, server, telemetry).await?;
+    for probe in probes {
+        let mut spec = probe.clone();
+        spec.normalize();
+        spec.id = Uuid::new_v4();
+        prepare_write(&mut spec)?;
+        sqlx::query("INSERT INTO network_probes (id, server_id, spec) VALUES ($1, $2, $3)")
+            .bind(spec.id)
+            .bind(server)
+            .bind(serde_json::to_value(&spec).map_err(anyhow::Error::from)?)
+            .execute(&mut **tx)
+            .await?;
+    }
+    for alert in alerts {
+        crate::alerts::rules::check_template(alert)?;
+        let mut spec = alert.clone();
+        spec["all_servers"] = serde_json::json!(false);
+        spec["server_ids"] = serde_json::json!([server]);
+        sqlx::query("INSERT INTO alert_rules (id, spec, revision) VALUES ($1, $2, 1)")
+            .bind(Uuid::new_v4())
+            .bind(spec)
+            .execute(&mut **tx)
+            .await?;
+    }
+    crate::latency_tasks::assign_defaults(tx, server).await
+}
+
+/// Maps a probe's carrier label onto the three carriers the member catalogue shows.
+pub(crate) fn carrier(label: &str) -> Option<&'static str> {
+    let label = label.trim().to_lowercase();
+    if label.contains("电信") || label.contains("telecom") || label.contains("chinanet") {
+        Some("telecom")
+    } else if label.contains("联通") || label.contains("unicom") {
+        Some("unicom")
+    } else if label.contains("移动") || label.contains("mobile") || label.contains("cmcc") {
+        Some("mobile")
+    } else {
+        None
+    }
+}
+
+/// A probe's carrier: its monitored network, else its free-form carrier label.
+fn probe_carrier(spec: &serde_json::Value) -> Option<&'static str> {
+    match spec["monitor"]["network"].as_str() {
+        Some("telecom") => Some("telecom"),
+        Some("unicom") => Some("unicom"),
+        Some("mobile") => Some("mobile"),
+        _ => spec["carrier"].as_str().and_then(carrier),
+    }
+}
+
+/// Latest, one-hour average and loss per carrier from a host's own probes.
+fn probe_latency(rows: &[(serde_json::Value, serde_json::Value)]) -> Option<serde_json::Value> {
+    let mut carriers = serde_json::Map::new();
+    let mut updated = None::<i64>;
+    for (spec, results) in rows {
+        let Some(carrier) = probe_carrier(spec) else {
+            continue;
+        };
+        let results = results.as_array().cloned().unwrap_or_default();
+        if results.is_empty() || carriers.contains_key(carrier) {
+            continue;
+        }
+        let latencies: Vec<f64> = results
+            .iter()
+            .filter_map(|result| result["latency_ms"].as_f64())
+            .collect();
+        let losses: Vec<f64> = results
+            .iter()
+            .filter_map(|result| result["loss_percent"].as_f64())
+            .collect();
+        let average = |values: &[f64]| {
+            (!values.is_empty()).then(|| values.iter().sum::<f64>() / values.len() as f64)
+        };
+        updated = updated.max(results[0]["sampled_at"].as_i64().map(|ms| ms / 1000));
+        carriers.insert(
+            carrier.into(),
+            serde_json::json!({
+                "latest": results[0]["latency_ms"].as_f64().map(f64::round),
+                "average": average(&latencies).map(f64::round),
+                "loss": average(&losses).map(|loss| (loss * 10.0).round() / 10.0),
+            }),
+        );
+    }
+    (!carriers.is_empty()).then(|| {
+        serde_json::json!({"source":"apsp_probe","monitored":true,"updated_at":updated,"window_minutes":60,
+            "direction":"node_to_carrier","carriers":carriers})
+    })
+}
+
+/// Summarizes carrier latency since `since_ms` for each server in `servers` that has
+/// recent carrier probe samples, without exposing probe targets, monitor identifiers,
+/// cities or coordinates.
+pub async fn carrier_latencies(
+    connection: &mut sqlx::PgConnection,
+    servers: &[i64],
+    since_ms: i64,
+) -> ApiResult<BTreeMap<i64, serde_json::Value>> {
+    if servers.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    let rows: Vec<(i64, serde_json::Value, serde_json::Value)> = sqlx::query_as(
+        "SELECT p.server_id, p.spec, COALESCE((SELECT jsonb_agg(r.result ORDER BY r.sampled_at DESC) FROM (SELECT result, sampled_at FROM probe_results WHERE server_id=p.server_id AND probe_id=p.id AND sampled_at>$2 ORDER BY sampled_at DESC LIMIT 120) r), '[]'::JSONB) FROM network_probes p WHERE p.server_id=ANY($1) ORDER BY p.server_id, p.id",
+    )
+    .bind(servers)
+    .bind(since_ms)
+    .fetch_all(connection)
+    .await?;
+    let mut by_server: BTreeMap<i64, Vec<_>> = BTreeMap::new();
+    for (server_id, spec, results) in rows {
+        by_server
+            .entry(server_id)
+            .or_default()
+            .push((spec, results));
+    }
+    Ok(by_server
+        .into_iter()
+        .filter_map(|(server_id, probes)| {
+            probe_latency(&probes).map(|summary| (server_id, summary))
+        })
+        .collect())
 }
 
 pub async fn agent_list(
@@ -666,4 +805,48 @@ pub async fn ingest(
         .await?;
     tx.commit().await?;
     Ok(Json(TaskAck { ids: acknowledged }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn probe_labels_map_onto_the_three_carriers() {
+        assert_eq!(carrier("广东电信"), Some("telecom"));
+        assert_eq!(carrier("China Unicom Guangdong"), Some("unicom"));
+        assert_eq!(carrier("CMCC"), Some("mobile"));
+        assert_eq!(carrier("Cloudflare"), None);
+    }
+
+    #[test]
+    fn carrier_latency_summarizes_the_latest_hour_per_carrier() {
+        let rows = vec![
+            (
+                json!({"carrier":"电信"}),
+                json!([{"latency_ms":40.4,"loss_percent":0.0,"sampled_at":2000},{"latency_ms":60.0,"loss_percent":10.0,"sampled_at":1000}]),
+            ),
+            (
+                json!({"carrier":"Example"}),
+                json!([{"latency_ms":1.0,"loss_percent":0.0,"sampled_at":3000}]),
+            ),
+            (
+                json!({"carrier":"","monitor":{"network":"mobile"}}),
+                json!([{"latency_ms":70.0,"loss_percent":null,"sampled_at":1000}]),
+            ),
+        ];
+        let latency = probe_latency(&rows).unwrap();
+        assert_eq!(
+            latency["carriers"]["telecom"],
+            json!({"latest":40.0,"average":50.0,"loss":5.0})
+        );
+        assert_eq!(latency["updated_at"], 2);
+        assert!(latency["carriers"].get("unicom").is_none());
+        assert_eq!(
+            latency["carriers"]["mobile"],
+            json!({"latest":70.0,"average":70.0,"loss":null})
+        );
+        assert!(probe_latency(&[]).is_none());
+    }
 }

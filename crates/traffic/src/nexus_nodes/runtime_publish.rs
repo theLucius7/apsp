@@ -86,9 +86,9 @@ pub(super) async fn compile_snapshot(
             continue;
         };
         entry.preserved.node.id = id;
-        // Policy groups decide who may use the line (ADR 0115); members keep
-        // their original client identity on it.
-        let members: Vec<(i64,Uuid)> = sqlx::query_as("SELECT i.user_id,i.legacy_uuid FROM singbox_nexus_identities i JOIN singbox_entitlements($1) e ON e.user_id=i.user_id AND e.allowed WHERE EXISTS(SELECT 1 FROM singbox_user_policies up JOIN singbox_policy_nodes pn ON pn.group_id=up.group_id WHERE up.user_id=i.user_id AND pn.node_id=$2) ORDER BY i.user_id")
+        // Policy groups decide who may use the line (ADR 0115); members the bridge still
+        // serves keep their original client identity on it, while adopted users use accesses.
+        let members: Vec<(i64, Uuid)> = sqlx::query_as("SELECT i.user_id,i.legacy_uuid FROM singbox_nexus_identities i JOIN singbox_entitlements($1) e ON e.user_id=i.user_id AND e.allowed WHERE i.user_id IN (SELECT served.user_id FROM singbox_legacy_served_users() served) AND EXISTS(SELECT 1 FROM singbox_user_policies up JOIN singbox_policy_nodes pn ON pn.group_id=up.group_id WHERE up.user_id=i.user_id AND pn.node_id=$2) ORDER BY i.user_id")
             .bind(at).bind(id).fetch_all(&mut **tx).await?;
         for (user, uuid) in members {
             entry.preserved.node.users.push(nexus_access(
@@ -107,7 +107,7 @@ pub(super) async fn compile_snapshot(
                 accounting.push(json!({"user_id":access.user_id,"node_id":id,"stat_name":apsp_compiler::stat_name(access.user_id,id)}));
             }
         }
-        lines.push((id, users));
+        lines.push((id, entry.preserved.node.users.clone()));
         prepared.push(entry.preserved);
     }
     let public_nodes = public_nodes(tx, lines).await?;
@@ -149,7 +149,8 @@ pub(super) async fn compile_snapshot(
 /// The host's lines for apsp's own subscription, in the form of an ordinary publication:
 /// the catalog rows, which follow a moved public endpoint while the preserved snapshot
 /// keeps the listener, with the ordinary credentials published on each line. Original
-/// client identities stay out; the retained renderer lists those (ADR 0138).
+/// client identities are included too, so native adoption can verify the exact applied
+/// credentials before switching the subscription renderer.
 async fn public_nodes(
     tx: &mut Transaction<'_, Postgres>,
     lines: Vec<(i64, Vec<Access>)>,
@@ -189,12 +190,17 @@ pub(crate) async fn publish(
         return Ok(Some(None));
     }
     let candidate = compile(state, tx, server).await?;
+    let current_target: Option<i64> = sqlx::query_scalar(
+        "SELECT target_rev FROM server_module_status WHERE server_id=$1 AND module='singbox'",
+    )
+    .bind(server)
+    .fetch_optional(&mut **tx)
+    .await?;
     let previous: Option<(i64, String)> = sqlx::query_as("SELECT rev,bundle_sha256 FROM deployments WHERE server_id=$1 AND module='singbox' ORDER BY rev DESC LIMIT 1").bind(server).fetch_optional(&mut **tx).await?;
-    // An administrator's redeploy publishes the unchanged bundle as a higher revision.
-    if let Some((revision, _)) = previous
-        .as_ref()
-        .filter(|(_, hash)| !force && *hash == candidate.hash)
-    {
+    // An administrator's redeploy or reactivation after pause publishes a higher revision.
+    if let Some((revision, _)) = previous.as_ref().filter(|(rev, hash)| {
+        !force && *hash == candidate.hash && current_target == Some(*rev) && *rev == manifest
+    }) {
         // A moved public endpoint changes what subscriptions list, not the bundle.
         sqlx::query("INSERT INTO singbox_deployment_projections(server_id,rev,source_json) VALUES($1,$2,$3) ON CONFLICT(server_id,rev) DO UPDATE SET source_json=EXCLUDED.source_json")
             .bind(server).bind(revision).bind(&candidate.source).execute(&mut **tx).await?;
@@ -255,7 +261,7 @@ pub(crate) async fn membership(state: &AppState, allowed: Option<&[i64]>) -> any
     // credential published for them (ADR 0138); a host without such users keeps the digest
     // it had before they could exist.
     let query = format!(
-        "WITH e AS MATERIALIZED ({allowed_users}), o AS MATERIALIZED (SELECT c.server_id,c.node_id,c.user_id,c.uuid FROM singbox_runtime_credentials() c JOIN e ON e.user_id=c.user_id) SELECT h.server_id,COALESCE((SELECT jsonb_agg(jsonb_build_array(m.node_id,m.user_id,m.uuid) ORDER BY m.node_id,m.user_id) FROM (SELECT r.node_id,i.user_id,i.legacy_uuid AS uuid FROM singbox_nexus_runtime_nodes r JOIN singbox_policy_nodes pn ON pn.node_id=r.node_id JOIN singbox_user_policies up ON up.group_id=pn.group_id JOIN e ON e.user_id=up.user_id JOIN singbox_nexus_identities i ON i.user_id=e.user_id WHERE r.server_id=h.server_id UNION SELECT o.node_id,o.user_id,o.uuid FROM o WHERE o.server_id=h.server_id) m),'[]'::jsonb) FROM singbox_nexus_runtime_hosts h WHERE h.state='active' ORDER BY h.server_id"
+        "WITH e AS MATERIALIZED ({allowed_users}), s AS MATERIALIZED (SELECT user_id FROM singbox_legacy_served_users()), o AS MATERIALIZED (SELECT c.server_id,c.node_id,c.user_id,c.uuid FROM singbox_runtime_credentials() c JOIN e ON e.user_id=c.user_id) SELECT h.server_id,COALESCE((SELECT jsonb_agg(jsonb_build_array(m.node_id,m.user_id,m.uuid) ORDER BY m.node_id,m.user_id) FROM (SELECT r.node_id,i.user_id,i.legacy_uuid AS uuid FROM singbox_nexus_runtime_nodes r JOIN singbox_policy_nodes pn ON pn.node_id=r.node_id JOIN singbox_user_policies up ON up.group_id=pn.group_id JOIN e ON e.user_id=up.user_id JOIN s ON s.user_id=e.user_id JOIN singbox_nexus_identities i ON i.user_id=e.user_id WHERE r.server_id=h.server_id UNION SELECT o.node_id,o.user_id,o.uuid FROM o WHERE o.server_id=h.server_id) m),'[]'::jsonb) FROM singbox_nexus_runtime_hosts h WHERE h.state='active' ORDER BY h.server_id"
     );
     let query = sqlx::query_as(&query);
     let query = match allowed {

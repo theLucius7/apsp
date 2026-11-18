@@ -3,6 +3,7 @@ import { Field } from '../components'
 import { useResource } from '../hooks'
 import { validatedSnapshot } from '@/lib/resource-snapshot'
 import type { ChainBatchDraft, ChainDraftHop, ProxyWriteSnapshot } from './Chains'
+import { canConfigureServer } from './Runtimes'
 import { sourceRoot, validSourceNodePage } from './orderedSourceTypes'
 import type { SourceNodePage } from './orderedSourceTypes'
 import { Button } from '@/components/ui/button'
@@ -22,7 +23,7 @@ export default function ChainExitExpansion({ draft, snapshot, onChange }: { draf
   if (page.fresh && page.data?.source_id === Number(sourceId)) history.current = page.data
   const source = snapshot.sources?.data?.find(source => source.id === Number(sourceId))
   const fresh = page.fresh && !page.error && page.data?.source_id === source?.id && page.data?.current_identity_epoch === source?.identity_epoch && snapshot.sources?.fresh && !source?.archived
-  const managed = snapshot.nodes.data?.filter(node => node.protocol === 'vless-reality' && node.enabled !== false && snapshot.resources.data?.some(resource => resource.kind === 'direct' && resource.id === node.id && resource.available) && snapshot.servers.data?.some(server => server.id === node.server_id && server.enabled)) ?? []
+  const managed = snapshot.nodes.data?.filter(node => node.protocol === 'vless-reality' && node.enabled !== false && snapshot.resources.data?.some(resource => resource.kind === 'direct' && resource.id === node.id && resource.available) && snapshot.servers.data?.some(server => server.id === node.server_id && canConfigureServer(server))) ?? []
   const count = managedIds.length + externalIds.length
   const [error, setError] = useState('')
   return <details className="my-4 rounded-lg border p-3.5 [&[open]>summary]:mb-5"><summary className="cursor-pointer text-sm font-semibold">多选出口，明确展开为独立链路</summary><p className="text-muted-foreground mt-3 text-xs leading-relaxed">复用共享路径中的中间段，为每个所选出口生成一行；不组合出笛卡尔积。展开会替换当前预览行并清空监听端口，每行仍可单独编辑。</p>

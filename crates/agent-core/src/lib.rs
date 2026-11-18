@@ -6,6 +6,7 @@ mod release_test_support;
 
 mod admission;
 pub mod artifacts;
+pub mod bundled;
 pub mod config;
 pub mod fake;
 pub mod fleet;

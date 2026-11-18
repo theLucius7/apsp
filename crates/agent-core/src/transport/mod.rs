@@ -33,6 +33,25 @@ use tokio::{
 };
 
 #[derive(Clone)]
+pub(super) struct BundleStatus {
+    pub components: Arc<BTreeMap<String, String>>,
+    pub component_digests: Arc<BTreeMap<String, String>>,
+    pub ready: Arc<AtomicBool>,
+    pub error: Arc<Mutex<Option<String>>>,
+}
+
+impl Default for BundleStatus {
+    fn default() -> Self {
+        Self {
+            components: Arc::new(BTreeMap::new()),
+            component_digests: Arc::new(BTreeMap::new()),
+            ready: Arc::new(AtomicBool::new(true)),
+            error: Arc::new(Mutex::new(None)),
+        }
+    }
+}
+
+#[derive(Clone)]
 struct Runtime {
     state: SharedState,
     modules: Arc<Vec<String>>,
@@ -40,6 +59,7 @@ struct Runtime {
     connected: Arc<AtomicBool>,
     public_ips: Arc<Vec<String>>,
     agent_version: &'static str,
+    bundle: BundleStatus,
     retirement: Option<Arc<crate::retirement::Retirement>>,
     cancellation: Option<Arc<diagnostics::cancellation::CancellationControl>>,
     runtime_control: Option<runtime_control::Control>,
@@ -59,6 +79,8 @@ impl Runtime {
             snapshot.static_info.clone()
         };
         info.agent_version = Some(self.agent_version.into());
+        info.components = self.bundle.components.as_ref().clone();
+        info.component_digests = self.bundle.component_digests.as_ref().clone();
         info.ip_addresses = crate::telemetry::normalized_addresses(
             info.ip_addresses
                 .iter()
@@ -84,12 +106,14 @@ impl Runtime {
                     .chain(discovered),
             );
         }
+        let mut applied_runtime_version = None;
         for module in self.modules.iter() {
             if let Some(prepared) = state.get_json::<Prepared>(&format!("applied:{module}"))? {
-                info.runtime_version = Some(prepared.spec.kernel_version);
+                applied_runtime_version = Some(prepared.spec.kernel_version);
                 break;
             }
         }
+        info.runtime_version = applied_runtime_version;
         Ok(Some(info))
     }
 
@@ -131,15 +155,67 @@ pub async fn run_with_diagnostics(
     services: Arc<dyn ServiceManager>,
     agent_version: &'static str,
 ) -> Result<()> {
+    run_with_components(
+        config,
+        adapters,
+        diagnostics,
+        crate::bundled::BundledComponents::default(),
+        privileged,
+        services,
+        agent_version,
+    )
+    .await
+}
+
+pub async fn run_with_components(
+    config: Config,
+    adapters: Vec<Arc<dyn Adapter>>,
+    diagnostics: Vec<Arc<dyn DiagnosticAdapter>>,
+    bundled: crate::bundled::BundledComponents,
+    privileged: Arc<dyn Privileged>,
+    services: Arc<dyn ServiceManager>,
+    agent_version: &'static str,
+) -> Result<()> {
     config.validate()?;
+    crate::bundled::validate_components(&bundled)?;
+    let self_contained = !bundled.is_empty();
     // Diagnostic-only Agents still own managed jobs and must recover them.
     // Check a truly module-free mode before reserving or opening local state.
-    if adapters.is_empty() && diagnostics.is_empty() {
+    if adapters.is_empty() && diagnostics.is_empty() && bundled.is_empty() {
         crate::retirement::ensure_monitor_only_allowed(&config)?;
     }
+    let diagnostics: Vec<Arc<dyn DiagnosticAdapter>> = if self_contained {
+        diagnostics
+            .into_iter()
+            .filter(|adapter| {
+                bundled
+                    .tools
+                    .contains_key(&adapter.describe().artifact_name)
+            })
+            .collect()
+    } else {
+        diagnostics
+    };
     // Reserve the instance before inspecting or recovering another process's intents.
     let listener = status::bind(&config.status_socket).await?;
     let state = Arc::new(Mutex::new(State::open(&config.state_db)?));
+    let adapters: Vec<Arc<dyn Adapter>> = if self_contained {
+        let locked = state.locked()?;
+        let mut retained = Vec::new();
+        for adapter in adapters {
+            let module = adapter.describe().module;
+            if bundled.runtimes.contains_key(&module)
+                || locked
+                    .get_json::<Prepared>(&format!("applied:{module}"))?
+                    .is_some()
+            {
+                retained.push(adapter);
+            }
+        }
+        retained
+    } else {
+        adapters
+    };
     let retirement = Arc::new(crate::retirement::Retirement::new(
         config.clone(),
         state.clone(),
@@ -150,22 +226,31 @@ pub async fn run_with_diagnostics(
     retirement.recover_completion().await?;
     let identity = identity::load(&config)?;
     let mut modules = Vec::new();
-    let supports_validation = adapters
-        .iter()
-        .any(|adapter| adapter.supports_dependency_validation());
+    let mut advertised_modules = Vec::new();
+    let supports_validation = adapters.iter().any(|adapter| {
+        (!self_contained || bundled.runtimes.contains_key(&adapter.describe().module))
+            && adapter.supports_dependency_validation()
+    });
     let fleet_descriptors = adapters.iter().map(|adapter| adapter.describe()).collect();
     let mut reconcilers = Vec::new();
     for adapter in adapters {
         let module = adapter.describe().module;
         anyhow::ensure!(!modules.contains(&module), "duplicate adapter module");
         modules.push(module.clone());
-        let reconciler = Arc::new(Reconciler::new(
+        let mut builder = Reconciler::new(
             config.clone(),
             state.clone(),
             adapter,
             privileged.clone(),
             services.clone(),
-        ));
+        );
+        if let Some(item) = bundled.runtimes.get(&module) {
+            advertised_modules.push(module.clone());
+            builder = builder.with_bundled_runtime(item.clone());
+        } else if !self_contained {
+            advertised_modules.push(module.clone());
+        }
+        let reconciler = Arc::new(builder);
         if !retirement.requested()
             && let Err(error) = reconciler.recover().await
         {
@@ -176,16 +261,37 @@ pub async fn run_with_diagnostics(
         }
         reconcilers.push((module, reconciler));
     }
-    let mut capabilities = modules.clone();
+    let mut components = BTreeMap::new();
+    let mut component_digests = BTreeMap::new();
+    let self_exe_sha256 = if self_contained {
+        Some(crate::bundled::current_agent_sha256()?)
+    } else {
+        crate::bundled::current_agent_sha256().ok()
+    };
+    if let Some(agent_sha) = &self_exe_sha256 {
+        component_digests.insert("agent".into(), agent_sha.clone());
+    }
+    for item in bundled.runtimes.values().chain(bundled.tools.values()) {
+        components.insert(item.component_name.clone(), item.version.clone());
+        if let Some(digest) = crate::bundled::bundle_digest(item)? {
+            component_digests.insert(item.component_name.clone(), digest);
+        } else if let Some(agent_sha) = &self_exe_sha256 {
+            component_digests.insert(item.component_name.clone(), agent_sha.clone());
+        }
+    }
+    let mut capabilities = advertised_modules.clone();
+    if self_contained {
+        capabilities.push(apsp_protocol::SELF_CONTAINED_AGENT_CAPABILITY.into());
+    }
     capabilities.extend(crate::fleet::capabilities(&config));
-    let exact_runtime_supported = !reconcilers.is_empty() && services.supports_runtime_checkpoint();
+    let exact_runtime_supported =
+        !advertised_modules.is_empty() && services.supports_runtime_checkpoint();
     if exact_runtime_supported {
         capabilities.push(apsp_protocol::RUNTIME_CHECKPOINT_CAPABILITY.into());
         capabilities.push(apsp_protocol::RUNTIME_RECOVERY_BARRIER_CAPABILITY.into());
-        if reconcilers
-            .iter()
-            .any(|(_, reconciler)| reconciler.supports_runtime_probe())
-        {
+        if reconcilers.iter().any(|(m, reconciler)| {
+            advertised_modules.contains(m) && reconciler.supports_runtime_probe()
+        }) {
             capabilities.push(apsp_protocol::RUNTIME_PATH_PROBE_CAPABILITY.into());
         }
     }
@@ -197,7 +303,7 @@ pub async fn run_with_diagnostics(
     if admission_target.is_some() {
         capabilities.push(apsp_protocol::RUNTIME_ADMISSION_CAPABILITY.into());
     }
-    if !modules.is_empty() {
+    if !advertised_modules.is_empty() {
         capabilities.push(apsp_protocol::RUNTIME_OPERATIONS_CAPABILITY.into());
         capabilities.push(apsp_protocol::RUNTIME_SESSIONS_CAPABILITY.into());
         capabilities.push(apsp_protocol::release::VERSIONED_RUNTIME_FILES_CAPABILITY.into());
@@ -236,7 +342,7 @@ pub async fn run_with_diagnostics(
     capabilities.extend(
         diagnostics
             .iter()
-            .map(|adapter| format!("diagnostic:{}", adapter.describe().plugin_name)),
+            .map(|adapter| format!("diagnostic:{}", adapter.describe().artifact_name)),
     );
     let (client_tx, client_rx) = watch::channel::<Option<Arc<PanelClient>>>(None);
     let (trigger_tx, trigger_rx) = mpsc::channel(1);
@@ -255,7 +361,7 @@ pub async fn run_with_diagnostics(
                 identity.server_id,
                 diagnostics
                     .iter()
-                    .map(|adapter| adapter.describe().plugin_name)
+                    .map(|adapter| adapter.describe().artifact_name)
                     .collect(),
             )
             .with_outgoing(outgoing_tx.clone()),
@@ -267,6 +373,29 @@ pub async fn run_with_diagnostics(
     collection_control.enabled = !retirement.requested();
     let sampling =
         crate::telemetry::cache::Sampling::start(privileged.clone(), collection_control)?;
+    let mut sync_reconcilers = Vec::new();
+    let mut await_panel_intent = false;
+    if !retirement.requested() {
+        for (module, reconciler) in &reconcilers {
+            match reconciler.startup_readiness_plan().await? {
+                crate::reconcile::StartupPlan::Idle => {}
+                crate::reconcile::StartupPlan::SyncDesired => {
+                    sync_reconcilers.push((module.clone(), reconciler.clone()));
+                }
+                crate::reconcile::StartupPlan::AwaitPanelIntent => {
+                    await_panel_intent = true;
+                }
+            }
+        }
+    }
+    let initial_ready =
+        retirement.requested() || (sync_reconcilers.is_empty() && !await_panel_intent);
+    let bundle_status = BundleStatus {
+        components: Arc::new(components),
+        component_digests: Arc::new(component_digests),
+        ready: Arc::new(AtomicBool::new(initial_ready)),
+        error: Arc::new(Mutex::new(None)),
+    };
     let runtime = Runtime {
         state: state.clone(),
         modules: Arc::new(modules),
@@ -274,6 +403,7 @@ pub async fn run_with_diagnostics(
         connected: Arc::new(AtomicBool::new(false)),
         public_ips: Arc::new(config.public_ips.clone()),
         agent_version,
+        bundle: bundle_status.clone(),
         retirement: Some(retirement.clone()),
         cancellation: cancellation.clone(),
         runtime_control: Some(runtime_control),
@@ -281,6 +411,43 @@ pub async fn run_with_diagnostics(
         telemetry: sampling.snapshots.clone(),
     };
     let mut tasks = JoinSet::new();
+    if !sync_reconcilers.is_empty() {
+        let all_reconcilers = reconcilers.clone();
+        let startup_bundle = bundle_status.clone();
+        let startup_retirement = retirement.clone();
+        tasks.spawn(async move {
+            let _gate = startup_retirement.gate.read().await;
+            if !startup_retirement.requested() {
+                for (module, reconciler) in &sync_reconcilers {
+                    if let Err(error) = reconciler.ensure_startup_desired_runtime().await {
+                        tracing::error!(
+                            %module,
+                            %error,
+                            "startup bundled runtime synchronization failed"
+                        );
+                        if let Ok(mut slot) = startup_bundle.error.lock() {
+                            *slot = Some(format!("{error:#}"));
+                        }
+                        tokio::time::sleep(Duration::from_millis(250)).await;
+                        return Err(error);
+                    }
+                }
+                let mut all_ready = true;
+                for (_, reconciler) in &all_reconcilers {
+                    if !reconciler.satisfies_trial_readiness().await? {
+                        all_ready = false;
+                        break;
+                    }
+                }
+                if all_ready {
+                    startup_bundle.ready.store(true, Ordering::Release);
+                }
+            } else {
+                startup_bundle.ready.store(true, Ordering::Release);
+            }
+            std::future::pending::<Result<()>>().await
+        });
+    }
     tasks.spawn(runtime_control::run(
         reconcilers.clone(),
         runtime.clone(),
@@ -342,7 +509,8 @@ pub async fn run_with_diagnostics(
         diagnostics,
         privileged,
         services,
-    )?;
+    )?
+    .with_bundled_tools(bundled.tools);
     let diagnostic_worker = if let Some(control) = cancellation {
         tasks.spawn(control.clone().run(client_rx.clone(), retirement.clone()));
         diagnostic_worker.with_cancellations(control)

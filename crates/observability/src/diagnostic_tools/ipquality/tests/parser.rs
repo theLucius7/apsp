@@ -1,5 +1,5 @@
 use super::super::*;
-use super::fixtures::{HASH, IP, body, parse_body};
+use super::fixtures::{HASH, IP, body, chapter, job, legacy_job, parse_body};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -282,4 +282,110 @@ fn typed_saved_node_fields_do_not_gain_meaning_from_unknown_labels_or_types() {
     let validated = validate_cached_fields(&database.database, fields);
     assert_eq!(validated.len(), database.fields.len());
     assert!(validated.iter().all(|field| field.kind.is_some()));
+}
+
+#[test]
+fn frozen_signed_bundle_and_live_verification_are_required_without_legacy_downgrade() {
+    let id = Uuid::new_v4();
+    let valid_job = job(id);
+    let capabilities = json!([CAPABILITY]);
+    assert!(IpQualityTool.start_denial(&valid_job).is_none());
+    assert!(IpQualityTool.can_dispatch(&valid_job, &capabilities));
+
+    let legacy = legacy_job(id);
+    assert_eq!(
+        IpQualityTool.start_denial(&legacy),
+        Some(LEGACY_PROOF_DENIAL)
+    );
+    assert!(!IpQualityTool.can_dispatch(&legacy, &capabilities));
+
+    let update = chapter(id, body(id, 1000), 1000, 1, true);
+    let legacy_ctx = SectionContext {
+        server_id: 1,
+        job: &legacy,
+        created_at: 1000,
+        expires_at: 1600,
+        job_generation: 1,
+        live_verified: false,
+    };
+    assert!(result::parse(&legacy_ctx, &update).is_ok());
+    assert!(
+        result::parse(
+            &SectionContext {
+                live_verified: true,
+                ..legacy_ctx
+            },
+            &update,
+        )
+        .is_err()
+    );
+    let mut forged_legacy_body = body(id, 1000);
+    forged_legacy_body["artifact_sha256"] =
+        json!("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+    assert!(result::parse(&legacy_ctx, &chapter(id, forged_legacy_body, 1000, 1, true)).is_err());
+    let mut unproved_legacy = legacy.clone();
+    unproved_legacy["artifact"]["proof"] = Value::Null;
+    assert!(
+        result::parse(
+            &SectionContext {
+                job: &unproved_legacy,
+                ..legacy_ctx
+            },
+            &update,
+        )
+        .is_err()
+    );
+
+    let unverified_ctx = SectionContext {
+        server_id: 1,
+        job: &valid_job,
+        created_at: 1000,
+        expires_at: 1600,
+        job_generation: 1,
+        live_verified: false,
+    };
+    assert!(result::parse(&unverified_ctx, &update).is_err());
+
+    let mut missing_bundle = valid_job.clone();
+    missing_bundle
+        .as_object_mut()
+        .unwrap()
+        .remove("agent_bundle");
+    assert!(IpQualityTool.start_denial(&missing_bundle).is_some());
+    for live_verified in [false, true] {
+        assert!(
+            result::parse(
+                &SectionContext {
+                    server_id: 1,
+                    job: &missing_bundle,
+                    created_at: 1000,
+                    expires_at: 1600,
+                    job_generation: 1,
+                    live_verified,
+                },
+                &update,
+            )
+            .is_err()
+        );
+    }
+
+    let mut mismatched_option = valid_job;
+    mismatched_option["options"]["expected_component_sha256"] =
+        json!("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+    assert!(IpQualityTool.start_denial(&mismatched_option).is_some());
+    assert!(
+        result::parse(
+            &SectionContext {
+                server_id: 1,
+                job: &mismatched_option,
+                created_at: 1000,
+                expires_at: 1600,
+                job_generation: 1,
+                live_verified: true,
+            },
+            &update,
+        )
+        .is_err()
+    );
+    assert_eq!(HASH.len(), 64);
 }

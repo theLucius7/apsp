@@ -15,7 +15,7 @@
 | `tests/` | 仓库工具的 Python 回归；Rust 和前端测试各自随所属代码放置 |
 | `docs/` | 使用说明、接口契约、ADR、验收记录与证据 |
 | `.github/workflows/` | 远端构建和验证定义；当前暂停，不因本轮整理恢复 |
-| `PROGRESS.md` | 历史完成项、证据和未验证范围；保留既有记录与链接 |
+| `PROGRESS.md` | 近期交付、集中验证结果、已知阻塞与待执行生产步骤；逐步历史日志保存在 Git 历史 |
 
 `target/`、`web/node_modules/` 和本机临时目录属于忽略的本地状态，不作为源码整理对象。数据库仅维护当前基线，历史开发库手动重建，见 [ADR 0122](adr/0122-unreleased-schema-baseline.md)；公开安装脚本和签名制品结构仍按发布约定管理。
 
@@ -35,8 +35,8 @@
 | `observability` | 观测领域：遥测与历史、网卡计数与矫正、拨测与延迟检测、共用诊断任务服务与诊断工具（IP 质量、NodeQuality、TCP 质量、网络检测）、告警规则与事件、故障事件、服务器健康与事件时间线、统计与看板、中国可达性、云事件通知（`cloud_notices`）；直接调用流量服务的运行活动；诊断工具的代码在 `diagnostic_tools/`，IPQuality 与 NodeQuality 的打包脚本、策略与上游锁定文件在 `upstream/`，签名制品与引导脚本里仍按原名 `plugins/...` 记录 |
 | `operations` | 作业领域：远程命令、终端、固定设备操作及其核对、运行时操作，作业、计划、维护窗口与有界自动处置，Agent 的自更新检查（`agent_updates`），面板备份的计划、执行与恢复记录（`backups/`），云的带宽变更、启停、换 IP 与账号刷新（`cloud/`）；排在依赖顺序最后，直接调用前面的领域 |
 | `traffic` | 流量服务领域：节点、链路、外部来源与节点库，服务器运行时的配置编译与发布、部署检查与发布批次、运行时控制与校验，Nexus 兼容桥的流量部分（`nexus_nodes/`）；用户的限速、设备数与运维记录经自己声明的 `users` 接口由服务权益回答 |
-| `access` | 服务权益领域：代理用户、策略组与套餐、资格与配额、订阅与专属地址、成员门户与账号、用户限速与会话、代理运维流程（预览与应用）、Nexus 兼容（`nexus/`：兼容桥 `bridge` 与设备会话 `sessions`，兼容桥的表只在 `bridge` 中出现）；排在流量服务之后，直接调用它 |
-| `panel` | 应用：组合平台与各领域（`domains`：一张路由清单、一张后台任务清单）、接线依赖倒置接口（`wiring`）、运行跨流量服务与服务权益的代理发布周期（`publisher`）与 30 秒维护循环（`maintenance`）、组合云页面总览与全局搜索（`cloud_overview`、`search`）、把旧接口地址改写到现地址（`moved_paths`）、启动服务与后台任务；保存唯一的当前数据库初始化 SQL。只导出自己定义的内容（`router`、`state`、`domains`、`maintenance`、`publisher`）；平台与各领域经各自的 crate 使用（`apsp_panel_host`、`apsp_governance`、`apsp_traffic` 等），不再有兼容的再导出 |
+| `access` | 服务权益领域：代理用户、策略组与套餐、资格与配额、代理用量账本与统计聚合（`usage/statistics.rs`）、订阅与专属地址、成员门户与账号、用户限速与会话、代理运维流程（预览与应用）、Nexus 兼容与成员原生采用（`nexus/`：兼容桥 `bridge`、原生采用 `adoption` 与设备会话 `sessions`）；排在流量服务之后，直接调用它 |
+| `panel` | 应用：组合平台与各领域（`domains`：一张路由清单、一张后台任务清单）、接线依赖倒置接口（`wiring`）、运行跨流量服务与服务权益的代理发布周期（`publisher`）与 30 秒维护循环（`maintenance`）、组合云页面总览、全局搜索与系统健康（`cloud_overview`、`search`、`system_health`）、精确改写永久保留的外部续费日历订阅地址（`moved_paths`）、启动服务与后台任务；保存唯一的当前数据库初始化 SQL。只导出自己定义的内容（`router`、`state`、`domains`、`maintenance`、`publisher`）；平台与各领域经各自的 crate 使用（`apsp_panel_host`、`apsp_governance`、`apsp_traffic` 等），不再有兼容的再导出 |
 | `agent-core` | 设备身份、传输、对账、持久状态、遥测、计量与制品；工作区依赖仅 `protocol`、`adapter-sdk` |
 | `adapter-sdk` | 无状态适配器接口与共享模型 |
 | `adapter-singbox`、`adapter-nodequality`、`adapter-ipquality`、`adapter-tcpquality` | 运行时或工具翻译；工作区依赖仅 `adapter-sdk` |
@@ -47,7 +47,7 @@
 
 ## 面板入口与领域接线
 
-面板分为平台、领域和应用三层（[ADR 0128](adr/0128-domain-architecture.md)、[ADR 0132](adr/0132-platform-only-host-and-domain-addresses.md)）。平台 `crates/panel-host` 只有技术模块：`state.rs` 创建共享状态，`shell.rs` 是 HTTP 外壳（健康检查、前端兜底与全局请求体限制），`ports.rs` 提供类型化接口的安装机制。`crates/panel/src/` 是应用层：`domains.rs` 按依赖顺序合并各领域的路由，加上云页面总览与全局搜索两个组合视图，并逐个守护后台任务；`lib.rs` 给外壳套上治理的权限守卫与专属地址网关，旧接口地址先由 `moved_paths.rs` 改写到现地址；`wiring.rs` 在启动时接线全部类型化接口；`maintenance.rs` 运行 30 秒维护循环；`main.rs` 启动服务。设备通道（传输、设备认证、会话与在线状态、协议分派）是资源的 `device_channel.rs`。治理的 `passkeys/` 提供共用 WebAuthn 验证、挑战和凭据存储，管理员包装在它的 `auth/`，代理用户入口、邀请和独立会话在 `crates/access` 的 `portal/`。
+面板分为平台、领域和应用三层（[ADR 0128](adr/0128-domain-architecture.md)、[ADR 0132](adr/0132-platform-only-host-and-domain-addresses.md)）。平台 `crates/panel-host` 只有技术模块：`state.rs` 创建共享状态，`shell.rs` 是 HTTP 外壳（健康检查、前端兜底与全局请求体限制），`ports.rs` 提供类型化接口的安装机制。`crates/panel/src/` 是应用层：`domains.rs` 按依赖顺序合并各领域的路由，加上云页面总览、全局搜索与系统健康等跨领域视图，并逐个守护后台任务；`lib.rs` 给外壳套上治理的权限守卫与专属地址网关，外部续费日历订阅旧地址 `/api/plugins/expenses/calendar.ics` 先由 `moved_paths.rs` 精确改写到 `/api/costs/calendar.ics`（普通 `/api/plugins/*` 控制台过渡改写已移除）；`wiring.rs` 在启动时接线全部类型化接口；`maintenance.rs` 运行 30 秒维护循环；`main.rs` 启动服务。设备通道（传输、设备认证、会话与在线状态、协议分派）是资源的 `device_channel.rs`。治理的 `passkeys/` 提供共用 WebAuthn 验证、挑战和凭据存储，管理员包装在它的 `auth/`，代理用户入口、邀请和独立会话在 `crates/access` 的 `portal/`。
 
 每个领域 crate 导出一个 `routes()`，登记自己的全部接口，路径写完整，不用前缀嵌套：
 
@@ -120,4 +120,4 @@ Hash URL 是书签与兼容入口，地址按 ADR 0126 的地址策略管理：�
 - 使用文档放在 `docs/`，新的设计决策追加 `docs/adr/`，验证记录放在 `docs/acceptance/` 并标明源码和未验证范围；更新相应索引。
 - 部署模板及生成入口有摘要、签名和旧版本依赖；通过既有生成工具更新，不按普通重复文件删除。生产数据、真实凭据和临时日志不进入仓库。
 
-现有脚本、安装入口和历史验收记录继续使用原路径；移动任何路径前先核对它的使用者（构建、发布、安装器清单、测试与检查器），见[工程整理 §2.3](redesign/08-engineering.md#23-包名不变下游引用不受影响承诺过强)。
+现有脚本、安装入口和历史验收记录继续使用原路径；移动任何路径前先核对它的使用者（构建、发布、安装器清单、测试与检查器），见[工程整理 §2.3](https://github.com/theLucius7/apsp/blob/8fb798b14761681607973604c0ba15e605e18b4c/docs/redesign/08-engineering.md#23-包名不变下游引用不受影响承诺过强)。

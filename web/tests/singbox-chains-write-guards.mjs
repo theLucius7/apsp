@@ -4,7 +4,7 @@ import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { resolve, extname, sep } from 'node:path'
-import { catalogNodeFixtures, catalogResourceFixtures, proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
+import { catalogNodeFixtures, catalogResourceFixtures, proxyResourceFixtures, runtimeServerFixture } from './proxy-resource-fixtures.mjs'
 
 // Exercise the actual dist; every API request is intercepted by an owned fixture.
 const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
@@ -35,8 +35,8 @@ try {
     const paths = ['ordered-proxy-resources', 'nodes', 'servers'].map(name => `${trafficApi}/${name}`)
     const baseNodes = [1, 2, 3].map(id => ({ id, server_id: id, name: `节点 ${id}`, enabled: true, protocol: 'vless-reality', public_host: 'proxy.example.com', port: 443, sni: 'www.example.com', public_key: 'TEST_ONLY', short_id: '0123abcd' }))
     let nodes = baseNodes.map(value => ({ ...value }))
-    const servers = [1, 2, 3].map(id => ({ id, name: `服务器 ${id}`, enabled: true, online: false, agent_supported: true, read_only: false, source: 'administrator' }))
-    const baseServers = servers.map(server => ({...server}))
+    const servers = [1, 2, 3].map(id => runtimeServerFixture(id, { online: false }))
+    const baseServers = structuredClone(servers)
     const previous = { id: 100, name: '保留的旧链路', entry_node_id: 3, exit_node_id: 2, available: true }
     let chains = [{ ...previous }]
     let nextId = 101
@@ -233,19 +233,19 @@ try {
       await enabled(creating.getByRole('button', { name: '创建未授权链路', exact: true }))
       await inspectDraft(creating)
     }
-    for (const change of ['missing-node', 'disabled-node', 'protocol', 'missing-server', 'disabled-server', 'chain-role']) {
+    for (const change of ['missing-node', 'disabled-node', 'protocol', 'missing-server', 'readonly-server', 'chain-role']) {
       if (change === 'missing-node') nodes = nodes.filter(node => node.id !== 1)
       if (change === 'disabled-node') nodes[0].enabled = false
       if (change === 'protocol') nodes[0].protocol = 'hysteria2'
       if (change === 'missing-server') servers[0].id = 99
-      if (change === 'disabled-server') servers[0].enabled = false
+      if (change === 'readonly-server') { servers[0].read_only = true; servers[0].source = 'nexus' }
       if (change === 'chain-role') chains.push({ id: 102, name: '并发创建的链路', entry_node_id: 1, exit_node_id: 2, available: true })
       const pathname = change.includes('server') ? `${trafficApi}/servers` : change === 'chain-role' ? `${trafficApi}/ordered-proxy-resources` : `${trafficApi}/nodes`
       const response = page.waitForResponse(response => new URL(response.url()).pathname === pathname && response.request().method() === 'GET' && response.status() === 200)
       await refreshLists(); await response
       await creating.getByRole('alert').filter({ hasText: change === 'chain-role' ? '链路身份已变更' : '已选节点已不可用' }).waitFor()
       await blockedCreate(creating)
-      nodes = baseNodes.map(value => ({ ...value })); servers[0].id = 1; servers[0].enabled = true
+      nodes = baseNodes.map(value => ({ ...value })); servers[0] = structuredClone(baseServers[0])
       chains = chains.filter(chain => chain.id !== 102)
       await refreshLists()
       await enabled(creating.getByRole('button', { name: '创建未授权链路', exact: true }))

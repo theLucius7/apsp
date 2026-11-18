@@ -145,7 +145,8 @@ jobs:
   agent-linux:
     name: Agent Linux ${{ matrix.libc }} (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
+    needs: runtime-linux
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -177,6 +178,10 @@ jobs:
       - uses: actions/checkout@v7.0.1
       - name: Compile only the deliberately public CI test trust root
         run: python3 scripts/ci-test-trust.py --github-env "$GITHUB_ENV"
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version: 1.26.8
+          cache: false
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -186,7 +191,41 @@ jobs:
       - name: Install compiler and fixture signature support
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends musl-tools build-essential binutils python3 python3-cryptography coreutils
+          sudo apt-get install -y --no-install-recommends ca-certificates curl tar gzip xz-utils musl-tools build-essential binutils python3 python3-cryptography coreutils
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: apsp-TEST_ONLY-runtime-linux-${{ matrix.libc }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/apsp-artifacts
+      - name: Prepare publicly available bundled Linux diagnostic inputs
+        # Ordinary PRs lack controlled IPQuality approval variables; supply the
+        # publicly verifiable NodeQuality (-r22) and Network Workbench bundles via
+        # the unified input script while official release.yml enforces all four.
+        env:
+          TARGET_ARCH: ${{ matrix.arch }}
+        run: |
+          install -d -m 0700 "$HOME/apsp-diag-inputs" "$HOME/apsp-diag-work" "$HOME/apsp-diag-work/bundled"
+          python3 tools/ci-run.py python3 tools/prepare-agent-linux-inputs.py prepare-bundled-tools \
+            --arch "$TARGET_ARCH" \
+            --artifact-root "$HOME/apsp-diag-inputs" \
+            --work-dir "$HOME/apsp-diag-work/bundled"
+          python3 - <<'PY'
+          import os, pathlib, shutil
+
+          arch = os.environ['TARGET_ARCH']
+          src = pathlib.Path.home() / 'apsp-diag-inputs'
+          dst = pathlib.Path(os.environ['RUNNER_TEMP']) / 'apsp-artifacts'
+          for name, version in (
+              ('nodequality', 'a92fca6c0067df29ddd03fdc2fee6f3000f64545-r22'),
+              ('network-workbench', '1.0.0'),
+          ):
+              archive = src / name / version / arch
+              if archive.is_symlink() or not archive.is_file() or archive.stat().st_size <= 0:
+                  raise SystemExit(f'Missing or invalid prepared input: {archive}')
+              target = dst / name / version / arch
+              target.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copy2(archive, target)
+          PY
+          rm -rf "$HOME/apsp-diag-inputs" "$HOME/apsp-diag-work"
       - name: Build and verify the static Agent on its native architecture
         if: matrix.libc == 'musl'
         run: bash tools/build-agent.sh '${{ matrix.arch }}' '${{ runner.temp }}/apsp-artifacts'
@@ -202,6 +241,8 @@ jobs:
         env:
           APSP_EXPECT_RUNTIME_LIBC: gnu
         run: python3 tools/ci-run.py python3 tools/agent-smoke.py 'target/${{ matrix.target }}/release/apsp-agent'
+      - name: Retain only the self-contained Agent artifact directory
+        run: rm -rf '${{ runner.temp }}/apsp-artifacts/sing-box' '${{ runner.temp }}/apsp-artifacts/nodequality' '${{ runner.temp }}/apsp-artifacts/network-workbench'
       - uses: actions/upload-artifact@v7.0.1
         with:
           name: apsp-TEST_ONLY-agent-linux-${{ matrix.libc }}-${{ matrix.arch }}
@@ -329,8 +370,12 @@ jobs:
           signer="$PWD/target/${{ matrix.target }}/debug/examples/ci-fixture-sign"
           if [ '${{ matrix.platform }}' = windows ]; then signer=$(cygpath -w "$signer.exe"); fi
           printf '%s\n' "APSP_CI_FIXTURE_SIGNER=$signer" >> "$GITHUB_ENV"
-      - name: Build, verify, and package the native Agent
+      - name: Build the pinned runtime for this platform
+        id: native-runtime-build
+        run: python tools/ci-run.py python tools/build-runtime-native.py '${{ matrix.platform }}-${{ matrix.arch }}' .ci-artifacts
+      - name: Build, verify, and package the self-contained native Agent
         id: native-agent-build
+        if: ${{ !cancelled() && steps.native-runtime-build.outcome == 'success' }}
         run: python tools/ci-run.py python tools/build-agent.py '${{ matrix.target }}' .ci-artifacts
       - name: Verify link publication under a restrictive umask
         if: matrix.platform == 'macos'
@@ -344,20 +389,15 @@ jobs:
           binary=target/${{ matrix.target }}/release/apsp-agent
           if [ '${{ matrix.platform }}' = windows ]; then binary="$binary.exe"; fi
           python tools/ci-run.py python tools/agent-smoke.py "$binary"
-      - name: Build the legacy service kernel for this platform
-        id: native-runtime-build
+      - name: Verify native service installation and self-contained runtime
         if: ${{ !cancelled() && steps.native-agent-build.outcome == 'success' }}
-        run: python tools/ci-run.py python tools/build-runtime-native.py '${{ matrix.platform }}-${{ matrix.arch }}' .ci-artifacts
-      - name: Verify native service installation and independent runtime
-        if: ${{ !cancelled() && steps.native-runtime-build.outcome == 'success' }}
         shell: bash
         run: |
           binary=target/${{ matrix.target }}/release/apsp-agent
-          runtime=.ci-artifacts/sing-box/1.14.4-apsp.2/${{ matrix.platform }}-${{ matrix.arch }}
           if [ '${{ matrix.platform }}' = windows ]; then
-            python tools/ci-run.py python tools/native-service-smoke.py "$binary.exe" "$runtime"
+            python tools/ci-run.py python tools/native-service-smoke.py "$binary.exe"
           else
-            sudo env CI=true GITHUB_ACTIONS=true "APSP_CI_FIXTURE_SIGNER=$APSP_CI_FIXTURE_SIGNER" "$(command -v python)" tools/ci-run.py "$(command -v python)" tools/native-service-smoke.py "$binary" "$runtime"
+            sudo env CI=true GITHUB_ACTIONS=true "APSP_CI_FIXTURE_SIGNER=$APSP_CI_FIXTURE_SIGNER" "$(command -v python)" tools/ci-run.py "$(command -v python)" tools/native-service-smoke.py "$binary"
           fi
       - uses: actions/upload-artifact@v7.0.1
         with:
@@ -410,12 +450,20 @@ jobs:
           cache-directories: ~/.cargo/bin
       - name: Install the reference cross compiler
         run: cargo install cross --git https://github.com/cross-rs/cross --rev 8c1a8aa4b661711f4b7b6ac07c2e8929ce2f7d27 --locked
-      - name: Cross compile using the FreeBSD 13 sysroot
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version: 1.26.8
+          cache: false
+      - name: Build the pinned runtime for FreeBSD
+        run: python3 tools/ci-run.py python3 tools/build-runtime-native.py 'freebsd-${{ matrix.arch }}' .ci-artifacts
+      - name: Cross compile the self-contained Agent using the FreeBSD 13 sysroot
         id: build
         env:
           AGENT_TARGET: ${{ matrix.target }}
+          # Cargo invokes crates/agent/build.rs from crates/agent inside the cross container.
+          APSP_EMBEDDED_SINGBOX_ARCHIVE: ../../.ci-artifacts/sing-box/1.14.4-apsp.2/freebsd-${{ matrix.arch }}
         run: |
-          cross build --locked --release --package apsp-agent --target "$AGENT_TARGET"
+          APSP_NATIVE_TCP_SOURCE_COMMIT=$(git rev-parse --verify HEAD) cross build --locked --release --package apsp-agent --target "$AGENT_TARGET"
           mkdir -p .ci-binaries
           cp "$CARGO_TARGET_DIR/$AGENT_TARGET/release/apsp-agent" .ci-binaries/apsp-agent
           python3 - <<'PY'
@@ -430,12 +478,6 @@ jobs:
           with Path(os.environ['GITHUB_OUTPUT']).open('a') as output:
               output.write(f'version={version}\n')
           PY
-      - uses: actions/setup-go@v7.0.0
-        with:
-          go-version: 1.26.8
-          cache: false
-      - name: Build the legacy service kernel for FreeBSD
-        run: python3 tools/ci-run.py python3 tools/build-runtime-native.py 'freebsd-${{ matrix.arch }}' .ci-artifacts
       - name: Verify the binary on FreeBSD ${{ matrix.release }}
         uses: vmactions/freebsd-vm@v1.5.8
         with:
@@ -463,7 +505,7 @@ jobs:
             # The arm64 VM is fully emulated on an x86 runner; sing-box cannot meet
             # the production 8 s health budget there. amd64 covers the runtime.
             if [ '${{ matrix.arch }}' = amd64 ]; then
-              env CI=true GITHUB_ACTIONS=true apsp-ci-python tools/ci-run.py apsp-ci-python tools/native-service-smoke.py .ci-binaries/apsp-agent .ci-artifacts/sing-box/1.14.4-apsp.2/freebsd-${{ matrix.arch }} || result=1
+              env CI=true GITHUB_ACTIONS=true apsp-ci-python tools/ci-run.py apsp-ci-python tools/native-service-smoke.py .ci-binaries/apsp-agent || result=1
             fi
             exit "$result"
       - uses: actions/upload-artifact@v7.0.1
@@ -543,11 +585,11 @@ jobs:
         with:
           path: ${{ runner.temp }}/apsp-runtime-artifacts
           key: ${{ steps.runtime-cache.outputs.cache-primary-key }}
-      - name: Run real installation, Reality traffic, and restart accounting
+      - name: Run self-contained installation, pure-monitoring, Reality traffic, and accounting
         run: |
           bash scripts/ci-real-e2e.sh \
             --agent-root '${{ runner.temp }}/apsp-agent' \
-            --runtime-root '${{ runner.temp }}/apsp-runtime-artifacts' \
+            --client-runtime-root '${{ runner.temp }}/apsp-runtime-artifacts' \
             --summary '${{ runner.temp }}/apsp-real-e2e-summary.json'
       - name: Publish only the allowlisted acceptance summary
         if: always()

@@ -1,12 +1,14 @@
+import type { Point } from '@/lib/chart-data'
+
 export type TrafficSample = { bucket_start: number; sampled_at: number; mainland_bytes: string; overseas_bytes: string }
 export type TrafficGroup = { seconds: number; from: number; to: number; samples: TrafficSample[] }
 export type TrafficHistory = { account_id: string; queried_at: number; groups: TrafficGroup[] }
 const month = (at: number) => new Date((at + 28800) * 1000).toISOString().slice(0, 7)
 const count = (value: string | undefined) => value && /^\d+$/.test(value) ? BigInt(value) : null
 
-export function trafficPoints(group: TrafficGroup, pool: 'mainland_bytes' | 'overseas_bytes', delta: boolean) {
+export function trafficPoints(group: TrafficGroup, pool: 'mainland_bytes' | 'overseas_bytes', delta: boolean): Point[] {
   const rows = new Map(group.samples.map(sample => [sample.bucket_start, sample]))
-  const points: { at: number; value: number | null }[] = []
+  const points: Point[] = []
   for (let at = group.from; at <= group.to; at += group.seconds) {
     const current = rows.get(at), previous = rows.get(at - group.seconds)
     let value = count(current?.[pool])

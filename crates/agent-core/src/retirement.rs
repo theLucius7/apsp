@@ -63,7 +63,7 @@ impl Retirement {
         for adapter in &adapters {
             let descriptor = adapter.describe();
             ensure!(
-                safe_component(&descriptor.plugin_name) && safe_component(&descriptor.module),
+                safe_component(&descriptor.artifact_name) && safe_component(&descriptor.module),
                 "invalid retirement adapter descriptor"
             );
         }
@@ -189,7 +189,7 @@ impl Retirement {
             let directory = self
                 .config
                 .runtime_root
-                .join(format!("{}@main", adapter.describe().plugin_name));
+                .join(format!("{}@main", adapter.describe().artifact_name));
             match std::fs::symlink_metadata(&directory) {
                 Ok(metadata) => {
                     ensure!(
@@ -255,7 +255,7 @@ impl Retirement {
             let directory = self
                 .config
                 .runtime_root
-                .join(format!("{}@main", adapter.describe().plugin_name));
+                .join(format!("{}@main", adapter.describe().artifact_name));
             match std::fs::symlink_metadata(&directory) {
                 Ok(_) => self.privileged.remove_managed_directory(&directory).await?,
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}

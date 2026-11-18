@@ -16,29 +16,145 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 async fn ready(panel: &TestPanel, server: i64) -> Result<()> {
-    sqlx::query("UPDATE servers SET static_info=static_info || '{\"os\":\"linux\"}'::jsonb,capabilities=$2,last_seen=$3 WHERE id=$1")
-        .bind(server).bind(json!(["diagnostic:nodequality","diagnostic:nodequality-modes","diagnostic:tcpquality","diagnostic:tcpquality-native-v1",apsp_protocol::DIAGNOSTIC_SECTIONS_CAPABILITY,apsp_protocol::DIAGNOSTIC_SERVICE_CAPABILITY,apsp_protocol::DIAGNOSTIC_CPU_CEILING_CAPABILITY,apsp_protocol::DIAGNOSTIC_COMPLETION_CAPABILITY,apsp_protocol::DIAGNOSTIC_CANCEL_CAPABILITY,apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY]))
-        .bind(apsp_protocol::now_timestamp()).execute(&panel.state.pool).await?;
+    use apsp_protocol::{
+        bundled::{
+            EmbeddedAgentManifest, EmbeddedComponentRecord, encode_embedded_agent_manifest_frame,
+        },
+        release::{ReleaseMetadata, canonical_asset_name},
+    };
+    use std::collections::BTreeMap;
+
+    let installer = b"#!/bin/sh\n# APSP_BOOTSTRAP_AGENT_SOURCE=preloaded-github-v1\nexit 0\n";
+    let binary = b"TEST_ONLY panel routing fixture; never executed";
+    let archive = release_fixture::archive("nodequality", binary)?;
+    let nodequality_sha = release_support::hash(&archive);
+    let node_ver = apsp_observability::diagnostics::TOOL_VERSION;
+
+    let mut embedded = BTreeMap::new();
+    embedded.insert(
+        "nodequality".into(),
+        EmbeddedComponentRecord {
+            format: "tar.gz".into(),
+            sha256: Some(nodequality_sha.clone()),
+            subcommand: None,
+            version: node_ver.into(),
+        },
+    );
+    embedded.insert(
+        "tcpquality".into(),
+        EmbeddedComponentRecord {
+            format: "agent_subcommand".into(),
+            sha256: None,
+            subcommand: Some("tcp-probe".into()),
+            version: TOOL_VERSION.into(),
+        },
+    );
+
     let mut artifacts = Vec::new();
-    for (name, version, binary_name) in [
-        (
-            "nodequality",
-            apsp_observability::diagnostics::TOOL_VERSION,
-            "nodequality",
-        ),
-        ("tcpquality", TOOL_VERSION, "apsp-tcp-probe"),
+    let mut amd64_sha = String::new();
+    for (target, rust_arch) in [
+        ("linux-musl-amd64", "x86_64"),
+        ("linux-musl-arm64", "aarch64"),
     ] {
-        let binary = b"TEST_ONLY panel routing fixture; never executed";
-        let archive = release_fixture::archive(binary_name, binary)?;
-        for arch in ["amd64", "arm64"] {
-            let mut entry =
-                release_support::entry(name, version, binary_name, "tar.gz", &archive, binary);
-            entry.arch = arch.into();
-            entry.asset_name = apsp_protocol::release::canonical_asset_name(&entry)?;
-            artifacts.push((entry, archive.clone()));
+        let manifest = EmbeddedAgentManifest {
+            schema: 1,
+            agent_version: "0.4.0".into(),
+            target_os: "linux".into(),
+            target_arch: rust_arch.into(),
+            target_env: "musl".into(),
+            components: embedded.clone(),
+        };
+        let frame = encode_embedded_agent_manifest_frame(&manifest).map_err(anyhow::Error::msg)?;
+        let mut agent_bytes = b"\x7fELF-tcpquality-agent-fixture ".to_vec();
+        agent_bytes.extend_from_slice(&frame);
+        let mut entry = release_support::entry(
+            "agent",
+            "0.4.0",
+            "apsp-agent",
+            "raw",
+            &agent_bytes,
+            &agent_bytes,
+        );
+        entry.arch = target.into();
+        entry.asset_name = canonical_asset_name(&entry)?;
+        if target == "linux-musl-amd64" {
+            amd64_sha = entry.binary_sha256.clone();
         }
+        artifacts.push((entry, agent_bytes));
     }
-    release_fixture::write_entries(&panel.state.config.data_dir, artifacts)?;
+
+    let mut proof = release_support::signed_release(artifacts.clone());
+    let mut metadata: ReleaseMetadata = serde_json::from_str(&proof.metadata_json)?;
+    metadata.tag = "agent-v0.4.0".into();
+    proof.metadata_json = format!("{}\n", serde_json::to_string(&metadata)?);
+    proof.checksums = proof
+        .checksums
+        .lines()
+        .map(|line| {
+            if line.ends_with("  release.json") {
+                format!(
+                    "{}  release.json\n",
+                    release_support::hash(proof.metadata_json.as_bytes())
+                )
+            } else if line.ends_with("  install.sh") {
+                format!("{}  install.sh\n", release_support::hash(installer))
+            } else {
+                format!("{line}\n")
+            }
+        })
+        .collect();
+    proof.signature = release_support::sign(proof.checksums.as_bytes());
+
+    let release_dir = panel
+        .state
+        .config
+        .data_dir
+        .join("artifacts/releases/agent-v0.4.0");
+    std::fs::create_dir_all(&release_dir)?;
+    release_support::install_proof(&release_dir, &proof);
+    std::fs::write(release_dir.join("install.sh"), installer)?;
+    for (entry, bytes) in artifacts {
+        let dir = release_dir.join(&entry.name).join(&entry.version);
+        std::fs::create_dir_all(&dir)?;
+        std::fs::write(dir.join(&entry.arch), bytes)?;
+    }
+
+    let now = apsp_protocol::now_timestamp();
+    sqlx::query(
+        "UPDATE servers SET static_info=static_info || $2::jsonb,static_info_received_at=$4,capabilities=$3,last_seen=$4 WHERE id=$1",
+    )
+    .bind(server)
+    .bind(json!({
+        "os": "linux",
+        "arch": "amd64",
+        "libc": "musl",
+        "agent_version": "0.4.0",
+        "components": {
+            "nodequality": node_ver,
+            "tcpquality": TOOL_VERSION,
+        },
+        "component_digests": {
+            "agent": amd64_sha,
+            "nodequality": nodequality_sha,
+            "tcpquality": amd64_sha,
+        },
+    }))
+    .bind(json!([
+        "diagnostic:nodequality",
+        "diagnostic:nodequality-modes",
+        "diagnostic:tcpquality",
+        "diagnostic:tcpquality-native-v1",
+        apsp_protocol::SELF_CONTAINED_AGENT_CAPABILITY,
+        apsp_protocol::DIAGNOSTIC_SECTIONS_CAPABILITY,
+        apsp_protocol::DIAGNOSTIC_SERVICE_CAPABILITY,
+        apsp_protocol::DIAGNOSTIC_CPU_CEILING_CAPABILITY,
+        apsp_protocol::DIAGNOSTIC_COMPLETION_CAPABILITY,
+        apsp_protocol::DIAGNOSTIC_CANCEL_CAPABILITY,
+        apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY,
+    ]))
+    .bind(now)
+    .execute(&panel.state.pool)
+    .await?;
     Ok(())
 }
 async fn probe(panel: &TestPanel, cookie: &str, server: i64, name: &str) -> Result<Value> {

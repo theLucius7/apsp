@@ -1,5 +1,8 @@
 use super::*;
+use apsp_protocol::release::canonical_path;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use uuid::Uuid;
 
 const MAX_INVENTORY: usize = 256 * 1024;
 const INVENTORY_FILE: &str = "inventory.json";
@@ -114,7 +117,12 @@ where
             files.push("install.sh".to_owned());
         }
         let mut parents = BTreeSet::new();
-        for entry in &verified.metadata().artifacts {
+        for entry in verified
+            .metadata()
+            .artifacts
+            .iter()
+            .filter(|entry| entry.name == "agent")
+        {
             let artifact = verified.artifact(&entry.name, &entry.version, &entry.arch)?;
             let selected = requested.contains(artifact.path());
             if !selected && !paths.contains(artifact.path()) {
@@ -122,7 +130,8 @@ where
             }
             let bytes = match old {
                 Some(release) => {
-                    existing_bytes(&release.directory.join(artifact.path()), MAX_ARTIFACT).await?
+                    existing_bytes(&release.directory.join(artifact.path()), MAX_AGENT_BINARY)
+                        .await?
                 }
                 None => None,
             };
@@ -172,7 +181,7 @@ where
                 let output = release.directory.join(&path);
                 let parent = output.parent().context("artifact parent")?;
                 ordinary_directory(parent, true).await?;
-                existing_bytes(&output, MAX_ARTIFACT).await?;
+                existing_bytes(&output, MAX_AGENT_BINARY).await?;
                 tokio::fs::rename(directory.join(&path), &output).await?;
                 sync_directory(parent).await?;
                 if let Some(component) = parent.parent()

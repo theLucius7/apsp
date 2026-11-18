@@ -1,6 +1,6 @@
 # ADR 0131：每类对象只留一套模型，按本质整合功能，去掉插件外壳
 
-状态：已接受（2026-11-09）。调整 [ADR 0128](0128-domain-architecture.md) 的迁移顺序与“后果”中接口前缀一条，取代[收敛方案](../redesign/07-convergence.md)的分阶段授权与[重新设计执行计划](../redesign/09-execution.md)的步骤顺序。
+状态：已接受（2026-11-09）。调整 [ADR 0128](0128-domain-architecture.md) 的迁移顺序与“后果”中接口前缀一条，取代[收敛方案](https://github.com/theLucius7/apsp/blob/8fb798b14761681607973604c0ba15e605e18b4c/docs/redesign/07-convergence.md)的分阶段授权与[重新设计执行计划](https://github.com/theLucius7/apsp/blob/8fb798b14761681607973604c0ba15e605e18b4c/docs/redesign/09-execution.md)的步骤顺序。
 
 2026-11-09 用户要求：“我打算激进修改 apsp……整合之前的功能，按照底层逻辑本质，重新划分规划，不要按照 plugin，按照本质修改。”随要求给出的参考方案：确定唯一模型，成批删除旧实现，直接修改调用方，再沿新结构加功能；允许内部接口、目录、表结构破坏性调整；兼容、发布治理与验证不再排在产品前面。
 
@@ -95,8 +95,8 @@ apsp 做的事只有一件：**把“谁可以在哪些服务器上使用什么�
 
 ## 取代与调整
 
-- [收敛方案](../redesign/07-convergence.md) §1 的“收口、迁移、收缩各自授权”：由第 1、6 条取代；§2、§3 中链路与外部来源的处理由第 3 条取代。
-- [重新设计执行计划](../redesign/09-execution.md) 的步骤 2–6 顺序：由第 5 条取代；步骤 2（发布衔接）降为按需修复。
+- [收敛方案](https://github.com/theLucius7/apsp/blob/8fb798b14761681607973604c0ba15e605e18b4c/docs/redesign/07-convergence.md) §1 的“收口、迁移、收缩各自授权”：由第 1、6 条取代；§2、§3 中链路与外部来源的处理由第 3 条取代。
+- [重新设计执行计划](https://github.com/theLucius7/apsp/blob/8fb798b14761681607973604c0ba15e605e18b4c/docs/redesign/09-execution.md) 的步骤 2–6 顺序：由第 5 条取代；步骤 2（发布衔接）降为按需修复。
 - [ADR 0128](0128-domain-architecture.md)：领域、依赖与写入规则不变；“后果”中 `/api/plugins/...` 不改名一条改为第 4 条；阶段 B2–F 的顺序并入第 5 条的步骤一。
 - [ADR 0126](0126-workspaces-language-and-addresses.md) §2.1 “插件中心改名需要用户确认”：已确认。
 

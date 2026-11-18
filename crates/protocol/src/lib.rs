@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+pub mod bundled;
 pub mod platform;
 pub mod runtime_operations;
 pub use runtime_operations::*;
@@ -25,6 +26,7 @@ pub use retirement::*;
 pub use runtime_admission::*;
 pub use runtime_control::*;
 pub mod release;
+pub use release::SELF_CONTAINED_AGENT_CAPABILITY;
 
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
@@ -293,6 +295,10 @@ pub struct StaticInfo {
     pub agent_version: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runtime_version: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub components: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub component_digests: BTreeMap<String, String>,
     #[serde(flatten, default)]
     pub extra: BTreeMap<String, Value>,
 }
@@ -402,7 +408,8 @@ pub struct Artifact {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModuleManifest {
     pub kernel_version: String,
-    pub artifact: Artifact,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artifact: Option<Artifact>,
     pub config_rev: Revision,
     pub bundle_url: String,
     pub bundle_sha256: String,

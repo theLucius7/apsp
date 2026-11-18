@@ -5,7 +5,7 @@ import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { extname, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
+import { proxyResourceFixtures, runtimeServerFixture } from './proxy-resource-fixtures.mjs'
 
 // TEST_ONLY read-only contract for the newly mounted UserDiagnostics resource.
 // Device state and sensitive template content remain explicitly unavailable.
@@ -45,7 +45,7 @@ try {
     const user = { id: 1, name: 'TEST_ONLY 原用户', subscription_token: 'TEST_ONLY', subscription_url: 'http://127.0.0.1/s/TEST_ONLY' }
     const node = { enabled: true, id: 1, name: 'TEST_ONLY 节点', server_id: 1, protocol: 'vless-reality', public_host: '127.0.0.1', port: 24443, sni: 'localhost', public_key: 'TEST_ONLY', short_id: '0123abcd' }
     const resource = { ...node, kind: 'direct', server_name: 'TEST_ONLY 服务器', role: 'direct', entry_node_id: null, tcp: true, udp: true, available: true, enabled: true, stage: 'direct', reference_count: 0, entry_eligible: true }
-    const servers = [{ id: 1, name: resource.server_name, enabled: true, online: true, read_only: false }]
+    const servers = [runtimeServerFixture(1, { name: resource.server_name })]
     const usage = { uplink: '10', downlink: '20', total: '30', by_user: [], by_node: [] }
     const hold = path => {
       let release

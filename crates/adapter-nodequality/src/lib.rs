@@ -260,7 +260,7 @@ impl DiagnosticAdapter for NodeQualityAdapter {
     }
     fn describe(&self) -> DiagnosticDescriptor {
         DiagnosticDescriptor {
-            plugin_name: "nodequality".into(),
+            artifact_name: "nodequality".into(),
             binary_name: "nodequality".into(),
         }
     }
@@ -289,7 +289,13 @@ impl DiagnosticAdapter for NodeQualityAdapter {
             )
             .await
             .context("diagnostic version verification timed out")??;
-            if !output.success || output.stdout.trim() != format!("nodequality {}", spec.version) {
+            let actual_version = output.stdout.trim();
+            let valid_runner_version = actual_version == format!("nodequality {}", spec.version)
+                || (mode.name == "ip"
+                    && spec.version == NODE_QUERY_VERSION
+                    && (actual_version == format!("nodequality {VERSION}")
+                        || actual_version == format!("nodequality {NATIVE_VERSION}")));
+            if !output.success || !valid_runner_version {
                 bail!("diagnostic artifact version verification failed");
             }
             let mut args = vec![

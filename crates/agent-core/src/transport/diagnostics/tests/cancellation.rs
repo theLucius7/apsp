@@ -103,7 +103,7 @@ async fn stop_failure_live_processes_and_remaining_mounts_require_confirmation_a
 }
 
 #[tokio::test]
-async fn foreign_device_plugin_and_corrupt_saved_unit_cannot_cancel_an_arbitrary_service()
+async fn foreign_device_tool_and_corrupt_saved_unit_cannot_cancel_an_arbitrary_service()
 -> Result<()> {
     let directory = Directory::new();
     let services = Arc::new(Services::new(JobStatus::Running));
@@ -113,7 +113,7 @@ async fn foreign_device_plugin_and_corrupt_saved_unit_cannot_cancel_an_arbitrary
     foreign.server_id = 8;
     assert!(control.request(foreign).is_err());
     let mut foreign = request(id);
-    foreign.job.plugin = "not-registered".into();
+    foreign.job.tool = "not-registered".into();
     assert!(control.request(foreign).is_err());
     for version in ["../outside", "/outside", ""] {
         let mut unsafe_target = request(id);
@@ -144,35 +144,84 @@ async fn foreign_device_plugin_and_corrupt_saved_unit_cannot_cancel_an_arbitrary
 }
 
 #[tokio::test]
-async fn cancelling_a_stalled_signed_artifact_download_interrupts_it_without_starting() -> Result<()>
-{
+async fn cancelling_a_stalled_preparation_interrupts_it_without_starting() -> Result<()> {
+    struct StalledAdapter {
+        entered: Arc<tokio::sync::Notify>,
+    }
+    impl DiagnosticAdapter for StalledAdapter {
+        fn describe(&self) -> DiagnosticDescriptor {
+            TestAdapter.describe()
+        }
+        fn prepare<'a>(
+            &'a self,
+            _spec: &'a DiagnosticSpec,
+            _privileged: &'a dyn Privileged,
+        ) -> BoxFuture<'a, ServiceJob> {
+            Box::pin(async move {
+                self.entered.notify_one();
+                std::future::pending().await
+            })
+        }
+        fn collect<'a>(
+            &'a self,
+            spec: &'a DiagnosticSpec,
+        ) -> BoxFuture<'a, Option<DiagnosticOutput>> {
+            TestAdapter.collect(spec)
+        }
+    }
+
     let directory = Directory::new();
+    let config = directory.config();
+    let state = Arc::new(Mutex::new(State::open(&config.state_db)?));
     let services = Arc::new(Services::new(JobStatus::Missing));
-    let (worker, control) = controlled(&directory, services.clone())?;
+    let control = Arc::new(CancellationControl::new(
+        state.clone(),
+        7,
+        vec!["diagnostic-fixture".into()],
+    ));
+    let entered = Arc::new(tokio::sync::Notify::new());
+    let mut job = job(Uuid::new_v4());
+    job.artifact = None;
+    let worker = DiagnosticWorker::new(
+        config,
+        state,
+        vec![Arc::new(StalledAdapter {
+            entered: entered.clone(),
+        })],
+        Arc::new(FakeResourceOps::new(Arc::new(SystemOps))),
+        services.clone(),
+    )?
+    .with_bundled_tools(BTreeMap::from([(
+        "diagnostic-fixture".into(),
+        crate::bundled::BundledItem {
+            component_name: "diagnostic-fixture".into(),
+            binary_name: "runner".into(),
+            version: "v1".into(),
+            payload: crate::bundled::BundledPayload::AgentSubcommand {
+                subcommand: "probe".into(),
+            },
+        },
+    )]))
+    .with_cancellations(control.clone());
+    worker.save(&Checkpoint::Preparing(job.clone()))?;
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let base = format!("http://{}", listener.local_addr()?);
-    let mut job = super::deadline::cached_job(&directory, Uuid::new_v4())?;
-    job.artifact.url = job.artifact.url.replacen("http://127.0.0.1:1", &base, 1);
-    std::fs::remove_dir_all(worker.config.install_root.join("diagnostic-fixture"))?;
-    worker.save(&Checkpoint::Preparing(job.clone()))?;
-    let (received, started) = tokio::sync::oneshot::channel();
     let server = tokio::spawn(async move {
-        let (mut socket, _) = listener.accept().await?;
-        let mut bytes = [0; 8192];
-        ensure!(
-            socket.read(&mut bytes).await? > 0,
-            "download request is empty"
-        );
-        let _ = received.send(());
-        std::future::pending::<Result<()>>().await
+        while let Ok((mut socket, _)) = listener.accept().await {
+            let mut bytes = [0; 4096];
+            let _ = socket.read(&mut bytes).await;
+            let _ = socket
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n[]")
+                .await;
+        }
     });
-    let client =
-        PanelClient::new(&base, "test-session")?.with_trusted_keys(release_support::trusted_keys());
+    let client = PanelClient::new(&base, "test-session")?;
+    let notified = entered.notified();
     let polling = tokio::spawn(async move {
         worker.monitored_tick(Some(&client)).await?;
         Ok::<_, anyhow::Error>(worker)
     });
-    tokio::time::timeout(Duration::from_secs(2), started).await??;
+    tokio::time::timeout(Duration::from_secs(2), notified).await?;
     control.request(DiagnosticCancelRequest { server_id: 7, job })?;
     let worker = tokio::time::timeout(Duration::from_secs(2), polling).await???;
     assert!(worker.active()?.is_none());
@@ -268,7 +317,7 @@ async fn retirement_during_cancellation_http_cannot_restore_cleared_state() -> R
                 &vec![DiagnosticCancelResult {
                     server_id: 7,
                     id,
-                    plugin: "diagnostic-fixture".into(),
+                    tool: "diagnostic-fixture".into(),
                     confirmed: true,
                     report: None,
                     error: None,

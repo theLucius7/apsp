@@ -15,22 +15,111 @@ use serde_json::{Value, json};
 use sqlx::PgPool;
 use std::collections::BTreeMap;
 
+const MODERN_INSTALLER: &[u8] =
+    b"#!/bin/sh\n# APSP_BOOTSTRAP_AGENT_SOURCE=preloaded-github-v1\nexit 0\n";
+
+fn signed_nodequality_agent() -> Result<(
+    Vec<(apsp_protocol::release::ReleaseArtifact, Vec<u8>)>,
+    apsp_protocol::release::ReleaseProof,
+    Value,
+    Value,
+)> {
+    use apsp_protocol::{
+        bundled::{
+            EmbeddedAgentManifest, EmbeddedComponentRecord, encode_embedded_agent_manifest_frame,
+        },
+        release::{ReleaseMetadata, canonical_asset_name},
+    };
+
+    let binary = b"fixed diagnostic fixture";
+    let archive = release_fixture::archive("nodequality", binary)?;
+    let nodequality_sha = release_support::hash(&archive);
+    let mut embedded = BTreeMap::new();
+    embedded.insert(
+        "nodequality".into(),
+        EmbeddedComponentRecord {
+            format: "tar.gz".into(),
+            sha256: Some(nodequality_sha.clone()),
+            subcommand: None,
+            version: diagnostics::TOOL_VERSION.into(),
+        },
+    );
+
+    let mut artifacts = Vec::new();
+    let mut amd64_sha = String::new();
+    for (target, rust_arch) in [
+        ("linux-musl-amd64", "x86_64"),
+        ("linux-musl-arm64", "aarch64"),
+    ] {
+        let manifest = EmbeddedAgentManifest {
+            schema: 1,
+            agent_version: "0.4.0".into(),
+            target_os: "linux".into(),
+            target_arch: rust_arch.into(),
+            target_env: "musl".into(),
+            components: embedded.clone(),
+        };
+        let frame = encode_embedded_agent_manifest_frame(&manifest).map_err(anyhow::Error::msg)?;
+        let mut agent_bytes = b"\x7fELF-diagnostic-sections-agent ".to_vec();
+        agent_bytes.extend_from_slice(&frame);
+        let mut entry = release_support::entry(
+            "agent",
+            "0.4.0",
+            "apsp-agent",
+            "raw",
+            &agent_bytes,
+            &agent_bytes,
+        );
+        entry.arch = target.into();
+        entry.asset_name = canonical_asset_name(&entry)?;
+        if target == "linux-musl-amd64" {
+            amd64_sha = entry.binary_sha256.clone();
+        }
+        artifacts.push((entry, agent_bytes));
+    }
+
+    let mut proof = release_support::signed_release(artifacts.clone());
+    let mut metadata: ReleaseMetadata = serde_json::from_str(&proof.metadata_json)?;
+    metadata.tag = "agent-v0.4.0".into();
+    proof.metadata_json = format!("{}\n", serde_json::to_string(&metadata)?);
+    proof.checksums = proof
+        .checksums
+        .lines()
+        .map(|line| {
+            if line.ends_with("  release.json") {
+                format!(
+                    "{}  release.json\n",
+                    release_support::hash(proof.metadata_json.as_bytes())
+                )
+            } else if line.ends_with("  install.sh") {
+                format!("{}  install.sh\n", release_support::hash(MODERN_INSTALLER))
+            } else {
+                format!("{line}\n")
+            }
+        })
+        .collect();
+    proof.signature = release_support::sign(proof.checksums.as_bytes());
+
+    let components = json!({ "nodequality": diagnostics::TOOL_VERSION });
+    let digests = json!({
+        "agent": amd64_sha,
+        "nodequality": nodequality_sha,
+    });
+    Ok((artifacts, proof, components, digests))
+}
+
 async fn capable(panel: &TestPanel, server_id: i64) -> Result<()> {
-    sqlx::query(
-        "UPDATE servers SET static_info=static_info || '{\"os\":\"linux\"}'::jsonb WHERE id=$1",
-    )
-    .bind(server_id)
-    .execute(&panel.state.pool)
-    .await?;
+    let (_, _, components, digests) = signed_nodequality_agent()?;
     device_channel::process_message(
         &panel.state,
         server_id,
         Message::Hello(Hello {
-            agent_version: "diagnostic-test".into(),
+            agent_version: "0.4.0".into(),
             protocol_version: PROTOCOL_VERSION,
             capabilities: vec![
                 "diagnostic:nodequality".into(),
                 "diagnostic:nodequality-modes".into(),
+                apsp_protocol::SELF_CONTAINED_AGENT_CAPABILITY.into(),
                 apsp_protocol::DIAGNOSTIC_SECTIONS_CAPABILITY.into(),
                 apsp_protocol::DIAGNOSTIC_SERVICE_CAPABILITY.into(),
                 apsp_protocol::DIAGNOSTIC_CPU_CEILING_CAPABILITY.into(),
@@ -40,21 +129,41 @@ async fn capable(panel: &TestPanel, server_id: i64) -> Result<()> {
             applied: BTreeMap::new(),
         }),
     )
-    .await
+    .await?;
+    let now = apsp_protocol::now_timestamp();
+    sqlx::query(
+        "UPDATE servers SET static_info=static_info || $2::jsonb,static_info_received_at=$3,last_seen=$3 WHERE id=$1",
+    )
+    .bind(server_id)
+    .bind(json!({
+        "os": "linux",
+        "arch": "amd64",
+        "libc": "musl",
+        "agent_version": "0.4.0",
+        "components": components,
+        "component_digests": digests,
+    }))
+    .bind(now)
+    .execute(&panel.state.pool)
+    .await?;
+    Ok(())
 }
 
 async fn fixture(panel: &TestPanel) -> Result<()> {
-    let binary = b"fixed diagnostic fixture";
-    let archive = release_fixture::archive("nodequality", binary)?;
-    release_fixture::write(
-        &panel.state.config.data_dir,
-        "nodequality",
-        diagnostics::TOOL_VERSION,
-        "nodequality",
-        &archive,
-        binary,
-        "tar.gz",
-    )?;
+    let (artifacts, proof, _, _) = signed_nodequality_agent()?;
+    let release_dir = panel
+        .state
+        .config
+        .data_dir
+        .join("artifacts/releases/agent-v0.4.0");
+    std::fs::create_dir_all(&release_dir)?;
+    release_support::install_proof(&release_dir, &proof);
+    std::fs::write(release_dir.join("install.sh"), MODERN_INSTALLER)?;
+    for (entry, bytes) in artifacts {
+        let dir = release_dir.join(&entry.name).join(&entry.version);
+        std::fs::create_dir_all(&dir)?;
+        std::fs::write(dir.join(&entry.arch), bytes)?;
+    }
     Ok(())
 }
 

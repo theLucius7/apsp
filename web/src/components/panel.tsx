@@ -2,28 +2,28 @@ import type * as React from 'react'
 import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from '@/lib/utils'
 
-// Page sections share the shadcn card surface: a titled header row with its
+// Page sections share the console card surface: a subtly grounded header row with its
 // actions, then a table or padded content.
 export function Panel({ className, ...props }: React.ComponentProps<'section'>) {
-  return <section data-slot="panel" className={cn('bg-card text-card-foreground shadow-soft mb-4 min-w-0 overflow-hidden rounded-xl border', className)} {...props} />
+  return <section data-slot="panel" className={cn('bg-card text-card-foreground border-border/85 dark:border-border shadow-soft mb-4 min-w-0 overflow-hidden rounded-xl border', className)} {...props} />
 }
 
 export function PanelHeader({ className, ...props }: React.ComponentProps<'div'>) {
-  return <div data-slot="panel-header" className={cn('border-border/70 flex min-h-12 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b px-4 py-2', className)} {...props} />
+  return <div data-slot="panel-header" className={cn('border-border/75 bg-muted/20 dark:bg-muted/15 flex min-h-12 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b px-4 py-2', className)} {...props} />
 }
 
 export function PanelTitle({ className, ...props }: React.ComponentProps<'h2'>) {
-  return <h2 data-slot="panel-title" className={cn('flex min-w-0 items-center gap-2 text-sm font-semibold tracking-tight', className)} {...props} />
+  return <h2 data-slot="panel-title" className={cn('text-foreground flex min-w-0 items-center gap-2 text-sm leading-5 font-semibold tracking-[-0.01em]', className)} {...props} />
 }
 
 const noticeVariants = cva('mb-4 flex items-start justify-between gap-3 rounded-xl border px-3.5 py-2.5 text-[13px] leading-relaxed', {
   variants: {
     tone: {
-      info: 'bg-muted/60 text-foreground',
-      error: 'border-destructive/25 bg-destructive/5 text-destructive break-words',
-      warning: 'border-warning/30 bg-warning/5 text-foreground',
-      success: 'border-success/25 bg-success/5 text-foreground',
-      quiet: 'bg-muted/60 text-foreground justify-start',
+      info: 'border-info/25 bg-info/6 text-foreground dark:border-info/30 dark:bg-info/10',
+      error: 'border-destructive/30 bg-destructive/6 text-destructive dark:border-destructive/35 dark:bg-destructive/12 break-words',
+      warning: 'border-warning/30 bg-warning/7 text-foreground dark:border-warning/35 dark:bg-warning/10',
+      success: 'border-success/28 bg-success/6 text-foreground dark:border-success/35 dark:bg-success/10',
+      quiet: 'border-border/75 bg-muted/45 text-foreground justify-start',
     },
   },
   defaultVariants: { tone: 'info' },

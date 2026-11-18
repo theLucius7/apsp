@@ -9,6 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
+import shlex
 import shutil
 import runpy
 import socket
@@ -104,6 +105,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.websocket()
         if not self.authorized():
             return
+        if self.path.startswith('/api/agent/v1/artifacts/'):
+            return self.reply({'error': 'panel artifact downloads removed'}, 404)
         if self.path in self.server.downloads:
             data = self.server.downloads[self.path]
             self.send_response(200)
@@ -147,6 +150,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply({'server_id': 1})
         if not self.authorized():
             return
+        if self.path == '/api/agent/v1/telemetry/live':
+            return self.reply({})
         if self.path.endswith('/telemetry'):
             assert self.headers.get('Content-Encoding') == 'gzip'
             samples = value['samples']
@@ -271,6 +276,50 @@ def reference(path, target):
         path.symlink_to(target)
 
 
+def resolved_reference(path):
+    if os.name == 'nt':
+        return Path(read_shared_json(path)['target']).resolve(strict=True)
+    return path.resolve(strict=True)
+
+
+def build_failed_trial_candidate(directory, binary_name, candidate_version, cache_exit=0, flip_reference=None):
+    directory.mkdir(parents=True, exist_ok=True)
+    fixture = directory / binary_name
+    if os.name == 'nt':
+        flip_code = ''
+        if flip_reference is not None:
+            link_path, target_path = flip_reference
+            ref_json = json.dumps(dict(apsp_directory_reference=True, target=str(target_path)))
+            flip_code = 'let _=std::fs::write(' + json.dumps(str(link_path)) + ',' + json.dumps(ref_json) + ');'
+        source = directory / 'fixture.rs'
+        source.write_text(
+            '#![forbid(unsafe_code)]\nfn main(){let args:Vec<_>=std::env::args().skip(1).collect();'
+            + f'if args==["--version"]{{println!("apsp-agent {candidate_version}")}}'
+            + f'else if args.len()==3 && args[0]=="--config" && args[2]=="verify-cache"{{std::process::exit({cache_exit})}}'
+            + 'else{' + flip_code + 'std::process::exit(1)}}',
+            encoding='utf-8',
+        )
+        subprocess.run(['rustc', '--edition=2024', str(source), '-o', str(fixture)], check=True)
+    else:
+        flip_code = ''
+        if flip_reference is not None:
+            link_path, target_path = flip_reference
+            quoted_link = shlex.quote(str(link_path))
+            quoted_target = shlex.quote(str(target_path))
+            flip_code = f'rm -f {quoted_link} && ln -s {quoted_target} {quoted_link}; '
+        fixture.write_text(
+            '#!/bin/sh\n'
+            f'if [ "$1" = --version ]; then echo "apsp-agent {candidate_version}"; '
+            f'elif [ "$#" = 3 ] && [ "$1" = --config ] && [ "$3" = verify-cache ]; then exit {cache_exit}; '
+            f'else {flip_code}exit 1; fi\n',
+            encoding='utf-8',
+        )
+        fixture.chmod(0o755)
+    proof = RELEASE['proof']('agent', candidate_version, binary_name, fixture.read_bytes())
+    RELEASE['install'](directory, proof)
+    return dict(version=candidate_version, sha256=hashlib.sha256(fixture.read_bytes()).hexdigest(), proof=proof)
+
+
 def write_json(path, value):
     temporary = path.with_name(path.name + '.tmp')
     temporary.write_text(json.dumps(value), encoding='utf-8')
@@ -362,6 +411,7 @@ def supervise_smoke(binary, config, root, log):
         wait_for(lambda: state()['current'] == version and state()['trial'] is None and consumed(), 'successful Agent activation', 180 if os.name == 'nt' else 90)
         upgraded = wait_for(lambda: status(binary, config), 'upgraded status')
         assert upgraded['pid'] != first['pid']
+        assert upgraded.get('bundle_ready') is True and upgraded.get('bundle_error') is None, upgraded
         # A corrupt candidate must be rejected before stopping the running Agent.
         (core / '99.0.1').mkdir()
         shutil.copy2(binary, core / '99.0.1' / binary.name)
@@ -370,25 +420,7 @@ def supervise_smoke(binary, config, root, log):
         wait_for(lambda: '99.0.1' in state()['failed_versions'] and consumed(), 'corrupt candidate rejection')
         assert status(binary, config)['pid'] == upgraded['pid']
         def failed_candidate(candidate_version, cache_exit):
-            failed = core / candidate_version
-            failed.mkdir()
-            fixture = failed / binary.name
-            if os.name == 'nt':
-                source = failed / 'fixture.rs'
-                source.write_text('#![forbid(unsafe_code)]\nfn main(){let args:Vec<_>=std::env::args().skip(1).collect();'
-                    f'if args==["--version"]{{println!("apsp-agent {candidate_version}")}}'
-                    f'else if args.len()==3 && args[0]=="--config" && args[2]=="verify-cache"{{std::process::exit({cache_exit})}}'
-                    'else{std::process::exit(1)}}')
-                subprocess.run(['rustc', '--edition=2024', str(source), '-o', str(fixture)], check=True)
-            else:
-                fixture.write_text('#!/bin/sh\n'
-                    f'if [ "$1" = --version ]; then echo "apsp-agent {candidate_version}"; '
-                    f'elif [ "$#" = 3 ] && [ "$1" = --config ] && [ "$3" = verify-cache ]; then exit {cache_exit}; '
-                    'else exit 1; fi\n')
-                fixture.chmod(0o755)
-            proof = RELEASE['proof']('agent', candidate_version, binary.name, fixture.read_bytes())
-            RELEASE['install'](failed, proof)
-            return dict(version=candidate_version, sha256=hashlib.sha256(fixture.read_bytes()).hexdigest(), proof=proof)
+            return build_failed_trial_candidate(core / candidate_version, binary.name, candidate_version, cache_exit=cache_exit)
 
         # The candidate's roots may reject the current cache after a key rotation.
         # Reject that update before touching the old process, identity or usage ledger.
@@ -422,6 +454,7 @@ def supervise_smoke(binary, config, root, log):
         wait_for(lambda: '99.0.0' in state()['failed_versions'] and state()['trial'] is None and consumed(), 'failed-start rollback', 90)
         restored = wait_for(lambda: status(binary, config), 'restored Agent')
         assert restored['agent_version'] == version and restored['pid'] != upgraded['pid']
+        assert restored.get('bundle_ready') is True and restored.get('bundle_error') is None, restored
         assert (root / 'identity/device.key').read_bytes() == identity
         assert state()['current'] == version and state()['last_error']
         write_json(core / 'pending-update.json', pending)
@@ -459,6 +492,8 @@ def main():
     directory = tempfile.mkdtemp(prefix='sn-', dir=None if os.name == 'nt' else '/tmp')
     root = Path(directory).resolve()
     try:
+        tcp_version = subprocess.check_output([str(binary), 'tcp-probe', '--version'], text=True, timeout=30).strip()
+        assert tcp_version.startswith('apsp-tcp-probe '), tcp_version
         config = configure(root, panel.origin)
         print(invoke(binary, config, 'enroll', '--panel', panel.origin, '--token', 'smoke-enrollment'))
         windows_timings = windows_permissions(binary, config, root, panel.origin)
@@ -472,6 +507,9 @@ def main():
             process = start()
             try:
                 wait_for(connected, 'native Agent connection')
+                hello = next(m['payload'] for m in panel.messages if m['type'] == 'hello')
+                assert 'singbox' not in hello.get('capabilities', []), hello.get('capabilities')
+                assert 'agent:self-contained:v1' not in hello.get('capabilities', []), hello.get('capabilities')
                 wait_for(lambda: len(panel.samples) >= 3, 'compressed telemetry with ACK')
                 wait_for(lambda: panel.command_results, 'remote command completion', 90)
                 assert panel.command_results[0]['status'] == 'succeeded', panel.command_results[0]

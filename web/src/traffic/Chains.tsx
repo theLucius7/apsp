@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import { Field, FormDialog, RefreshNotice, DialogPresence } from '../components'
 import { resourceWriteError, useAction, useRefreshNotice, useResource } from '../hooks'
-import type { Node, RuntimeServer } from '../types'
+import type { Node, RuntimeServer, ServiceRuntimeState } from '../types'
 import { proxyResourceKey, validProxyResources } from '../access/groupTypes'
 import { newRequestId } from '@/lib/request-id'
 import { validatedSnapshot } from '@/lib/resource-snapshot'
@@ -10,13 +10,14 @@ import type { ResourceSnapshot } from '@/lib/resource-snapshot'
 import type { ProxyResource } from '../access/groupTypes'
 import { sourceRoot, validSourceNodePage, validSubscriptionSources } from './orderedSourceTypes'
 import type { SourceNode, SourceNodePage, SubscriptionSource } from './orderedSourceTypes'
+import { canConfigureServer } from './Runtimes'
 import ChainPathEditor from './ChainPathEditor'
 import ChainExitExpansion from './ChainExitExpansion'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
 import { Notice } from '@/components/panel'
-import { isPort, isRecord, isUuid } from '@/lib/validate'
+import { hasExactKeys, isPort, isRecord, isUuid } from '@/lib/validate'
 
 const root = '/api/traffic'
 
@@ -86,11 +87,18 @@ export function validNodeList(value: unknown): value is Node[] {
         && (node.protocol_config.tls.challenge === undefined || node.protocol_config.tls.challenge === 'http-01' || node.protocol_config.tls.challenge === 'tls-alpn-01'))))
     && new Set(value.map(node => node.id)).size === value.length
 }
+const runtimeStates: readonly ServiceRuntimeState[] = ['unconfigured', 'waiting_agent', 'upgrade_required', 'offline', 'pending', 'ready', 'sync_blocked', 'failed']
 export function validServerList(value: unknown): value is RuntimeServer[] {
-  return Array.isArray(value) && value.every(server => server && Number.isSafeInteger(server.id) && server.id > 0 && typeof server.name === 'string'
-    && typeof server.enabled === 'boolean' && typeof server.online === 'boolean' && typeof server.read_only === 'boolean'
-    && (server.installation === undefined || isRecord(server.installation) && typeof server.installation.state === 'string' && typeof server.installation.reason === 'string'
-      && Number.isSafeInteger(server.installation.target_rev) && Number(server.installation.target_rev) >= 0 && Number.isSafeInteger(server.installation.applied_rev) && Number(server.installation.applied_rev) >= 0))
+  return Array.isArray(value) && value.every(server => isRecord(server)
+    && hasExactKeys(server, 'id name configured online agent_supported read_only source runtime_version status')
+    && Number.isSafeInteger(server.id) && Number(server.id) > 0 && typeof server.name === 'string'
+    && typeof server.configured === 'boolean' && typeof server.online === 'boolean' && typeof server.agent_supported === 'boolean' && typeof server.read_only === 'boolean'
+    && (server.source === null || server.source === 'configured' || server.source === 'nexus')
+    && (server.runtime_version === null || typeof server.runtime_version === 'string')
+    && isRecord(server.status) && hasExactKeys(server.status, 'state reason target_rev applied_rev current_healthy')
+    && runtimeStates.includes(server.status.state as ServiceRuntimeState) && typeof server.status.reason === 'string'
+    && Number.isSafeInteger(server.status.target_rev) && Number(server.status.target_rev) >= 0 && Number.isSafeInteger(server.status.applied_rev) && Number(server.status.applied_rev) >= 0
+    && typeof server.status.current_healthy === 'boolean')
     && new Set(value.map(server => server.id)).size === value.length
 }
 export function proxyWriteError(snapshot: ProxyWriteSnapshot, resource?: Pick<ProxyResource, 'kind' | 'id'>) {
@@ -103,7 +111,7 @@ function managedSelectionError(snapshot: ProxyWriteSnapshot, entry: number | nul
   for (const id of [entry, exit].filter((id): id is number => id !== null)) {
     const node = snapshot.nodes.data?.find(node => node.id === id)
     const server = node && snapshot.servers.data?.find(server => server.id === node.server_id)
-    if (!node || node.protocol !== 'vless-reality' || node.enabled === false || !server?.enabled) return '已选节点已不可用或所属服务器尚未安装 sing-box，请重新选择；名称和其他草稿已保留。'
+    if (!node || node.protocol !== 'vless-reality' || node.enabled === false || !server || !canConfigureServer(server)) return '已选节点已不可用，或所属服务器不存在、为只读接管服务器，请重新选择；名称和其他草稿已保留。'
     if (snapshot.resources.data?.some(resource => resource.kind === 'chain' && resource.entry.id === id)) return '已选节点的链路身份已变更，不支持重复入口、嵌套或循环链路；请重新选择，草稿已保留。'
     const direct = snapshot.resources.data?.find(resource => resource.kind === 'direct' && resource.id === id)
     if (!direct) return '已选节点的链路身份已变更，请重新选择，草稿已保留。'
@@ -121,7 +129,7 @@ export function chainBatchSelectionError(draft: ChainBatchDraft, snapshot: Proxy
   if (error) return error
   const entry = draft.mode === 'existing' ? nodeId(draft.entry_node_id) : null
   const serverId = draft.mode === 'new' ? nodeId(draft.server_id) : undefined
-  if (draft.mode === 'new' && draft.server_id && !snapshot.servers.data?.some(server => server.id === serverId && server.enabled)) return '已选入口服务器已不可用或尚未安装 sing-box，请重新选择；草稿已保留。'
+  if (draft.mode === 'new' && draft.server_id && !snapshot.servers.data?.some(server => server.id === serverId && canConfigureServer(server))) return '已选入口服务器不存在或为只读接管服务器，请重新选择；草稿已保留。'
   if (draft.mode === 'existing' && draft.entry_node_id && entry === null) return '请选择有效的入口；草稿已保留。'
   const entryError = managedSelectionError(snapshot, entry, null, serverId ?? undefined)
   if (entryError) return entryError
@@ -214,7 +222,7 @@ export async function submitChainBatch(pending: PendingChainBatch, snapshot: Pro
     const entry = item.entry
     const selection = managedSelectionError(snapshot, entry.mode === 'existing' ? entry.node_id : null, null, entry.mode === 'new' ? entry.server_id : undefined)
     if (selection) throw new Error(selection)
-    if (entry.mode === 'new' && !snapshot.servers.data?.some(server => server.id === entry.server_id && server.enabled)) throw new Error('已选入口服务器已不可用或尚未安装 sing-box；草稿已保留。')
+    if (entry.mode === 'new' && !snapshot.servers.data?.some(server => server.id === entry.server_id && canConfigureServer(server))) throw new Error('已选入口服务器不存在或为只读接管服务器；草稿已保留。')
   }
   const selection = chainBatchSelectionError(JSON.parse(pending.source_draft) as ChainBatchDraft, snapshot)
   if (selection) throw new Error(selection)
@@ -260,16 +268,16 @@ export default function Chains({ snapshot, serverId, getServerId, refresh, onCre
   const observe = useCallback((id: number, value: ResourceSnapshot<SourceNodePage>) => setSourceNodes(previous => ({ ...previous, [id]: value })), [])
   const selectedSources = [...new Set([...(draft.hops ?? []), ...draft.rows.flatMap(row => row.hops ?? [])].flatMap(hop => hop.kind === 'subscription' && hop.source_id > 0 ? [hop.source_id] : []))]
   const writeSnapshot: ProxyWriteSnapshot = { ...snapshot, sources, sourceNodes }
-  const enabledServers = snapshot.servers.data?.filter(server => server.enabled) ?? []
-  const choices = snapshot.nodes.data?.filter(node => node.protocol === 'vless-reality' && node.enabled !== false && enabledServers.some(server => server.id === node.server_id)
+  const configurableServers = snapshot.servers.data?.filter(canConfigureServer) ?? []
+  const choices = snapshot.nodes.data?.filter(node => node.protocol === 'vless-reality' && node.enabled !== false && configurableServers.some(server => server.id === node.server_id)
     && snapshot.resources.data?.some(resource => resource.kind === 'direct' && resource.id === node.id && resource.available)) ?? []
   // Managed segments must be VLESS + Reality nodes, so enabled nodes of other protocols never appear in the selectors.
-  const otherProtocolNodes = snapshot.nodes.data?.filter(node => node.protocol !== 'vless-reality' && node.enabled !== false && enabledServers.some(server => server.id === node.server_id)).length ?? 0
+  const otherProtocolNodes = snapshot.nodes.data?.filter(node => node.protocol !== 'vless-reality' && node.enabled !== false && configurableServers.some(server => server.id === node.server_id)).length ?? 0
   const template = chainTemplateOf(draft.hops ?? [])
   const filterError = () => {
     const selected = getServerId ? getServerId() : serverId
     if (selected === undefined) return ''
-    if (!snapshot.servers.data?.some(server => server.id === selected && server.enabled)) return '当前筛选的入口服务器已不存在或未安装 sing-box，原草稿已保留。'
+    if (!snapshot.servers.data?.some(server => server.id === selected && canConfigureServer(server))) return '当前筛选的入口服务器不存在或为只读接管服务器，原草稿已保留。'
     const entryServer = draft.mode === 'new' ? Number(draft.server_id) : snapshot.nodes.data?.find(node => node.id === Number(draft.entry_node_id))?.server_id
     return (draft.mode === 'new' ? Boolean(draft.server_id) : Boolean(draft.entry_node_id)) && entryServer !== selected ? '原入口不属于当前服务器筛选，请明确重新选择；草稿已保留。' : ''
   }
@@ -285,7 +293,7 @@ export default function Chains({ snapshot, serverId, getServerId, refresh, onCre
   const open = () => {
     if (action.busy || !refreshNotice.allows(proxyWriteError(snapshot))) return
     action.clearError()
-    if (!draft.server_id) { const selected = getServerId ? getServerId() : serverId; setDraft(current => ({ ...current, server_id: (selected === undefined ? enabledServers[0] : enabledServers.find(server => server.id === selected))?.id.toString() ?? '' })) }
+    if (!draft.server_id) { const selected = getServerId ? getServerId() : serverId; setDraft(current => ({ ...current, server_id: (selected === undefined ? configurableServers[0] : configurableServers.find(server => server.id === selected))?.id.toString() ?? '' })) }
     setCreating(true)
   }
   // The page header and the empty chain list each raise the request counter; every increment opens the form once.
@@ -316,7 +324,7 @@ export default function Chains({ snapshot, serverId, getServerId, refresh, onCre
       <Field label="链路模板" hint={`模板只预填入口之后的跳数，之后仍可增删、调整顺序，最多 8 跳。${draft.rows.some(row => row.hops) ? '已单独编辑的路径不随模板变化。' : ''}`}><NativeSelect className="w-full" value={template} onChange={event => { const next = event.target.value; if (next === 'two-hop' || next === 'relay' || next === 'subscription') update({ hops: chainTemplateHops(next, draft.hops ?? []) }) }}><option value="two-hop">入口 → 落地（两跳）</option><option value="relay">入口 → 中转 → 落地</option><option value="subscription">含外部节点</option>{template === 'custom' && <option value="custom" disabled>自定义路径（{draft.hops?.length ?? 0} 跳）</option>}</NativeSelect></Field>
       <Field label="入口方式"><NativeSelect className="w-full" name="entry_mode" value={draft.mode} onChange={event => update({ mode: event.target.value as 'new' | 'existing', rows: event.target.value === 'existing' ? draft.rows.slice(0, 1) : draft.rows })}><option value="new">新建 Reality 专用入口</option><option value="existing">使用现有未授权入口（单条）</option></NativeSelect></Field>
       <div className="grid gap-x-5 sm:grid-cols-2">
-        {draft.mode === 'new' ? <><Field label="入口服务器"><NativeSelect className="w-full" name="server_id" required value={draft.server_id} onChange={event => update({ server_id: event.target.value })}><option value="" disabled>选择入口服务器</option>{draft.server_id && !enabledServers.some(server => String(server.id) === draft.server_id) && <option value={draft.server_id}>服务器 #{draft.server_id}（已不可用）</option>}{enabledServers.map(server => <option key={server.id} value={server.id}>{server.name}{server.online ? ' · 在线' : ' · 离线，等待应用'}</option>)}</NativeSelect></Field><Field label="入口公开地址" hint="同批次共享客户端连接域名或 IP，不含协议、端口和路径。"><Input name="public_host" required value={draft.public_host} onChange={event => update({ public_host: event.target.value })} placeholder="entry.example.com" autoComplete="off" /></Field><Field label="Reality 协议域名" hint="同批次共享 SNI。"><Input name="sni" required value={draft.sni} onChange={event => update({ sni: event.target.value })} placeholder="www.example.com" autoComplete="off" /></Field></> : <Field label="入口节点" hint="只能选择未授权、无链路引用的独立 Reality 节点。"><NativeSelect className="w-full" name="entry_node_id" required value={draft.entry_node_id} onChange={event => update({ entry_node_id: event.target.value })}><option value="" disabled>选择入口</option>{draft.entry_node_id && !choices.some(node => String(node.id) === draft.entry_node_id) && <option value={draft.entry_node_id}>节点 #{draft.entry_node_id}（已不可用，请重新选择）</option>}{choices.map(node => <option key={node.id} value={node.id}>{node.name}（服务器 #{node.server_id}）</option>)}</NativeSelect></Field>}
+        {draft.mode === 'new' ? <><Field label="入口服务器"><NativeSelect className="w-full" name="server_id" required value={draft.server_id} onChange={event => update({ server_id: event.target.value })}><option value="" disabled>选择入口服务器</option>{draft.server_id && !configurableServers.some(server => String(server.id) === draft.server_id) && <option value={draft.server_id}>服务器 #{draft.server_id}（已不可用）</option>}{configurableServers.map(server => <option key={server.id} value={server.id}>{server.name}{server.online ? ' · 在线' : ' · 离线，等待应用'}</option>)}</NativeSelect></Field><Field label="入口公开地址" hint="同批次共享客户端连接域名或 IP，不含协议、端口和路径。"><Input name="public_host" required value={draft.public_host} onChange={event => update({ public_host: event.target.value })} placeholder="entry.example.com" autoComplete="off" /></Field><Field label="Reality 协议域名" hint="同批次共享 SNI。"><Input name="sni" required value={draft.sni} onChange={event => update({ sni: event.target.value })} placeholder="www.example.com" autoComplete="off" /></Field></> : <Field label="入口节点" hint="只能选择未授权、无链路引用的独立 Reality 节点。"><NativeSelect className="w-full" name="entry_node_id" required value={draft.entry_node_id} onChange={event => update({ entry_node_id: event.target.value })}><option value="" disabled>选择入口</option>{draft.entry_node_id && !choices.some(node => String(node.id) === draft.entry_node_id) && <option value={draft.entry_node_id}>节点 #{draft.entry_node_id}（已不可用，请重新选择）</option>}{choices.map(node => <option key={node.id} value={node.id}>{node.name}（服务器 #{node.server_id}）</option>)}</NativeSelect></Field>}
       </div>
       {draft.hops && <p data-slot="reality-hint" className="text-muted-foreground mt-3 text-xs leading-relaxed">链路中的受管段只能使用 VLESS + Reality 节点；其他协议的节点不会出现在这里。{otherProtocolNodes > 0 && `另有 ${otherProtocolNodes} 个已启用的其他协议节点未列出。`}</p>}
       {draft.hops && <ChainPathEditor label="共享路径" hops={draft.hops} onChange={hops => update({ hops })} snapshot={writeSnapshot} />}

@@ -52,7 +52,7 @@ pub async fn list(
     auth::require_admin(&state, &headers).await?;
     let mut tx = state.pool.begin().await?;
     crate::servers::lock(&mut tx, server).await?;
-    apsp_traffic::settings::require_enabled(&mut tx, server).await?;
+    apsp_traffic::settings::require_configured(&mut tx, server).await?;
     let row = sqlx::query(&format!(
         "SELECT capabilities,last_seen,{} AS retiring FROM servers WHERE id=$1",
         crate::retirement::retiring_sql("$1")
@@ -118,7 +118,7 @@ pub async fn create(
     }
     let mut tx = state.pool.begin().await?;
     crate::servers::lock(&mut tx, server).await?;
-    apsp_traffic::settings::require_enabled(&mut tx, server).await?;
+    apsp_traffic::settings::require_configured(&mut tx, server).await?;
     crate::fleet::ensure_accepts_tasks_tx(&mut tx, server).await?;
     let row = sqlx::query(&format!(
         "SELECT capabilities,last_seen,{} AS pending,{} AS retiring FROM servers WHERE id=$1",

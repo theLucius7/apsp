@@ -1,5 +1,5 @@
 import { installControlCenterFixtures } from './control-center-fixtures.mjs'
-import { catalogResourceFixtures } from './proxy-resource-fixtures.mjs'
+import { catalogResourceFixtures, runtimeServerFixture } from './proxy-resource-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { mkdir, readFile } from 'node:fs/promises'
@@ -38,7 +38,7 @@ try {
     const fixture = async (routeHash, callback) => {
       const page = await browser.newPage({ viewport: { width, height: 1000 } }); page.setDefaultTimeout(10000)
       page.on('pageerror', error => totals.errors.push(error.message))
-      const hosts = [1, 2, 3].map(id => ({ id, name: `TEST_ONLY 服务器 ${id}`, enabled: true, online: true, agent_supported: true }))
+      const hosts = [1, 2, 3].map(id => runtimeServerFixture(id, { name: `TEST_ONLY 服务器 ${id}` }))
       const nodes = [1, 2, 3].map(id => ({ id, name: `TEST_ONLY 节点 ${id}`, server_id: id, protocol: 'vless-reality', port: 20000 + id, public_host: '127.0.0.1', sni: 'localhost', enabled: true }))
       const direct = node => ({ ...node, kind: 'direct', server_name: `TEST_ONLY 服务器 ${node.server_id}`, available: true, role: 'direct', entry_node_id: null, tcp: true, udp: true, legacy: false, active_generation: null, pending_generation: null, minimum_generation: 0, stage: 'direct', last_error: null, reference_count: 0, entry_eligible: true })
       const resources = nodes.map(direct)

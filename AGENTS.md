@@ -1,8 +1,12 @@
 # 仓库协作规则
 
-本文只写现在生效的规则，每条规则在这里只有一个出处。产品范围与界面位置以[功能地图](docs/product-map.md)为准，对象与用语以[对象词典](docs/redesign/03-objects.md)为准，代码与数据的归属以[功能划分与逻辑结构](docs/architecture.md)与[领域归属表](docs/domain-map.md)为准，具体决策见[架构决策索引](docs/adr/README.md)。2026-11-08 整理前的原文、各项用户授权的来历与每条旧条款的去向见[协作规则整理记录](docs/history/agents-rules-20261108.md)。
+本文只写现在生效的规则，每条规则在这里只有一个出处。产品范围与界面位置以[功能地图](docs/product-map.md)为准，对象与用语以[对象词典](docs/redesign/03-objects.md)为准，代码与数据的归属以[功能划分与逻辑结构](docs/architecture.md)与[领域归属表](docs/domain-map.md)为准，具体决策见[架构决策索引](docs/adr/README.md)。当前整合与一体化自带能力 Agent 规则见 [ADR 0140](docs/adr/0140-domain-consolidation.md) 与 [ADR 0141](docs/adr/0141-self-contained-agent-and-desired-service-config.md)。
 
 遇到歧义，采用最简单且符合既定架构的方案，将问题、选择和理由记录到 `docs/open-questions.md` 后继续执行。
+
+## 当前交付要求（2026-11-17 用户确认）
+
+用户要求一次性完成整合，不再按插件维护，删除已有替代的历史冗余。同一整合任务并行实现、集中验证，作为一个完整变更交付；不把未执行的生产切换或实机签收记为完成。领域对象使用当前模型，旧任务书和逐步日志从工作树移除，Git 历史保留。已签名格式、已发布设备 wire 字段与检查点仅在序列化边界保留原名，不增加旧 Rust 接口包装。
 
 ## 提交身份（2026-11-09 用户更正）
 
@@ -37,21 +41,21 @@
 
 当前 GitHub Actions 工作流已暂停。所有进行中的任务完成前，只做相称的本地验证，不触发、重跑或重新启用 CI；不要因单个 PR 或单个任务完成而恢复。全部任务完成后再统一恢复并验证最终整合提交。暂停期间未执行或取消的 CI 必须记为未验证，不据此宣称 main 全绿。恢复时移除此节。
 
-发布 Agent 需要 CI 时，须由用户临时批准启用 `CI` 与 `Signed release draft`，只用于该版本的 PR 与 main 验证、草稿构建和发布校验，发布完成或中止后由同一会话重新停用。`agent-v0.3.1` 至 `agent-v0.3.9` 的历次例外均已结束（`agent-v0.3.9`：2026-11-17 发布后停用）（2026-11-08 核对：标签都已发布，四个工作流均为手动停用），记录见整理记录。
+发布 Agent 需要 CI 时，须由用户临时批准启用 `CI` 与 `Signed release draft`，只用于该版本的 PR 与 main 验证、草稿构建和发布校验，发布完成或中止后由同一会话重新停用。`agent-v0.3.1` 至 `agent-v0.3.9` 的历次例外均已结束（`agent-v0.3.9`：2026-11-17 发布后停用）（2026-11-08 核对：标签都已发布，四个工作流均为手动停用），记录见[整理记录](https://github.com/theLucius7/apsp/blob/8fb798b14761681607973604c0ba15e605e18b4c/docs/history/agents-rules-20261108.md)。
 
 ## 分层
 
 详细架构约束见 `docs/adr/0001-declarative-snapshots.md` 至 `docs/adr/0011-loopback-local-api.md`。
 
 - `protocol` 定义面板与 Agent 的公共消息；`compiler` 将模型确定性地编译成完整配置包（流量服务的配置编译库，客户端配置部分供服务权益使用）。
-- `agent-core` 的工作区依赖只能是 `adapter-sdk`、`protocol`；原生配置、身份、传输、对账、状态、遥测、流量和制品管理放在 core。
+- `agent-core` 的工作区依赖只能是 `adapter-sdk`、`protocol`；原生配置、身份、传输、对账、状态、遥测、流量、内置组件提取校验（`bundled`）与签名材料校验（`artifacts`）放在 core。
 - `adapter-*` 的工作区依赖只能是 `adapter-sdk`。适配器只负责无状态翻译，不自行持久化，不连接面板。
-- 只有 `agent` 二进制入口同时依赖 core 和具体适配器，并将适配器注册到 core。
+- 只有 `agent` 二进制入口同时依赖 core 和具体适配器，在构建期内嵌对应平台的运行时与受控诊断载荷（Linux 正式发布构建强制内嵌四组件闭环），并将内置组件清单与适配器注册到 core。
 - `agent-core` 目录内任何文件不得出现 `singbox` 或 `sing-box` 字样；使用模块标识、能力和统一接口。
 - core 管服务器；代理用户、授权、订阅、用户流量、配额和周期属于服务权益领域（`crates/access`），详见 [ADR 0023](docs/adr/0023-proxy-business-boundary.md) 与 [搬迁及启用兼容 ADR 0030](docs/adr/0030-singbox-plugin-business.md)。core 不得引用代理业务的 `user`、`subscription`、`quota`，含复数、蛇形和驼峰形式；CI 使用 `tools/check-core-boundary.py` 检查。系统账户与 SQLite 原生 API 仅允许检查器列出的具体表达式，不允许文件或整行豁免。
 - 面板是按领域组织的一体化系统，分平台、领域和应用三层，不再有插件（[ADR 0128](docs/adr/0128-domain-architecture.md)；九个领域、依赖顺序与写入规则见[功能划分与逻辑结构](docs/architecture.md)，逐项功能的归属见[领域归属表](docs/domain-map.md)）：
   - 平台（`crates/panel-host`、`crates/cloud-api`）只放技术机制，`panel-host` 是底座，工作区依赖只能是 `protocol`；`cloud-api` 建在它上面，只能依赖 `protocol` 与 `panel-host`（[ADR 0134](docs/adr/0134-outbound-network-and-delivery.md)），不依赖任何领域；目录内禁止 sing-box 名称和上述代理业务词汇，例外表达式由检查器逐条列出。
-  - 领域 crate（`crates/governance`、`crates/resources`、`crates/networking`、`crates/naming`、`crates/compiler` 与 `crates/traffic`（流量服务）、`crates/access`（服务权益）、`crates/costs`、`crates/observability`、`crates/operations`）只依赖平台、`protocol`、依赖顺序中排在前面的领域 crate 和同一领域的其他 crate。领域代码不得移回平台或应用 crate。仓库没有 `plugins/` 目录：运行时服务定义在 `deploy/`，诊断工具的打包脚本、策略与锁定文件在 `crates/observability/upstream/`（签名制品里仍按原名 `plugins/...` 记录，这是制品格式）。诊断代码（IPQuality、NodeQuality、TcpQuality）在观测 crate 的 `diagnostic_tools/`。
+  - 领域 crate（`crates/governance`、`crates/resources`、`crates/networking`、`crates/naming`、`crates/compiler` 与 `crates/traffic`（流量服务）、`crates/access`（服务权益）、`crates/costs`、`crates/observability`、`crates/operations`）只依赖平台、`protocol`、依赖顺序中排在前面的领域 crate 和同一领域的其他 crate。领域代码不得移回平台或应用 crate。仓库没有 `plugins/` 目录：运行时服务定义在 `deploy/`，诊断工具的打包脚本、策略与锁定文件在 `crates/observability/upstream/`（供一体化 Agent 构建内嵌，设备落盘与历史签名格式在边界仍按原名 `plugins/...` 保留）。诊断代码（IPQuality、NodeQuality、TcpQuality）在观测 crate 的 `diagnostic_tools/`。
   - 只有应用 `apsp-panel` 组合平台与各领域（组合在 `crates/panel/src/domains.rs`：路由与后台任务各一张清单，每个领域 crate 只导出一个 `routes()`，路由的完整路径写在声明处）、接线依赖倒置接口（清单见 [architecture.md §5.5](docs/architecture.md#55-类型化接口)，接线在 `crates/panel/src/wiring.rs`），并保存唯一的数据库基线。不再新增插件式的全局钩子：需要逆着依赖顺序调用时，由调用方声明类型化接口。
   - 控制台接口地址按对象所属领域命名（`/api/traffic/…`、`/api/access/…`、`/api/naming/…`、`/api/costs/…`、`/api/observability/…`、`/api/resources/alicloud/…`；其余地址不变），路由的权限结论记在 `crates/panel/tests/fixtures/route-policy.tsv`，新增或改动路由后运行 `python3 tools/route-policy.py`（见 [ADR 0132](docs/adr/0132-platform-only-host-and-domain-addresses.md)）。
   - `tools/check-core-boundary.py` 检查每个 crate 的层级与依赖方向；新增 crate 先在检查器里登记层级。
@@ -61,7 +65,7 @@
 - 系统管理员与代理用户分别命名；服务器网卡总流量留在 core。计量 `epoch` 只标记计数器重置，不得用作套餐周期。业务搬迁保留用户 ID、令牌、旧订阅路径、节点凭据、授权和历史流量，数据库表先不改名。
 - 诊断任务生命周期、资源预算、持久化、取消及历史由观测领域的共用服务管理；各诊断实现只转换参数、执行和解析报告，见 [ADR 0028](docs/adr/0028-shared-diagnostic-job-service.md)。后续诊断能力的接入代码可以经独立审查和相称验证后合入准备；NodeQuality 迁移及前置阶段的实机验收通过后，才能签收、正式发布或部署后续新增诊断能力。
 - 特权操作必须经过 `Privileged` trait，服务管理经过 `ServiceManager` trait；外部运行时是独立的系统服务（Linux systemd/OpenRC、macOS launchd、FreeBSD rc.d、Windows 计划任务）。
-- core 按 `identity`、`transport`、`reconcile`、`state`、`telemetry`、`usage`、`artifacts`、`system` 拆分，先用单文件，超过约 400 行再按需拆目录。
+- core 按 `identity`、`transport`、`reconcile`、`state`、`telemetry`、`usage`、`bundled`、`artifacts`、`system` 拆分，先用单文件，超过约 400 行再按需拆目录。
 
 ## 实现与检查
 
@@ -88,11 +92,11 @@
 
 ## 范围
 
-功能是否在范围内，以功能地图的功能分级与「不做什么」为准（原 MVP 排除清单中仍然有效的各项已并入「不做什么」）。下面是各项已授权功能仍然有效的约束，授权的来历见各 ADR 与整理记录。
+功能是否在范围内，以功能地图的功能分级与「不做什么」为准（原 MVP 排除清单中仍然有效的各项已并入「不做什么」）。下面是各项已授权功能仍然有效的约束，授权的来历见各 ADR 与[整理记录](https://github.com/theLucius7/apsp/blob/8fb798b14761681607973604c0ba15e605e18b4c/docs/history/agents-rules-20261108.md)。
 
 - **协议与证书**（ADR 0034）：Hysteria2、Shadowsocks 2022、TUIC v5、AnyTLS、Naive、Snell v6，以及 TLS 证书的自动申请和续期。
-- **Agent 与平台**（ADR 0017、0021、0022）：OpenRC 服务；Agent 高频监控、任务、自动更新及非 Linux 常驻部署；特权 helper 仅保留 trait 边界，保留重复安装升级；制品签名与编译时发布信任根按 ADR 0017 执行。
-- **Agent 下载与公开看板**（ADR 0038）：Agent 二进制必须从 GitHub 下载，不能由面板提供；安装和自更新保留独立验签，镜像请求不携带设备凭据；运行时与配置仍经面板；公开看板使用只读白名单及统一隐藏校验，流量矫正不改代理业务账本。
+- **Agent 与平台**（ADR 0017、0021、0022、0141）：OpenRC 服务；Agent 高频监控、任务、自动更新及非 Linux 常驻部署；特权 helper 仅保留 trait 边界，保留重复安装升级；Agent 发布签名与编译时发布信任根按 ADR 0017 执行，对应平台的 `sing-box` 运行时与受控诊断能力随一体化 Agent 整包交付（ADR 0141）。
+- **Agent 下载与公开看板**（ADR 0038、0141）：Agent 二进制必须从 GitHub 或独立 HTTPS 镜像下载，不能由面板提供；安装和自更新保留独立验签，镜像请求不携带设备凭据；面板不托管独立制品目录、不分发运行时或诊断工具二进制，只向设备下发服务配置与任务指令；公开看板使用只读白名单及统一隐藏校验，流量矫正不改代理业务账本。
 - **服务器成本与网卡配额**（ADR 0023、0036）：服务器成本、续费到期、按账单日计算的网卡配额与可配置的轻量周期拨测按 ADR 0023 分层。
 - **代理业务**（ADR 0023、0035、0040、0043–0045、0076、0112）：代理用户配额、重置周期和到期属于服务权益。权限组与套餐分别分配，套餐使用不可变快照和原计量账本，不扩大为平台全局用户；不能把清空计量 epoch 当作重置套餐，也不能把订阅过滤当作运行时停用；保持旧用户/凭据兼容，不混跑新旧 publisher。链路保持单运行时、独立公开入口、线性无环路径、入口单次计量及内部秘密不进入用户订阅，不扩展自动出口池。外部节点沿用提供方凭据与独立身份版本，不伪造 Agent 流量或配额执行能力；来源导入先预览再采用，新增节点不自动授权；用户只经策略组获得资源。
 - **订阅格式与专属地址**（ADR 0101、0103）：Clash Meta（mihomo）YAML 由与 sing-box 订阅相同的客户端出站转换，不能等价表达的节点不写入并在文件中说明；同一订阅地址按 User-Agent 识别 Clash 客户端，显式格式参数优先；不调用第三方转换服务。每个用户独立、可重置的随机主机名与路径默认关闭，旧 `/sub/{token}` 由管理员决定何时关闭；真实令牌只进入面板的加密凭据，不得写入仓库。
