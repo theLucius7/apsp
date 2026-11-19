@@ -198,7 +198,7 @@ async fn query(source: &Source, configured: bool, ips: &[String], at: i64) -> Ve
         &source.registry(configured),
         ips,
         true,
-        Duration::from_secs(4),
+        Duration::from_secs(12),
     )
     .await;
     for entry in &mut values {

@@ -81,7 +81,7 @@ impl Source {
     }
     pub fn client(&self) -> reqwest::Client {
         apsp_panel_host::http::Outbound {
-            timeout: Some(Duration::from_millis(100)),
+            timeout: Some(Duration::from_secs(2)),
             ..Default::default()
         }
         .build()
@@ -111,7 +111,7 @@ async fn aggregate(
     });
     match state.aggregate_mode.load(Ordering::SeqCst) {
         1 => (StatusCode::FORBIDDEN,"fixture denied").into_response(),
-        2 => { tokio::time::sleep(Duration::from_millis(300)).await; Json(json!({})).into_response() },
+        2 => std::future::pending().await,
         _ => Json(json!({"ASN":{"AutonomousSystemNumber":64500},"company":{"abuser_score":0},"scamalytics":{"scamalytics_score":0},"data":{"abuseConfidenceScore":0},"fraud_score":0,"proxy":false,"is_proxy":false,"threat":{"is_proxy":false}})).into_response(),
     }
 }
@@ -134,7 +134,7 @@ async fn official(
     match state.mode.load(Ordering::SeqCst) {
         1 => (StatusCode::FORBIDDEN,"fixture denied").into_response(),
         2 => (StatusCode::TOO_MANY_REQUESTS,"fixture limited").into_response(),
-        3 => {tokio::time::sleep(Duration::from_millis(300)).await; Json(json!({})).into_response()},
+        3 => std::future::pending().await,
         4 => (StatusCode::OK,"<html>fixture page</html>").into_response(),
         5 => Json(json!({"data":{"ipAddress":"192.0.2.254","isPublic":true,"ipVersion":4,"abuseConfidenceScore":0,"isTor":false}})).into_response(),
         6 => Json(json!({"success":false,"data":{"ipAddress":ip,"isPublic":true,"ipVersion":4,"abuseConfidenceScore":0,"isTor":false}})).into_response(),
