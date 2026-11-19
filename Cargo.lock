@@ -516,6 +516,7 @@ dependencies = [
  "ed25519-dalek",
  "memchr",
  "minisign-verify",
+ "ring",
  "serde",
  "serde_json",
  "sha2 0.10.9",

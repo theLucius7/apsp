@@ -1,8 +1,10 @@
 use base64::{Engine, engine::general_purpose::STANDARD};
 use minisign_verify::{PublicKey, Signature};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt::Write as _,
+};
 use thiserror::Error;
 
 pub const RELEASE_SCHEMA: u32 = 1;
@@ -432,5 +434,10 @@ fn valid_digest(value: &str) -> bool {
 }
 
 fn digest(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
+    let digest = ring::digest::digest(&ring::digest::SHA256, bytes);
+    let mut encoded = String::with_capacity(64);
+    for byte in digest.as_ref() {
+        write!(&mut encoded, "{byte:02x}").expect("write digest to String");
+    }
+    encoded
 }
