@@ -201,7 +201,7 @@ async fn deferred_cache_writes_cannot_regress_same_second_revisions_or_jobs(
     let id = record["id"].as_str().unwrap();
     let stored_job: Value = sqlx::query_scalar("SELECT job FROM diagnostic_jobs WHERE id=$1::uuid")
         .bind(id)
-        .fetch_one(&panel.pool)
+        .fetch_one(&panel.state.pool)
         .await?;
     let at = record["created_at"].as_i64().unwrap();
     let first = section(id, at, 1, false, None);

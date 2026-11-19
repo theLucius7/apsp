@@ -22,7 +22,7 @@ async fn insert_node(pool: &PgPool, server: i64, port: i32, enabled: bool) -> Re
     let short_id = crate::business::short_id();
     Ok(sqlx::query_scalar(
         "INSERT INTO nodes(name,server_id,protocol,port,public_host,sni,private_key,public_key,short_id,protocol_config,enabled,settings) \
-         VALUES('TEST_ONLY node',$1,'vless-reality',$2,'proxy.example.invalid','www.example.invalid',$3,$4,$5,'{\"type\":\"vless_reality\"}',$6,'{}') RETURNING id",
+         VALUES('TEST_ONLY node',$1,'vless-reality',$2,'proxy.example.invalid','www.example.invalid',$3,$4,$5,'{\"type\":\"vless-reality\"}',$6,'{}') RETURNING id",
     )
     .bind(server)
     .bind(port)

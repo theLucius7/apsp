@@ -39,7 +39,7 @@ pub use api::routes;
 pub use worker::run;
 
 pub(crate) use apsp_cloud_api as cloud_api;
-pub(crate) use apsp_governance::{auth, control_center, releases};
+pub(crate) use apsp_governance::{auth, control_center};
 pub(crate) use apsp_networking::network_configuration::{documents, models};
 #[cfg(test)]
 pub(crate) use apsp_panel_host::config;

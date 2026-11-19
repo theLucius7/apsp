@@ -32,12 +32,28 @@ SERVICE_RUNTIME_STATES = (
     "sync_blocked",
     "failed",
 )
+DRIFT_STATES = (
+    "unknown",
+    "stale",
+    "pending_publish",
+    "revision_mismatch",
+    "configuration_mismatch",
+    "configuration_verified",
+    "inspection_pending",
+    "unhealthy",
+    "revision_aligned",
+)
+CHECKPOINT_VOCABULARY = {
+    "state": ("unknown", "stale", "verified", "mismatch", "expired", "pending"),
+    "outcome": ("verified", "mismatch", "late", "superseded", "failed"),
+    "failure_kind": ("configuration_mismatch", "runtime_identity_mismatch", "unhealthy", "inspection_failed"),
+}
 ERROR_CATEGORIES = (
-    ("health", ("health", "unhealthy")),
-    ("activation", ("activation", "certif")),
-    ("runtime_identity", ("instance", "binary", "executable", "signed runtime", "bundled")),
-    ("configuration", ("configuration", "bundle", "revision")),
-    ("timeout", ("timed out", "timeout")),
+    ("health", re.compile(r"health|unhealthy")),
+    ("activation", re.compile(r"activation|certif")),
+    ("runtime_identity", re.compile(r"instance|binary|executable|signed runtime|bundled")),
+    ("configuration", re.compile(r"configuration|(?<![a-z])bundles?(?![a-z])|revision")),
+    ("timeout", re.compile(r"timed out|timeout")),
 )
 
 
@@ -504,15 +520,19 @@ def install_status(status, drift):
     checkpoint_view = drift.get("checkpoint") if isinstance(drift.get("checkpoint"), dict) else {}
     error = status.get("last_error")
     error = error.lower() if isinstance(error, str) else ""
-    result = {key: status.get(key) if type(status.get(key)) in (int, bool) else None
-              for key in ("target_rev", "applied_rev", "healthy")}
-    result["error_categories"] = [name for name, words in ERROR_CATEGORIES
-                                  if any(word in error for word in words)] or (["other"] if error else [])
-    result["drift"] = drift.get("state") if isinstance(drift.get("state"), str) else None
+    result = {
+        key: status.get(key) if type(status.get(key)) is int and 0 <= status.get(key) <= 2 ** 63 - 1 else None
+        for key in ("target_rev", "applied_rev")
+    }
+    result["healthy"] = status.get("healthy") if type(status.get("healthy")) is bool else None
+    result["error_categories"] = [name for name, pattern in ERROR_CATEGORIES
+                                  if pattern.search(error)] or (["other"] if error else [])
+    drift_state = drift.get("state")
+    result["drift"] = drift_state if isinstance(drift_state, str) and drift_state in DRIFT_STATES else None
     result["checkpoint_supported"] = drift.get("checkpoint_supported") if type(drift.get("checkpoint_supported")) is bool else None
-    for key in ("state", "outcome", "failure_kind"):
+    for key, allowed in CHECKPOINT_VOCABULARY.items():
         value = checkpoint_view.get(key)
-        result["checkpoint_" + key] = value if isinstance(value, str) and re.fullmatch(r"[a-z_]{1,40}", value) else None
+        result["checkpoint_" + key] = value if isinstance(value, str) and value in allowed else None
     return result
 
 

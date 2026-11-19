@@ -17,12 +17,22 @@ from unittest import mock
 
 
 TOOLS = pathlib.Path(__file__).resolve().parent
+sys.path.insert(0, str(TOOLS.parent / "tests"))
+from test_release import (  # noqa: E402
+    build_embedded_agent_manifest,
+    encode_embedded_agent_manifest_frame,
+)
 NATIVE_AGENT = runpy.run_path(str(TOOLS / "build-agent.py"))
 
 
 class BuildScriptTests(unittest.TestCase):
     @contextlib.contextmanager
-    def independent_prebuilt_agent(self, reported_version="1.2.3"):
+    def independent_prebuilt_agent(
+        self,
+        reported_version="1.2.3",
+        tcp_probe_output="apsp-tcp-probe 0.3.0",
+        include_manifest=True,
+    ):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
             (root / "Cargo.toml").write_text('[workspace.package]\nversion = "9.8.7"\n')
@@ -30,14 +40,30 @@ class BuildScriptTests(unittest.TestCase):
             agent.mkdir(parents=True)
             (agent / "Cargo.toml").write_text('[package]\nname = "apsp-agent"\nversion = "1.2.3"\n')
             binary = root / "apsp-agent"
-            binary.write_text(
-                f"#!{sys.executable}\n"
-                "import sys\n"
-                f"if sys.argv[1:] == ['--version']: print('apsp-agent {reported_version}')\n"
-                "elif sys.argv[1:] == ['--help']: print('apsp-agent')\n"
-                "elif sys.argv[1:] == ['run', '--help']: print('--monitor-only')\n"
-                "else: sys.exit(2)\n"
+            tcp_branch = (
+                f"  'tcp-probe --version') printf '%s\\n' '{tcp_probe_output}'; exit 0 ;;\n"
+                if tcp_probe_output is not None
+                else ""
             )
+            payload = (
+                "#!/bin/sh\n"
+                'case "$*" in\n'
+                f"  --version) printf 'apsp-agent %s\\n' '{reported_version}'; exit 0 ;;\n"
+                f"{tcp_branch}"
+                "  --help) printf 'apsp-agent\\n'; exit 0 ;;\n"
+                "  'run --help') printf '%s\\n' '--monitor-only'; exit 0 ;;\n"
+                "esac\n"
+                "exit 2\n"
+            ).encode("utf-8") + (b"#" * 16384 + b"\n")
+            if include_manifest:
+                singbox_ver = NATIVE_AGENT["expected_embedded_versions"]()["sing-box"]
+                manifest = build_embedded_agent_manifest(
+                    reported_version,
+                    "x86_64-unknown-freebsd",
+                    component_versions={"sing-box": singbox_ver},
+                )
+                payload += encode_embedded_agent_manifest_frame(manifest)
+            binary.write_bytes(payload)
             binary.chmod(0o755)
             # Architecture headers have separate coverage. Keep executable calls,
             # version rejection, immutable packaging, and checksums real here.
@@ -64,6 +90,20 @@ class BuildScriptTests(unittest.TestCase):
     def test_prebuilt_agent_rejects_binary_reporting_workspace_version(self):
         with self.independent_prebuilt_agent(reported_version="9.8.7") as (root, _):
             with self.assertRaisesRegex(ValueError, "unexpected Agent version: apsp-agent 9.8.7"):
+                NATIVE_AGENT["main"]()
+            self.assertFalse((root / "artifacts").exists())
+
+    def test_prebuilt_agent_rejects_missing_tcp_probe_or_embedded_manifest(self):
+        with self.independent_prebuilt_agent(tcp_probe_output=None) as (root, _):
+            with self.assertRaises(subprocess.CalledProcessError):
+                NATIVE_AGENT["main"]()
+            self.assertFalse((root / "artifacts").exists())
+        with self.independent_prebuilt_agent(tcp_probe_output="unexpected-probe 0.1.0") as (root, _):
+            with self.assertRaisesRegex(ValueError, "unexpected built-in tcp-probe version"):
+                NATIVE_AGENT["main"]()
+            self.assertFalse((root / "artifacts").exists())
+        with self.independent_prebuilt_agent(include_manifest=False) as (root, _):
+            with self.assertRaisesRegex(ValueError, "embedded component manifest frame"):
                 NATIVE_AGENT["main"]()
             self.assertFalse((root / "artifacts").exists())
 

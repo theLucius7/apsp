@@ -613,7 +613,7 @@ mod tests {
         let endpoint = sample_endpoint();
         assert!(endpoint_reasons(&endpoint, "节点").is_empty());
         let value = serde_json::to_value(&endpoint).unwrap();
-        let keys: Vec<&str> = value
+        let keys: std::collections::BTreeSet<&str> = value
             .as_object()
             .unwrap()
             .keys()
@@ -621,7 +621,7 @@ mod tests {
             .collect();
         assert_eq!(
             keys,
-            vec![
+            std::collections::BTreeSet::from([
                 "id",
                 "name",
                 "server_id",
@@ -638,7 +638,7 @@ mod tests {
                 "desired_revision",
                 "applied_revision",
                 "applied_observed_at",
-            ]
+            ])
         );
     }
 

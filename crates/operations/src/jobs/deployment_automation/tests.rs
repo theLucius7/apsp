@@ -108,7 +108,7 @@ async fn signed_state(pool: &PgPool) -> anyhow::Result<(AppState, TestDirectory)
             listen: "127.0.0.1:0".parse()?,
             public_url: "http://127.0.0.1".into(),
             data_dir: directory.0.clone(),
-            admin_password: None,
+            admin_password: Some("TEST_ONLY-deployment-automation-admin".into()),
         },
     )
     .await?;
@@ -484,20 +484,18 @@ async fn legacy_dispatched_unknowns_reconcile_readonly_without_replay_or_candida
         tx.rollback().await?;
 
         // Fresh verified checkpoint matching frozen 0.4.1 bundle reconciles without mutating history.
-        record_verified_checkpoint(
-            &pool,
-            server,
-            &read_second,
-            binding.clone(),
-            now_timestamp(),
-        )
-        .await?;
+        let mut tx = pool.begin().await?;
+        let read_third =
+            request_automation_deployment_checkpoint_tx(&state, &mut tx, original).await?;
+        tx.commit().await?;
+        record_verified_checkpoint(&pool, server, &read_third, binding.clone(), now_timestamp())
+            .await?;
         let mut tx = pool.begin().await?;
         let reconciliation = reconcile_automation_deployment_tx(
             &state,
             &mut tx,
             original,
-            read_second.request_id,
+            read_third.request_id,
             "TEST_ONLY legacy dispatched unknown verified readonly",
         )
         .await?;

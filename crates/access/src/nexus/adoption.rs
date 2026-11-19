@@ -121,19 +121,22 @@ async fn prepared(
         .unwrap_or_else(|| format!("{}/sub/{token}", state.config.public_url));
     // Live counters and observation times deliberately do not invalidate a preview.
     // They are captured again under the usage-table locks when adoption commits.
-    let digest = crate::auth::hash_token(&serde_json::to_string(&json!({
-        "user":user,"identity":identity,"assignment":assignment,
-        "starts_at":state_row.get::<Option<i64>,_>("starts_at"),
-        "expires_at":state_row.get::<Option<i64>,_>("expires_at"),
-        "monthly_bytes":state_row.get::<Option<String>,_>("monthly_bytes"),
-        "reset_day":state_row.get::<Option<i32>,_>("reset_day"),
-        "reset_hour":state_row.get::<Option<i32>,_>("reset_hour"),
-        "reset_minute":state_row.get::<Option<i32>,_>("reset_minute"),
-        "timezone":state_row.get::<Option<String>,_>("timezone"),
-        "cycle_start":bounds.0,"next_reset":bounds.1,"grants":grants,
-        "status":view["entitlement"]["status"],"credential_nodes":nodes,
-        "formats":view["formats"],"old_subscription_url":old_url
-    }))?);
+    let digest = crate::auth::hash_token(
+        &serde_json::to_string(&json!({
+            "user":user,"identity":identity,"assignment":assignment,
+            "starts_at":state_row.get::<Option<i64>,_>("starts_at"),
+            "expires_at":state_row.get::<Option<i64>,_>("expires_at"),
+            "monthly_bytes":state_row.get::<Option<String>,_>("monthly_bytes"),
+            "reset_day":state_row.get::<Option<i32>,_>("reset_day"),
+            "reset_hour":state_row.get::<Option<i32>,_>("reset_hour"),
+            "reset_minute":state_row.get::<Option<i32>,_>("reset_minute"),
+            "timezone":state_row.get::<Option<String>,_>("timezone"),
+            "cycle_start":bounds.0,"next_reset":bounds.1,"grants":grants,
+            "status":view["entitlement"]["status"],"credential_nodes":nodes,
+            "formats":view["formats"],"old_subscription_url":old_url
+        }))
+        .map_err(anyhow::Error::from)?,
+    );
     view["digest"] = json!(digest);
     view["adopted"] = json!(adopted.is_some());
     view["blockers"] = json!(blockers);

@@ -54,6 +54,8 @@ export default function ServerBusiness({ serverId }: { serverId: number }) {
     void action.run(() => api<Readiness>(`/api/traffic/servers/${serverId}/deployments/check`, 'POST'), setCheck)
   }
   const runtime = server ? runtimeStatusView(server) : undefined
+  const targetRev = typeof server?.status?.target_rev === 'number' && server.status.target_rev > 0 ? server.status.target_rev : null
+  const appliedRev = typeof server?.status?.applied_rev === 'number' && server.status.applied_rev > 0 ? server.status.applied_rev : null
   const own = nodes.data?.filter(node => node.server_id === serverId) ?? []
   const canRedeploy = Boolean(writable && status && (status.applied_rev > 0 || deployment.data?.history.length))
   const health = !status ? undefined : !server?.online ? { label: '当前健康待确认', tone: 'warm' as const } : status.healthy ? { label: '当前配置健康', tone: 'good' as const } : status.applied_rev ? { label: '健康检查未通过', tone: 'bad' as const } : { label: '等待应用', tone: 'warm' as const }
@@ -100,10 +102,10 @@ export default function ServerBusiness({ serverId }: { serverId: number }) {
             {status.target_rev > status.applied_rev && !status.last_error && !['waiting_agent', 'sync_blocked', 'upgrade_required'].includes(server.status?.state ?? '') && <Notice className="mb-0">正在等待设备应用最新配置。设备离线时会在重连后自动同步。</Notice>}
             {deployment.data?.authorized_nodes === 0 && <p className="text-muted-foreground text-[13px] leading-relaxed">还没有节点授权给有效用户，节点在授权前不监听。到<a className="text-primary underline-offset-4 hover:underline" href="#/groups">策略与套餐</a>把节点放进用户所在的策略组；只做链路出口的服务器使用内部连接凭据，不需要放进策略组。</p>}
           </div> : <div className="grid gap-2">
-            {(server.status.target_rev > 0 || server.status.applied_rev > 0) && <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:max-w-md">
-              <Revision label="目标版本" value={server.status.target_rev || null} />
+            {(targetRev !== null || appliedRev !== null) && <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:max-w-md">
+              <Revision label="目标版本" value={targetRev} />
               <ArrowRightIcon className="text-muted-foreground size-4" aria-hidden="true" />
-              <Revision label="已应用版本" value={server.status.applied_rev || null} tone={server.status.current_healthy ? 'good' : undefined} />
+              <Revision label="已应用版本" value={appliedRev} tone={server.status?.current_healthy ? 'good' : undefined} />
             </div>}
             <p className="text-muted-foreground text-[13px]">还没有发布记录。保存节点、链路或服务端配置后会自动生成部署并下发到在线 Agent。</p>
           </div>)}

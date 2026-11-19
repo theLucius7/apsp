@@ -18,12 +18,14 @@ use std::collections::BTreeMap;
 const MODERN_INSTALLER: &[u8] =
     b"#!/bin/sh\n# APSP_BOOTSTRAP_AGENT_SOURCE=preloaded-github-v1\nexit 0\n";
 
-fn signed_nodequality_agent() -> Result<(
+type SignedNodeQualityFixture = (
     Vec<(apsp_protocol::release::ReleaseArtifact, Vec<u8>)>,
     apsp_protocol::release::ReleaseProof,
     Value,
     Value,
-)> {
+);
+
+fn signed_nodequality_agent() -> Result<SignedNodeQualityFixture> {
     use apsp_protocol::{
         bundled::{
             EmbeddedAgentManifest, EmbeddedComponentRecord, encode_embedded_agent_manifest_frame,

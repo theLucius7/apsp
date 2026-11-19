@@ -356,7 +356,7 @@ pub async fn is_configured_on(connection: &mut PgConnection, id: i64) -> ApiResu
 }
 
 pub async fn is_configured(tx: &mut Transaction<'_, Postgres>, id: i64) -> ApiResult<bool> {
-    is_configured_on(&mut **tx, id).await
+    is_configured_on(tx, id).await
 }
 
 pub async fn require_configured(tx: &mut Transaction<'_, Postgres>, id: i64) -> ApiResult<()> {
@@ -525,10 +525,15 @@ mod runtime_status_tests {
         let mut row = sample();
         row.applied_rev = Some(2);
         let value = serde_json::to_value(row.view()).expect("serialize RuntimeServer");
-        let keys: Vec<_> = value.as_object().expect("object").keys().cloned().collect();
+        let keys: std::collections::BTreeSet<_> = value
+            .as_object()
+            .expect("object")
+            .keys()
+            .map(String::as_str)
+            .collect();
         assert_eq!(
             keys,
-            vec![
+            std::collections::BTreeSet::from([
                 "id",
                 "name",
                 "configured",
@@ -538,23 +543,23 @@ mod runtime_status_tests {
                 "source",
                 "runtime_version",
                 "status",
-            ]
+            ])
         );
-        let status_keys: Vec<_> = value["status"]
+        let status_keys: std::collections::BTreeSet<_> = value["status"]
             .as_object()
             .expect("status object")
             .keys()
-            .cloned()
+            .map(String::as_str)
             .collect();
         assert_eq!(
             status_keys,
-            vec![
+            std::collections::BTreeSet::from([
                 "state",
                 "reason",
                 "target_rev",
                 "applied_rev",
                 "current_healthy",
-            ]
+            ])
         );
     }
 }

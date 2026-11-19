@@ -19,7 +19,6 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::{PgConnection, Row};
-use std::collections::HashMap;
 use uuid::Uuid;
 
 #[derive(Deserialize)]
@@ -211,20 +210,6 @@ pub(crate) async fn unresolved(
         .bind(module)
         .fetch_one(connection)
         .await?)
-}
-
-/// The results of those operations among `ids` that finished.
-pub(crate) async fn results(
-    connection: &mut PgConnection,
-    ids: &[Uuid],
-) -> ApiResult<HashMap<Uuid, Value>> {
-    let rows: Vec<(Uuid, Value)> = sqlx::query_as(
-        "SELECT id,result FROM runtime_operations WHERE id=ANY($1) AND result IS NOT NULL",
-    )
-    .bind(ids)
-    .fetch_all(connection)
-    .await?;
-    Ok(rows.into_iter().collect())
 }
 
 pub async fn pending(

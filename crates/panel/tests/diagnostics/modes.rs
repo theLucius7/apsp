@@ -223,7 +223,9 @@ async fn full_stays_disabled_after_admin_acknowledges_unknown_traffic(pool: PgPo
     let (server, _socket, _ack) = panel.authenticated_device(&cookie, "流量未知夹具").await?;
     capable(&panel, server).await?;
     fixture(&panel).await?;
-    sqlx::query("INSERT INTO deployments(server_id,module,rev,bundle,bundle_sha256,created_at) VALUES($1,'singbox',1,'TEST_ONLY','TEST_ONLY',$2)").bind(server).bind(apsp_protocol::now_timestamp()).execute(&panel.state.pool).await?;
+    panel
+        .create_node(&cookie, server, "unknown-traffic-node")
+        .await?;
     let path = format!("/api/servers/{server}/node-quality/reports");
     assert_eq!(
         panel

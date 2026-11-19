@@ -25,7 +25,7 @@ export function runtimeStatusView(server: RuntimeServer): { label: string; tone:
   const status = server.status
   const view = status ? runtimeStates[status.state] : undefined
   if (!status || !view) return { label: '状态待确认', tone: 'warm', reason: '运行状态暂时无法识别，请刷新确认。' }
-  return { ...view, reason: status.reason }
+  return { ...view, reason: typeof status.reason === 'string' ? status.reason : '' }
 }
 
 /**

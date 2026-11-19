@@ -35,7 +35,7 @@ use tokio::{
 #[derive(Clone)]
 pub(super) struct BundleStatus {
     pub components: Arc<BTreeMap<String, String>>,
-    pub component_digests: Arc<BTreeMap<String, String>>,
+    pub component_digests: Arc<Mutex<BTreeMap<String, String>>>,
     pub ready: Arc<AtomicBool>,
     pub error: Arc<Mutex<Option<String>>>,
 }
@@ -44,7 +44,7 @@ impl Default for BundleStatus {
     fn default() -> Self {
         Self {
             components: Arc::new(BTreeMap::new()),
-            component_digests: Arc::new(BTreeMap::new()),
+            component_digests: Arc::new(Mutex::new(BTreeMap::new())),
             ready: Arc::new(AtomicBool::new(true)),
             error: Arc::new(Mutex::new(None)),
         }
@@ -80,7 +80,12 @@ impl Runtime {
         };
         info.agent_version = Some(self.agent_version.into());
         info.components = self.bundle.components.as_ref().clone();
-        info.component_digests = self.bundle.component_digests.as_ref().clone();
+        info.component_digests = self
+            .bundle
+            .component_digests
+            .lock()
+            .map_err(|_| anyhow::anyhow!("component digests mutex poisoned"))?
+            .clone();
         info.ip_addresses = crate::telemetry::normalized_addresses(
             info.ip_addresses
                 .iter()
@@ -263,20 +268,13 @@ pub async fn run_with_components(
     }
     let mut components = BTreeMap::new();
     let mut component_digests = BTreeMap::new();
-    let self_exe_sha256 = if self_contained {
-        Some(crate::bundled::current_agent_sha256()?)
-    } else {
-        crate::bundled::current_agent_sha256().ok()
-    };
-    if let Some(agent_sha) = &self_exe_sha256 {
-        component_digests.insert("agent".into(), agent_sha.clone());
-    }
+    let mut subcommand_components = Vec::new();
     for item in bundled.runtimes.values().chain(bundled.tools.values()) {
         components.insert(item.component_name.clone(), item.version.clone());
         if let Some(digest) = crate::bundled::bundle_digest(item)? {
             component_digests.insert(item.component_name.clone(), digest);
-        } else if let Some(agent_sha) = &self_exe_sha256 {
-            component_digests.insert(item.component_name.clone(), agent_sha.clone());
+        } else {
+            subcommand_components.push(item.component_name.clone());
         }
     }
     let mut capabilities = advertised_modules.clone();
@@ -392,7 +390,7 @@ pub async fn run_with_components(
         retirement.requested() || (sync_reconcilers.is_empty() && !await_panel_intent);
     let bundle_status = BundleStatus {
         components: Arc::new(components),
-        component_digests: Arc::new(component_digests),
+        component_digests: Arc::new(Mutex::new(component_digests)),
         ready: Arc::new(AtomicBool::new(initial_ready)),
         error: Arc::new(Mutex::new(None)),
     };
@@ -525,6 +523,21 @@ pub async fn run_with_components(
         trigger_rx,
         outgoing_tx,
     ));
+    let self_exe_sha256 = if self_contained {
+        Some(crate::bundled::current_agent_sha256().await?)
+    } else {
+        crate::bundled::current_agent_sha256().await.ok()
+    };
+    if let Some(agent_sha) = self_exe_sha256 {
+        let mut digests = bundle_status
+            .component_digests
+            .lock()
+            .map_err(|_| anyhow::anyhow!("component digests mutex poisoned"))?;
+        digests.insert("agent".into(), agent_sha.clone());
+        for component in subcommand_components {
+            digests.insert(component, agent_sha.clone());
+        }
+    }
     let mut attempt = 0;
     loop {
         retirement.recover_completion().await?;

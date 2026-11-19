@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { deleteProxyResource, prepareChainBatch, proxyWriteError, submitChainBatch, validNodeList, validServerList } from '../src/traffic/Chains'
 import type { ChainBatchDraft, ProxyWriteSnapshot } from '../src/traffic/Chains'
+import { runtimeStatusView } from '../src/traffic/Runtimes'
 import { filterProxyResources, proxyResourceCounts, proxyResourceKey, validProxyResources } from '../src/access/groupTypes'
 import { validatedSnapshot } from '../src/lib/resource-snapshot'
 import type { ProxyResource, ResourceEndpoint } from '../src/access/groupTypes'
@@ -75,6 +76,11 @@ test('malformed auxiliary node fields and legacy server metadata never establish
   expect(validServerList([{...current.servers.data![0],status:{...current.servers.data![0].status,target_rev:'1'}}])).toBe(false)
   expect(validServerList([{...current.servers.data![0],status:undefined}])).toBe(false)
   expect(validServerList([{ id: 1, name: '服务器 1', enabled: true, online: true, agent_supported: true, read_only: false, source: 'administrator', installation: { state: 'ready', reason: '', target_rev: 1, applied_rev: 1 } }])).toBe(false)
+  expect(runtimeStatusView(runtimeServerFixture(1, { configured: true, online: true }))).toEqual({ label: '运行中', tone: 'good', reason: '' })
+  const missingStatus = runtimeServerFixture(1, { configured: true, online: true, runtime_version: '1.14.4-apsp.2' })
+  delete (missingStatus as { status?: unknown }).status
+  expect(runtimeStatusView(missingStatus)).toEqual({ label: '状态待确认', tone: 'warm', reason: '运行状态暂时无法识别，请刷新确认。' })
+  expect(runtimeStatusView({ ...runtimeServerFixture(1), status: { ...runtimeServerFixture(1).status, state: 'legacy_unknown' as never } })).toEqual({ label: '状态待确认', tone: 'warm', reason: '运行状态暂时无法识别，请刷新确认。' })
 })
 test('one batch contains independent new entry ports and a shared managed exit without grants', async () => {
   const unconfigured = snapshot()

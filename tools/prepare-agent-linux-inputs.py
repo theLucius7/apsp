@@ -1723,8 +1723,10 @@ def run_ipquality_factory_native(
     source_bundle: Path,
     work_dir: Path,
     out_root: Path,
+    *,
+    tools_dir: Path = TOOLS_DIR,
 ) -> None:
-    spec = importlib.util.spec_from_file_location("ipq_rootfs", TOOLS_DIR / "ipquality-rootfs.py")
+    spec = importlib.util.spec_from_file_location("ipq_rootfs", tools_dir / "ipquality-rootfs.py")
     ensure(spec is not None and spec.loader is not None, "unable to load tools/ipquality-rootfs.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -1745,17 +1747,40 @@ def run_ipquality_factory_native(
     cand.write_text(json.dumps({"image_sha256": builder_sha, "arch": arch, "tools": tools}, sort_keys=True) + "\n", encoding="utf-8")
     os.chmod(cand, 0o600)
 
-    cli = [sys.executable, str(TOOLS_DIR / "ipquality-rootfs.py")]
+    cli = [sys.executable, str(tools_dir / "ipquality-rootfs.py")]
+    collector = [sys.executable, str(tools_dir / "nodequality-rootfs-collect.py")]
     c1, c2, c3, c4, c5, c6 = (stage / n for n in ("01-col", "02-der", "03-bnd", "04-prep", "05-tree", "06-exp"))
     out_root.mkdir(parents=True, mode=0o700, exist_ok=True)
     os.chmod(out_root, 0o700)
-    subprocess.run([*cli, "collect", "--request", str(req_file), "--keyring", str(keyring), "--keyring-provenance", str(keyring_prov), "--candidate-builder", str(cand), "--output", str(c1), "--max-total-bytes", str(3 * 1024**3), "--timeout-seconds", "1800"], check=True)
+    subprocess.run([*collector, "collect", "--request", str(req_file), "--keyring", str(keyring), "--keyring-provenance", str(keyring_prov), "--output", str(c1), "--max-total-bytes", str(3 * 1024**3), "--timeout-seconds", "1800"], check=True)
     subprocess.run([*cli, "derive", "--materials", str(c1), "--output", str(c2), "--max-output-bytes", str(256 * 1024**2), "--timeout-seconds", "600"], check=True)
     subprocess.run([*cli, "bind", "--derived-inputs", str(c2), "--candidate-builder", str(cand), "--output", str(c3), "--timeout-seconds", "600"], check=True)
     subprocess.run([*cli, "prepare", "--lock", str(c3 / "inputs-lock.json"), "--cache", str(c1 / "input-cache"), "--derived-inputs", str(c2), "--derived-binding", str(c3), "--output", str(c4), "--approved-builder-image-sha256", builder_sha], check=True)
     subprocess.run([*cli, "build", "--prepared", str(c4), "--output", str(c5), "--approved-builder-image-sha256", builder_sha], check=True)
-    subprocess.run([*cli, "export", "--tree", str(c5), "--prepared", str(c4), "--output", str(c6), "--outer-reserve-bytes", str(32 * 1024**2), "--approved-builder-image-sha256", builder_sha], check=True)
-    subprocess.run([sys.executable, str(TOOLS_DIR / "build-ipquality.py"), "--arch", arch, "--source-bundle", str(source_bundle), "--prepared-directory", str(c4), "--rootfs-directory", str(c6), "--approved-builder-image-sha256", builder_sha, "--license-review", str(license_review), "--output", str(out_root)], check=True)
+    subprocess.run([*cli, "export", "--tree", str(c5 / "tree"), "--prepared", str(c4), "--output", str(c6), "--outer-reserve-bytes", str(32 * 1024**2), "--approved-builder-image-sha256", builder_sha], check=True)
+    subprocess.run([sys.executable, str(tools_dir / "build-ipquality.py"), "--arch", arch, "--source-bundle", str(source_bundle), "--prepared-directory", str(c4), "--rootfs-directory", str(c6), "--approved-builder-image-sha256", builder_sha, "--license-review", str(license_review), "--output", str(out_root)], check=True)
+
+
+def copy_ipquality_factory_code(destination: Path) -> None:
+    # The factory attests its input code with the builder's UID and safe file
+    # permissions. A read-only bind mount still uses the checkout's host UID.
+    def copy_source(source, target):
+        copied = shutil.copyfile(source, target)
+        os.chmod(copied, 0o755 if os.stat(source).st_mode & 0o100 else 0o644)
+        return copied
+
+    def ignore(directory, names):
+        return {
+            name for name in names
+            if name in {"__pycache__", "singbox-runtime"} or (Path(directory) / name).is_symlink()
+        }
+
+    copy_source(REPO_ROOT / "LICENSE", destination / "LICENSE")
+    for relative in ("tools", "crates/observability/upstream"):
+        shutil.copytree(REPO_ROOT / relative, destination / relative,
+                        copy_function=copy_source, ignore=ignore)
+        for directory, _, _ in os.walk(destination / relative):
+            os.chmod(directory, 0o755)
 
 
 def cmd_prepare_ipquality(args: argparse.Namespace) -> None:
@@ -1784,13 +1809,19 @@ def cmd_prepare_ipquality(args: argparse.Namespace) -> None:
     if args.inside_builder:
         keyring = args.keyring_file.resolve() if args.keyring_file else Path("/usr/share/keyrings/debian-archive-keyring.gpg")
         ensure(args.source_bundle is not None and keyring.is_file(), "missing source-bundle or Debian keyring inside builder")
-        run_ipquality_factory_native(
-            arch, builder_sha, req_file, keyring,
-            args.keyring_provenance_file.resolve(),
-            args.license_review_file.resolve(),
-            args.source_bundle.resolve(),
-            work_dir, artifact_root,
-        )
+        with tempfile.TemporaryDirectory(prefix="factory-code-", dir=work_dir) as directory:
+            checkout = Path(directory)
+            copy_ipquality_factory_code(checkout)
+            run_ipquality_factory_native(
+                arch, builder_sha, checkout / req_file.relative_to(REPO_ROOT), keyring,
+                args.keyring_provenance_file.resolve(),
+                args.license_review_file.resolve(),
+                args.source_bundle.resolve(),
+                work_dir, artifact_root, tools_dir=checkout / "tools",
+            )
+        owner = artifact_root.parent.stat()
+        for path in (*artifact_root.rglob("*"), artifact_root):
+            os.chown(path, owner.st_uid, owner.st_gid, follow_symlinks=False)
         return
 
     if args.source_bundle is not None:
@@ -1799,18 +1830,22 @@ def cmd_prepare_ipquality(args: argparse.Namespace) -> None:
     else:
         helper = REPO_ROOT / "crates/observability/upstream/ipquality/source-helper.py"
         slock = REPO_ROOT / ipq_lock["source_lock_relpath"]
-        dl_dir = work_dir / "ipquality-upstream"
-        dl_dir.mkdir(parents=True, exist_ok=True)
-        rows = subprocess.run([sys.executable, str(helper), "downloads", str(slock)], capture_output=True, text=True, check=True).stdout.splitlines()
-        for row in rows:
-            if not row.strip():
-                continue
-            fname, url = row.split("\t")
-            tmp_f = dl_dir / f".raw.{fname}"
-            https_fetch(url, tmp_f, max_bytes=2 * 1024 * 1024)
-            subprocess.run([sys.executable, str(helper), "receive", str(dl_dir / fname)], input=tmp_f.read_bytes(), check=True, stdout=subprocess.DEVNULL)
-            tmp_f.unlink(missing_ok=True)
-        packed = subprocess.run([sys.executable, str(helper), "pack", str(slock), str(dl_dir)], capture_output=True, check=True).stdout
+        sources = {row["name"]: row for row in json.loads(slock.read_text(encoding="utf-8"))["files"]}
+        with tempfile.TemporaryDirectory(prefix="ipquality-upstream-", dir=work_dir) as directory:
+            dl_dir = Path(directory)
+            rows = subprocess.run(
+                [sys.executable, str(helper), "downloads", str(slock)],
+                capture_output=True, text=True, check=True,
+            ).stdout.splitlines()
+            for row in rows:
+                name, url = row.split("\t")
+                expected = sources[name]
+                https_fetch(url, dl_dir / name, max_bytes=2 * 1024 * 1024,
+                            size=expected["size"], sha256=expected["sha256"])
+            packed = subprocess.run(
+                [sys.executable, str(helper), "pack", str(slock), str(dl_dir)],
+                capture_output=True, check=True,
+            ).stdout
         source_bundle = work_dir / "ipquality-source-bundle.json"
         source_bundle.write_bytes(packed)
         os.chmod(source_bundle, 0o600)
@@ -1850,7 +1885,7 @@ def cmd_prepare_ipquality(args: argparse.Namespace) -> None:
         )
         subprocess.run(
             [
-                "docker", "run", "--rm", "--privileged", f"--platform=linux/{arch}",
+                "docker", "run", "--rm", "--privileged", "--user", "0:0", f"--platform=linux/{arch}",
                 "-v", f"{REPO_ROOT}:/repo:ro", "-v", f"{work_dir}:/work", image,
                 "python3", "/repo/tools/prepare-agent-linux-inputs.py", "prepare-ipquality",
                 "--inside-builder", "--arch", arch,

@@ -44,7 +44,7 @@ function address(endpoint: ResourceEndpoint) {
 function applicationView(endpoint: ResourceEndpoint, server?: RuntimeServer, fresh = false) {
   if (!fresh || !server) return { label: '应用状态待确认', tone: 'neutral' as const, reason: '尚未取得最新设备应用状态，请查看服务器详情。' }
   const view = runtimeStatusView(server)
-  if (server.configured && server.status.state === 'ready') {
+  if (server.configured && server.status?.state === 'ready') {
     if (!endpoint.server_deleted && endpoint.online && endpoint.desired_revision !== null && endpoint.desired_revision > 0
       && endpoint.applied_revision === endpoint.desired_revision && endpoint.applied_observed_at !== null && server.online
       && server.status.target_rev === endpoint.desired_revision && server.status.applied_rev === endpoint.applied_revision) return { ...view, label: '目标配置已应用' }

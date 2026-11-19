@@ -141,13 +141,15 @@ async fn probe_row(
     sqlx::query("INSERT INTO singbox_path_probes(probe_id,chain_id,generation,stage,server_id,created_at) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(chain_id,generation,stage) DO NOTHING").bind(Uuid::new_v4()).bind(chain_id).bind(generation).bind(stage).bind(server).bind(now_timestamp()).execute(&mut **tx).await?;
     Ok(())
 }
+type ServerRuntimeRow = (Option<String>, Option<i64>, Value, Option<i64>, Value);
+
 async fn verify_server_runtime(
     state: &AppState,
     connection: &mut PgConnection,
     server: i64,
     now: i64,
 ) -> Result<(), String> {
-    let row: Option<(Option<String>, Option<i64>, Value, Option<i64>, Value)> = sqlx::query_as(
+    let row: Option<ServerRuntimeRow> = sqlx::query_as(
         "SELECT device_public_key,last_seen,static_info,static_info_received_at,capabilities FROM servers WHERE id=$1 AND deleted_at IS NULL",
     )
     .bind(server)
@@ -260,6 +262,12 @@ async fn server_dispatched(
     .await?)
 }
 
+#[derive(Clone, Copy)]
+struct DependencyExpectation {
+    required: Option<i64>,
+    absent: Option<i64>,
+}
+
 async fn checkpoint_for_stage(
     state: &AppState,
     connection: &mut PgConnection,
@@ -267,8 +275,7 @@ async fn checkpoint_for_stage(
     generation: i64,
     stage: &str,
     server: i64,
-    required_generation: Option<i64>,
-    absence: Option<i64>,
+    dependencies: DependencyExpectation,
 ) -> ApiResult<Option<RuntimeCheckpoint>> {
     let expected:Option<(i64,String,Uuid,String)>=sqlx::query_as("SELECT revision,bundle_sha256,deployment_id,binding_digest FROM singbox_path_stage_deployments WHERE chain_id=$1 AND generation=$2 AND stage=$3 AND server_id=$4").bind(chain_id).bind(generation).bind(stage).bind(server).fetch_optional(&mut *connection).await?;
     let Some((revision, hash, deployment_id, digest)) = expected else {
@@ -295,13 +302,13 @@ async fn checkpoint_for_stage(
     {
         return Ok(None);
     }
-    if let Some(required) = required_generation {
+    if let Some(required) = dependencies.required {
         let contains:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_path_deployment_dependencies d WHERE d.server_id=$1 AND d.module='singbox' AND d.revision=$2 AND d.chain_id=$3 AND d.generation=$4)").bind(server).bind(revision).bind(chain_id).bind(required).fetch_one(&mut *connection).await?;
         if !contains {
             return Ok(None);
         }
     }
-    if let Some(absent) = absence {
+    if let Some(absent) = dependencies.absent {
         let present:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_path_deployment_dependencies WHERE server_id=$1 AND module='singbox' AND revision=$2 AND chain_id=$3 AND generation=$4)").bind(server).bind(revision).bind(chain_id).bind(absent).fetch_one(&mut *connection).await?;
         if present {
             return Ok(None);
@@ -549,8 +556,10 @@ async fn advance(
                         generation,
                         "preparing_dependencies",
                         *server,
-                        Some(generation),
-                        None,
+                        DependencyExpectation {
+                            required: Some(generation),
+                            absent: None,
+                        },
                     )
                     .await?
                     .is_none()
@@ -581,8 +590,10 @@ async fn advance(
                 generation,
                 &chain.phase,
                 entry,
-                Some(generation),
-                None,
+                DependencyExpectation {
+                    required: Some(generation),
+                    absent: None,
+                },
             )
             .await?
             .is_some()
@@ -624,8 +635,10 @@ async fn advance(
                 generation,
                 deployment_stage,
                 entry,
-                Some(generation),
-                None,
+                DependencyExpectation {
+                    required: Some(generation),
+                    absent: None,
+                },
             )
             .await?
             {
@@ -652,8 +665,10 @@ async fn advance(
                 generation,
                 "switching_entry",
                 entry,
-                Some(generation),
-                None,
+                DependencyExpectation {
+                    required: Some(generation),
+                    absent: None,
+                },
             )
             .await?
             {
@@ -684,8 +699,10 @@ async fn advance(
                         generation,
                         "retiring_old",
                         *server,
-                        Some(generation),
-                        chain.recovery_generation,
+                        DependencyExpectation {
+                            required: Some(generation),
+                            absent: chain.recovery_generation,
+                        },
                     )
                     .await?
                     .is_none()
@@ -711,8 +728,10 @@ async fn advance(
                     generation,
                     "retiring_old",
                     entry,
-                    Some(generation),
-                    chain.recovery_generation,
+                    DependencyExpectation {
+                        required: Some(generation),
+                        absent: chain.recovery_generation,
+                    },
                 )
                 .await?
                 {
@@ -744,8 +763,10 @@ async fn advance(
                         generation,
                         "restoring",
                         entry,
-                        Some(old),
-                        Some(generation),
+                        DependencyExpectation {
+                            required: Some(old),
+                            absent: Some(generation),
+                        },
                     )
                     .await?
                     .is_some()
@@ -764,8 +785,10 @@ async fn advance(
                         generation,
                         "restoring",
                         entry,
-                        Some(old),
-                        Some(generation),
+                        DependencyExpectation {
+                            required: Some(old),
+                            absent: Some(generation),
+                        },
                     )
                     .await?
                     {
@@ -789,8 +812,10 @@ async fn advance(
                         generation,
                         "restoring",
                         entry,
-                        Some(old),
-                        Some(generation),
+                        DependencyExpectation {
+                            required: Some(old),
+                            absent: Some(generation),
+                        },
                     )
                     .await?
                     {
@@ -822,8 +847,10 @@ async fn advance(
                                 generation,
                                 "restoring_cleanup",
                                 *server,
-                                Some(old),
-                                Some(generation),
+                                DependencyExpectation {
+                                    required: Some(old),
+                                    absent: Some(generation),
+                                },
                             )
                             .await?
                             .is_none()
@@ -849,8 +876,10 @@ async fn advance(
                             generation,
                             "restoring_cleanup",
                             entry,
-                            Some(old),
-                            Some(generation),
+                            DependencyExpectation {
+                                required: Some(old),
+                                absent: Some(generation),
+                            },
                         )
                         .await?
                         {
@@ -895,8 +924,10 @@ async fn advance(
                                 chain.desired_generation,
                                 "retiring",
                                 *server,
-                                None,
-                                None,
+                                DependencyExpectation {
+                                    required: None,
+                                    absent: None,
+                                },
                             )
                             .await?
                             .is_none()
@@ -912,8 +943,10 @@ async fn advance(
                                     chain.desired_generation,
                                     "retiring",
                                     *server,
-                                    None,
-                                    Some(absent),
+                                    DependencyExpectation {
+                                        required: None,
+                                        absent: Some(absent),
+                                    },
                                 )
                                 .await?
                                 .is_none()
@@ -946,8 +979,10 @@ async fn advance(
                             generation,
                             "applied",
                             *server,
-                            Some(generation),
-                            None,
+                            DependencyExpectation {
+                                required: Some(generation),
+                                absent: None,
+                            },
                         )
                         .await?
                         .is_none()
@@ -964,8 +999,10 @@ async fn advance(
                             generation,
                             "applied",
                             entry,
-                            Some(generation),
-                            None,
+                            DependencyExpectation {
+                                required: Some(generation),
+                                absent: None,
+                            },
                         )
                         .await?
                     {

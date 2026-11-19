@@ -470,13 +470,9 @@ async fn acme_runner_issues_rotates_restores_account_cleans_workspace_and_reject
                     assert_eq!(std::fs::metadata(&acct_json).unwrap().mode() & 0o777, 0o600);
                 } else {
                     std::fs::create_dir_all(&acct_dir).unwrap();
+                    std::fs::write(&acct_json, r#"{"email":"ops@example.com"}"#).unwrap();
                     std::fs::write(
-                        &acct_dir.join("account.json"),
-                        r#"{"email":"ops@example.com"}"#,
-                    )
-                    .unwrap();
-                    std::fs::write(
-                        &acct_dir.join("ops@example.com.key"),
+                        acct_dir.join("ops@example.com.key"),
                         "TEST_ONLY_ACCOUNT_KEY",
                     )
                     .unwrap();
@@ -571,7 +567,7 @@ async fn acme_runner_issues_rotates_restores_account_cleans_workspace_and_reject
 
     let domain_id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO network_documents(id,kind,name,config,revision,created_at,updated_at) VALUES($1,'domain','network.example.com',$2,1,$3,$3)",
+        "INSERT INTO network_documents(id,kind,config,revision,created_at,updated_at) VALUES($1,'domain',$2,1,$3,$3)",
     )
     .bind(domain_id)
     .bind(json!({
@@ -590,7 +586,7 @@ async fn acme_runner_issues_rotates_restores_account_cleans_workspace_and_reject
 
     let cert_id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO network_documents(id,kind,name,config,revision,created_at,updated_at) VALUES($1,'certificate','TEST_ONLY cert',$2,1,$3,$3)",
+        "INSERT INTO network_documents(id,kind,config,revision,created_at,updated_at) VALUES($1,'certificate',$2,1,$3,$3)",
     )
     .bind(cert_id)
     .bind(json!({
@@ -624,7 +620,7 @@ async fn acme_runner_issues_rotates_restores_account_cleans_workspace_and_reject
     let http_task = tokio::spawn(async move {
         let _ = axum::serve(listener, app).await;
     });
-    let client = reqwest::Client::new();
+    let client = apsp_panel_host::http::Outbound::default().build().unwrap();
     let send = |method: reqwest::Method, uri: &str, body: Option<Value>| {
         let client = client.clone();
         let cookie = cookie.clone();
@@ -710,6 +706,7 @@ async fn acme_runner_issues_rotates_restores_account_cleans_workspace_and_reject
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{queued2}");
+    let job2 = Uuid::parse_str(queued2["operation_id"].as_str().unwrap()).unwrap();
     acme::iteration(&state).await.unwrap();
     assert_eq!(runner.calls.load(Ordering::SeqCst), 2);
     assert_eq!(
@@ -750,10 +747,15 @@ async fn acme_runner_issues_rotates_restores_account_cleans_workspace_and_reject
     assert_eq!(status, StatusCode::OK, "{preview}");
 
     // Manual selection back to v1 requires explicit confirmation and does not auto-deploy.
+    let current_rev: i64 = sqlx::query_scalar("SELECT revision FROM network_documents WHERE id=$1")
+        .bind(cert_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     let (status, selected) = send(
         Method::POST,
         &format!("/api/network-configuration/certificates/{cert_id}/select-version"),
-        Some(json!({"version_id": v1, "revision": 1, "confirmed": true})),
+        Some(json!({"version_id": v1, "revision": current_rev, "confirmed": true})),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{selected}");
@@ -816,9 +818,11 @@ async fn acme_runner_issues_rotates_restores_account_cleans_workspace_and_reject
         "mismatched legacy plan must never execute built-in lego"
     );
     let legacy_job = sqlx::query(
-        "SELECT status,result FROM network_acme_jobs WHERE certificate_id=$1 ORDER BY created_at DESC LIMIT 1",
+        "SELECT status,result FROM network_acme_jobs WHERE certificate_id=$1 AND id NOT IN ($2,$3)",
     )
     .bind(cert_id)
+    .bind(job1)
+    .bind(job2)
     .fetch_one(&pool)
     .await
     .unwrap();
@@ -851,14 +855,13 @@ async fn acme_runner_issues_rotates_restores_account_cleans_workspace_and_reject
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{queued3}");
+    let job4 = Uuid::parse_str(queued3["operation_id"].as_str().unwrap()).unwrap();
     acme::iteration(&state).await.unwrap();
-    let unknown_job = sqlx::query(
-        "SELECT status,result FROM network_acme_jobs WHERE certificate_id=$1 ORDER BY created_at DESC LIMIT 1",
-    )
-    .bind(cert_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let unknown_job = sqlx::query("SELECT status,result FROM network_acme_jobs WHERE id=$1")
+        .bind(job4)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     assert_eq!(unknown_job.get::<String, _>("status"), "unknown");
     assert_eq!(
         unknown_job.get::<Value, _>("result")["cleanup_required"],

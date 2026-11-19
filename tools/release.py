@@ -222,7 +222,8 @@ def extract_embedded_agent_manifest(payload):
             raise ValueError("embedded component manifest is not valid UTF-8") from error
         matches.append(json.loads(decoded, object_pairs_hook=_strict_json_object,
                                   parse_constant=_reject_json_constant))
-    ensure(len(matches) == 1, "raw Agent binary must contain exactly one embedded component manifest frame")
+    ensure(len(matches) == 1 and payload.count(EMBEDDED_FRAME_SUFFIX) == 1,
+           "raw Agent binary must contain exactly one embedded component manifest frame")
     return matches[0]
 
 

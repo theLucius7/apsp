@@ -6,6 +6,7 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+import re
 import runpy
 import shutil
 import uuid
@@ -75,11 +76,18 @@ def assemble_ci_fixture(source, bundle, agent_version, arch, tools, fixture, ins
     checksums = "".join(f"{rows[name]}  {name}\n" for name in sorted(rows)).encode("utf-8")
     tools.ensure(len(checksums) <= 8192, "checksums too large")
     bundle.mkdir(parents=True)
-    (bundle / entry["asset_name"]).write_bytes(agent_bytes)
-    (bundle / "release.json").write_bytes(encoded)
-    (bundle / "install.sh").write_bytes(installer_bytes)
-    (bundle / "SHA256SUMS").write_bytes(checksums)
-    (bundle / "SHA256SUMS.minisig").write_text(fixture["sign"](checksums), encoding="utf-8")
+    try:
+        (bundle / entry["asset_name"]).write_bytes(agent_bytes)
+        (bundle / "release.json").write_bytes(encoded)
+        (bundle / "install.sh").write_bytes(installer_bytes)
+        (bundle / "SHA256SUMS").write_bytes(checksums)
+        signature = fixture["sign"](checksums)
+        if isinstance(signature, str):
+            signature = signature.encode("utf-8")
+        (bundle / "SHA256SUMS.minisig").write_bytes(signature)
+    except BaseException:
+        shutil.rmtree(bundle, ignore_errors=True)
+        raise
     return metadata, manifest
 
 
@@ -152,7 +160,14 @@ def main(argv=None):
     }
     tools.ensure({path.name for path in args.bundle.iterdir()} == expected_files, "unexpected CI fixture bundle files")
     components = sorted(manifest["components"])
-    if set(components) != set(tools.LINUX_REQUIRED_EMBEDDED_COMPONENTS):
+    pinned_tcp_re = re.escape(tools.TCPQUALITY_ENGINE_VERSION) + r"-[0-9a-f]{40}-r1"
+    has_release_closure = (
+        set(components) == set(tools.LINUX_REQUIRED_EMBEDDED_COMPONENTS)
+        and re.fullmatch(pinned_tcp_re, manifest["components"]["tcpquality"]["version"]) is not None
+    )
+    if has_release_closure:
+        tools.verify_bundle(args.bundle, roots, args.minisign, metadata["tag"])
+    else:
         try:
             tools.verify_bundle(args.bundle, roots, args.minisign, metadata["tag"])
         except ValueError:

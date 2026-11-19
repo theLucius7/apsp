@@ -423,6 +423,10 @@ async fn runtime_listener_is_owned_once_its_checkpoint_is_answered(pool: PgPool)
 
     // The Agent certifies exact runtime instances, so revision 1 is applied only
     // through a checkpoint. Its statistics listener occupies a port preflight inspects.
+    sqlx::query("UPDATE servers SET device_public_key='TEST_ONLY-registered-device' WHERE id=$1")
+        .bind(server)
+        .execute(&pool)
+        .await?;
     device_channel::process_message(
         &panel.state,
         server,

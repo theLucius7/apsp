@@ -39,10 +39,6 @@ use std::{
 
 const MAX_AGENT_BINARY: usize = 128 * 1024 * 1024;
 const MAX_INSTALLER: usize = 256 * 1024;
-const FRAME_PREFIX_A: &[u8] = b"\0APSP_EMBEDDED_";
-const FRAME_PREFIX_B: &[u8] = b"COMPONENTS_V1:";
-const FRAME_SUFFIX_A: &[u8] = b"\n:END_APSP_EMBEDDED_";
-const FRAME_SUFFIX_B: &[u8] = b"COMPONENTS_V1\0";
 
 type Identity = (String, String, String);
 
@@ -143,19 +139,6 @@ pub(super) fn valid_release_entries(tag: &str, entries: &[ReleaseArtifact]) -> b
     }
 }
 
-fn count_split_marker(haystack: &[u8], first: &[u8], second: &[u8]) -> usize {
-    let marker_len = first.len() + second.len();
-    if haystack.len() < marker_len {
-        return 0;
-    }
-    (0..=haystack.len() - marker_len)
-        .filter(|&offset| {
-            &haystack[offset..offset + first.len()] == first
-                && &haystack[offset + first.len()..offset + marker_len] == second
-        })
-        .count()
-}
-
 fn validate_embedded_manifest_target(
     manifest: &EmbeddedAgentManifest,
     expected_version: &str,
@@ -200,15 +183,6 @@ pub fn parse_embedded_manifest_frame(
     expected_version: &str,
     expected_target: &str,
 ) -> Result<Option<EmbeddedAgentManifest>> {
-    let prefixes = count_split_marker(bytes, FRAME_PREFIX_A, FRAME_PREFIX_B);
-    let suffixes = count_split_marker(bytes, FRAME_SUFFIX_A, FRAME_SUFFIX_B);
-    if prefixes == 0 && suffixes == 0 {
-        return Ok(None);
-    }
-    ensure!(
-        prefixes == 1 && suffixes == 1,
-        "signed Agent binary must contain exactly one embedded component manifest frame"
-    );
     let Some(manifest) =
         extract_embedded_agent_manifest_optional(bytes).map_err(anyhow::Error::msg)?
     else {
@@ -516,15 +490,22 @@ async fn ensure_stored_payload(
         return Ok(cached.manifest.clone());
     }
     let bytes = ordinary_bytes(&path, MAX_AGENT_BINARY).await?;
-    let entry = artifact.metadata();
-    ensure!(
-        is_agent_entry(entry),
-        "signed release entry must be a raw Agent binary"
-    );
-    artifact.verify_archive(&bytes)?;
-    artifact.verify_binary(&bytes)?;
-    let manifest =
-        parse_embedded_manifest_frame(&bytes, &entry.version, &entry.arch)?.map(Arc::new);
+    let artifact = artifact.clone();
+    let manifest = tokio::task::spawn_blocking(move || {
+        let entry = artifact.metadata();
+        ensure!(
+            is_agent_entry(entry),
+            "signed release entry must be a raw Agent binary"
+        );
+        ensure!(
+            entry.archive_size == entry.binary_size && artifact.sha256() == entry.binary_sha256,
+            apsp_protocol::release::ReleaseError::BytesMismatch
+        );
+        artifact.verify_archive(&bytes)?;
+        parse_embedded_manifest_frame(&bytes, &entry.version, &entry.arch)
+    })
+    .await??
+    .map(Arc::new);
     let after = tokio::fs::symlink_metadata(&path).await?;
     if let Some(after_stamp) = file_stamp(&after)
         && Some(after_stamp) == stamp
@@ -1102,10 +1083,25 @@ mod tests {
                 .is_none()
         );
 
-        // Duplicate frames, wrong target ABI, or tampered payload bytes fail closed.
+        // Duplicate frames, orphan/extra trailers, wrong target ABI, or tampered payload bytes fail closed.
         let mut duplicate = binary.clone();
         duplicate.extend_from_slice(&frame);
         assert!(parse_embedded_manifest_frame(&duplicate, "0.4.0", "linux-musl-amd64").is_err());
+
+        let trailer = &frame[frame.len() - 34..];
+        let mut orphan_trailer = b"\x7fELF-orphan-trailer".to_vec();
+        orphan_trailer.extend_from_slice(trailer);
+        assert!(parse_embedded_manifest_frame(&orphan_trailer, "0.3.9", "amd64").is_err());
+        assert!(
+            parse_embedded_manifest_frame(&orphan_trailer, "0.4.0", "linux-musl-amd64").is_err()
+        );
+
+        let mut extra_trailer = binary.clone();
+        extra_trailer.extend_from_slice(trailer);
+        assert!(
+            parse_embedded_manifest_frame(&extra_trailer, "0.4.0", "linux-musl-amd64").is_err()
+        );
+
         assert!(parse_embedded_manifest_frame(&binary, "0.4.0", "linux-gnu-amd64").is_err());
         assert!(parse_embedded_manifest_frame(&binary, "0.4.1", "linux-musl-amd64").is_err());
 

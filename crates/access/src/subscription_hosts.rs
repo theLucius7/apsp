@@ -253,8 +253,12 @@ pub async fn gate(State(state): State<AppState>, mut request: Request, next: Nex
         return next.run(request).await;
     };
     let path = request.uri().path().to_owned();
-    if let Some(response) = adopted_old_route(&state, &request, &host).await {
-        return response;
+    if matches!(*request.method(), Method::GET | Method::HEAD) {
+        let uri = request.uri().clone();
+        let headers = request.headers().clone();
+        if let Some(response) = adopted_old_route(&state, &uri, &headers, &host).await {
+            return response;
+        }
     }
     if host == panel_host(&state.config.public_url) {
         if let Some(rest) = path.strip_prefix(PORTAL_API)
@@ -330,10 +334,12 @@ pub async fn gate(State(state): State<AppState>, mut request: Request, next: Nex
 /// An already issued renderer URL can be forwarded to the panel without changing
 /// its host, path or token. Only adopted users are answered here; an operator keeps
 /// the other tokens on their original upstream until their own adoption completes.
-async fn adopted_old_route(state: &AppState, request: &Request, host: &str) -> Option<Response> {
-    if !matches!(*request.method(), Method::GET | Method::HEAD) {
-        return None;
-    }
+async fn adopted_old_route(
+    state: &AppState,
+    uri: &Uri,
+    headers: &HeaderMap,
+    host: &str,
+) -> Option<Response> {
     let base: Option<String> =
         sqlx::query_scalar("SELECT subscription_base FROM singbox_nexus_bridge WHERE singleton")
             .fetch_optional(&state.pool)
@@ -343,15 +349,15 @@ async fn adopted_old_route(state: &AppState, request: &Request, host: &str) -> O
     if base.host_str()? != host {
         return None;
     }
-    let token = old_route_token(&base, request.uri())?;
+    let token = old_route_token(&base, uri)?;
     let adopted: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users u JOIN singbox_native_adoptions a ON a.user_id=u.id WHERE u.subscription_token=$1 AND u.deleted_at IS NULL)")
         .bind(&token).fetch_one(&state.pool).await.ok()?;
     if !adopted {
         return None;
     }
-    let query = query_of(request.uri());
+    let query = query_of(uri);
     Some(
-        match super::subscriptions::serve(state, request.headers(), token, query).await {
+        match super::subscriptions::serve(state, headers, token, query).await {
             Ok(response) => response,
             Err(error) => error.into_response(),
         },

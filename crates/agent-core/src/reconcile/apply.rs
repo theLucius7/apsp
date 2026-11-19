@@ -176,7 +176,7 @@ impl Reconciler {
                         );
                         if self.validate_activation(prior, &activation).await.is_ok()
                             && self
-                                .active_component_matches_bundled(&target, Some(&activation))
+                                .active_component_matches_bundled(prior, Some(&activation))
                                 .await?
                         {
                             Some(activation)
@@ -190,7 +190,7 @@ impl Reconciler {
                         None
                     }
                 }
-            } else if !self.active_component_matches_bundled(&target, None).await? {
+            } else if !self.active_component_matches_bundled(prior, None).await? {
                 plan = Plan::Restart;
                 None
             } else {

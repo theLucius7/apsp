@@ -435,36 +435,40 @@ class AcceptanceContracts(unittest.TestCase):
             self.assertFalse(DRIVER.healthy(legacy_ready))
 
     def test_read_only_nexus_server_is_refused_across_prepare_configure_monitor_and_ready(self):
-        for read_only, source in ((True, "nexus"), (False, "nexus"), (True, "configured")):
+        for read_only, source in ((True, "nexus"), (False, "nexus"), (True, "configured"), (True, None)):
             with self.subTest(read_only=read_only, source=source):
                 panel = PreparationPanel(read_only=read_only, source=source)
                 state = self.preparation_state()
-                with patch.object(DRIVER, "install"), contextlib.redirect_stdout(io.StringIO()):
+                with patch.object(DRIVER, "install") as install, contextlib.redirect_stdout(io.StringIO()):
                     with self.assertRaisesRegex(DRIVER.AcceptanceError, "只读 Nexus"):
                         DRIVER.prepare(panel, state, self.args)
+                    server_only_args = argparse.Namespace(state=self.state_path, server_only=True, agent_version="0.4.0")
+                    with self.assertRaisesRegex(DRIVER.AcceptanceError, "只读 Nexus"):
+                        DRIVER.prepare(panel, state, server_only_args)
+                    install.assert_not_called()
+                self.assertEqual(state["server_id"], 41)
                 self.assertEqual(panel.node_posts, [])
 
-                state["server_id"] = 41
-                panel.resources["/api/servers"].append({"id": 41, "name": state["prefix"] + "-server"})
                 with self.assertRaisesRegex(DRIVER.AcceptanceError, "只读 Nexus"):
                     DRIVER.configure(panel, state, self.args)
                 self.assertEqual(panel.node_posts, [])
 
-        nexus_monitor = monitor_view()
-        nexus_monitor["runtime"].update(read_only=True, source="nexus")
-        monitor_args = argparse.Namespace(state=self.state_path, agent_version="0.4.0",
-                                          status_command="apsp-agent status", settle=6, timeout=60)
-        with patch.object(DRIVER, "snapshot", return_value=nexus_monitor):
-            with self.assertRaisesRegex(DRIVER.AcceptanceError, "只读 Nexus"):
-                DRIVER.monitor(None, {"schema": 1, "prefix": "apsp-e2e-test", "server_id": 41, "checkpoints": {}}, monitor_args)
+                nexus_monitor = monitor_view()
+                nexus_monitor["runtime"].update(read_only=read_only, source=source)
+                monitor_args = argparse.Namespace(state=self.state_path, agent_version="0.4.0",
+                                                  status_command="apsp-agent status", settle=6, timeout=60)
+                with patch.object(DRIVER, "snapshot", return_value=nexus_monitor), patch.object(DRIVER.time, "sleep") as sleep:
+                    with self.assertRaisesRegex(DRIVER.AcceptanceError, "只读 Nexus"):
+                        DRIVER.monitor(None, {"schema": 1, "prefix": "apsp-e2e-test", "server_id": 41, "checkpoints": {}}, monitor_args)
+                    sleep.assert_not_called()
 
-        nexus_ready = view()
-        nexus_ready["runtime"].update(read_only=True, source="nexus")
-        ready_args = argparse.Namespace(state=self.state_path, timeout=60, agent_version="0.4.0", client_port=None)
-        with patch.object(DRIVER, "snapshot", return_value=nexus_ready), patch.object(DRIVER.time, "sleep") as sleep:
-            with self.assertRaisesRegex(DRIVER.AcceptanceError, "只读 Nexus"):
-                DRIVER.ready(None, self.state, ready_args)
-            sleep.assert_not_called()
+                nexus_ready = view()
+                nexus_ready["runtime"].update(read_only=read_only, source=source)
+                ready_args = argparse.Namespace(state=self.state_path, timeout=60, agent_version="0.4.0", client_port=None)
+                with patch.object(DRIVER, "snapshot", return_value=nexus_ready), patch.object(DRIVER.time, "sleep") as sleep:
+                    with self.assertRaisesRegex(DRIVER.AcceptanceError, "只读 Nexus"):
+                        DRIVER.ready(None, self.state, ready_args)
+                    sleep.assert_not_called()
 
     def test_pure_monitoring_flow_verifies_unconfigured_settle_and_then_configures_auto_published_node(self):
         panel = PreparationPanel()
@@ -599,8 +603,15 @@ class AcceptanceContracts(unittest.TestCase):
             snapshot.assert_not_called()
 
     def preparation_state(self, port=None):
-        self.state.update(origin="http://127.0.0.1:8000", public_host="node.example.test",
-                          sni="camouflage.example.test", requested_port=port)
+        self.state = {
+            "schema": 1,
+            "prefix": "apsp-e2e-test",
+            "checkpoints": {"before": view()},
+            "origin": "http://127.0.0.1:8000",
+            "public_host": "node.example.test",
+            "sni": "camouflage.example.test",
+            "requested_port": port,
+        }
         DRIVER.save(self.state_path, self.state)
         return self.state
 
@@ -861,6 +872,48 @@ class AcceptanceContracts(unittest.TestCase):
             "checkpoint_failure_kind": None,
         })
         self.assertNotIn("TEST_ONLY-secret", json.dumps(summary))
+
+        config_bundle = DRIVER.install_status(
+            {"target_rev": 2, "applied_rev": 1, "healthy": False,
+             "last_error": "bundle SHA256 mismatch at /var/lib/apsp/plugins/TEST_ONLY-secret"},
+            {"state": "configuration_mismatch", "checkpoint_supported": True,
+             "checkpoint": {"state": "mismatch", "outcome": "mismatch", "failure_kind": "configuration_mismatch"}},
+        )
+        self.assertEqual(config_bundle, {
+            "target_rev": 2,
+            "applied_rev": 1,
+            "healthy": False,
+            "error_categories": ["configuration"],
+            "drift": "configuration_mismatch",
+            "checkpoint_supported": True,
+            "checkpoint_state": "mismatch",
+            "checkpoint_outcome": "mismatch",
+            "checkpoint_failure_kind": "configuration_mismatch",
+        })
+        self.assertEqual(
+            DRIVER.install_status(
+                {"last_error": "bundled runtime configuration check failed for revision 2"}, None
+            )["error_categories"],
+            ["runtime_identity", "configuration"],
+        )
+
+        sanitized = DRIVER.install_status(
+            {"target_rev": True, "applied_rev": -1, "healthy": "no", "last_error": "TEST_ONLY_secret_token"},
+            {"state": "secret_drift_token", "checkpoint_supported": "yes",
+             "checkpoint": {"state": "secret_state", "outcome": "secret_outcome", "failure_kind": "secret_failure"}},
+        )
+        self.assertEqual(sanitized, {
+            "target_rev": None,
+            "applied_rev": None,
+            "healthy": None,
+            "error_categories": ["other"],
+            "drift": None,
+            "checkpoint_supported": None,
+            "checkpoint_state": None,
+            "checkpoint_outcome": None,
+            "checkpoint_failure_kind": None,
+        })
+        self.assertNotIn("secret", json.dumps(sanitized))
         self.assertEqual(DRIVER.install_status(None, None)["error_categories"], [])
 
     def test_totals_preserve_large_integer_precision_and_reject_inconsistent_ledger(self):

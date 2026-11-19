@@ -104,10 +104,6 @@ impl Reconciler {
         self
     }
 
-    pub(crate) fn bundled_runtime(&self) -> Option<&crate::bundled::BundledItem> {
-        self.bundled.as_ref()
-    }
-
     pub(super) async fn ensure_service_definition(&self) -> Result<()> {
         let spec = apsp_adapter_sdk::RuntimeServiceSpec {
             descriptor: self.adapter.describe(),
@@ -190,7 +186,7 @@ impl Reconciler {
         Ok(true)
     }
 
-    pub(super) async fn active_component_matches_bundled(
+    async fn active_component_matches_bundled(
         &self,
         runtime: &Prepared,
         activation: Option<&checkpoint::Activation>,

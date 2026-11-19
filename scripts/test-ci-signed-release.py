@@ -2,6 +2,7 @@
 """Check CI wiring and failure contracts; Linux CI runs real minisign and systemd."""
 
 import argparse
+import contextlib
 import gzip
 import hashlib
 import importlib.util
@@ -9,13 +10,21 @@ import io
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
 import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tests"))
+from test_release import (  # noqa: E402
+    build_embedded_agent_manifest,
+    encode_embedded_agent_manifest_frame,
+    stage_historical_0_3_bundle,
+)
 
 
 def load(name, filename):
@@ -50,38 +59,50 @@ class SignedCiContracts(unittest.TestCase):
 
     def bundle(self, legacy=False):
         source = self.directory / ("legacy-source" if legacy else "source")
-        agent_fixture = b"explicitly non-executable CI structural fixture"
-        if not legacy:
-            agent_fixture += TOOLS.encode_embedded_agent_manifest_frame(
-                TOOLS.build_embedded_agent_manifest("0.4.0", "amd64")
-            )
-        items = [("agent", "0.4.0", agent_fixture)]
-        if legacy:
-            items.extend([
-                ("sing-box", "1.14.4-apsp.1", packed("sing-box", b"runtime fixture")),
-                ("nodequality", TOOLS.NODEQUALITY_VERSION, packed("nodequality", b"diagnostic fixture")),
-            ])
-        for name, version, data in items:
-            target = source / name / version / "amd64"
-            target.parent.mkdir(parents=True)
-            target.write_bytes(data)
         installer = self.directory / ("legacy-install.sh" if legacy else "install.sh")
         installer.write_bytes(b"#!/bin/sh\nexit 1\n")
         bundle = self.directory / ("legacy-bundle" if legacy else "bundle")
-        namespace = argparse.Namespace(
-            source=source,
-            output=bundle,
-            tag="agent-v0.4.0",
-            agent_version="0.4.0",
-            runtime_version="1.14.4-apsp.1" if legacy else None,
-            nodequality_version=TOOLS.NODEQUALITY_VERSION,
-            installer=installer,
-            arch=["amd64"],
-        )
-        TOOLS.assemble(namespace)
+        agent_fixture = b"explicitly non-executable CI structural fixture"
+        if legacy:
+            for name, version, data in (
+                ("agent", "0.3.0", agent_fixture),
+                ("sing-box", "1.14.4-apsp.1", packed("sing-box", b"runtime fixture")),
+                ("nodequality", TOOLS.NODEQUALITY_VERSION, packed("nodequality", b"diagnostic fixture")),
+            ):
+                target = source / name / version / "amd64"
+                target.parent.mkdir(parents=True)
+                target.write_bytes(data)
+            stage_historical_0_3_bundle(
+                source,
+                bundle,
+                installer,
+                agent_version="0.3.0",
+                runtime_version="1.14.4-apsp.1",
+                nodequality_version=TOOLS.NODEQUALITY_VERSION,
+                architectures=("amd64",),
+            )
+            expected_tag = "agent-v0.3.0"
+        else:
+            target = source / "agent/0.4.0/amd64"
+            target.parent.mkdir(parents=True)
+            target.write_bytes(
+                agent_fixture
+                + encode_embedded_agent_manifest_frame(
+                    build_embedded_agent_manifest("0.4.0", "amd64")
+                )
+            )
+            TOOLS.assemble(argparse.Namespace(
+                source=source,
+                output=bundle,
+                tag="agent-v0.4.0",
+                agent_version="0.4.0",
+                installer=installer,
+                arch=["amd64"],
+            ))
+            expected_tag = "agent-v0.4.0"
         # This fixture deliberately exercises shape and hash guards only, not crypto.
         (bundle / "SHA256SUMS.minisig").write_bytes(b"invalid signature; structural test only\n")
-        metadata, _ = TOOLS.validate_manifest(bundle, "agent-v0.4.0")
+        metadata, _ = TOOLS.validate_manifest(bundle, expected_tag)
         return bundle, metadata
 
     def descriptor(self):
@@ -103,7 +124,13 @@ class SignedCiContracts(unittest.TestCase):
     def test_self_contained_panel_tree_contains_only_raw_agent_and_has_no_unsigned_fallback(self):
         bundle, metadata = self.bundle(legacy=False)
         self.assertEqual([entry["name"] for entry in metadata["artifacts"]], ["agent"])
-        self.assertEqual(metadata["artifacts"][0]["format"], "raw")
+        agent_entry = metadata["artifacts"][0]
+        self.assertEqual(agent_entry["format"], "raw")
+        self.assertEqual(agent_entry["binary_name"], "apsp-agent")
+        self.assertEqual(agent_entry["asset_name"], "agent-0.4.0-linux-musl-amd64")
+        self.assertEqual(agent_entry["archive_size"], agent_entry["binary_size"])
+        self.assertLessEqual(agent_entry["archive_size"], TOOLS.MAX_AGENT_RAW)
+        self.assertNotIn("auxiliary_files", agent_entry)
         output = self.directory / "artifacts"
         RELEASE.panel_tree(bundle, output, metadata, TOOLS)
         release = output / "releases/agent-v0.4.0"
@@ -129,6 +156,8 @@ class SignedCiContracts(unittest.TestCase):
         self.assertEqual(list(self.directory.glob(".ci-release-*")), [])
 
         legacy_bundle, legacy_metadata = self.bundle(legacy=True)
+        RELEASE.panel_tree(legacy_bundle, self.directory / "legacy-valid", legacy_metadata, TOOLS)
+        self.assertTrue((self.directory / "legacy-valid/releases/agent-v0.3.0/sing-box/1.14.4-apsp.1/amd64").is_file())
         runtime = next(entry for entry in legacy_metadata["artifacts"] if entry["name"] == "sing-box")
         runtime_asset = legacy_bundle / runtime["asset_name"]
         changed_archive = bytearray(runtime_asset.read_bytes())
@@ -225,8 +254,8 @@ class SignedCiContracts(unittest.TestCase):
 
     def test_ci_fixture_signs_subset_agent_while_official_release_assembly_refuses_it(self):
         source = self.directory / "subset-source"
-        subset_agent = b"TEST_ONLY subset Agent fixture" + TOOLS.encode_embedded_agent_manifest_frame(
-            TOOLS.build_embedded_agent_manifest("0.4.0", "amd64", omit_component="ipquality")
+        subset_agent = b"TEST_ONLY subset Agent fixture" + encode_embedded_agent_manifest_frame(
+            build_embedded_agent_manifest("0.4.0", "amd64", omit_component="ipquality")
         )
         target = source / "agent/0.4.0/amd64"
         target.parent.mkdir(parents=True)
@@ -234,13 +263,12 @@ class SignedCiContracts(unittest.TestCase):
         installer = self.directory / "subset-install.sh"
         installer.write_bytes(b"#!/bin/sh\nexit 1\n")
 
-        with self.assertRaises(ValueError):
+        with self.assertRaisesRegex(ValueError, "ipquality"):
             TOOLS.assemble(argparse.Namespace(
                 source=source,
                 output=self.directory / "official-rejected",
                 tag="agent-v0.4.0",
                 agent_version="0.4.0",
-                runtime_version=None,
                 installer=installer,
                 arch=["amd64"],
             ))
@@ -259,20 +287,47 @@ class SignedCiContracts(unittest.TestCase):
         confirmed, _ = TOOLS.validate_manifest(ci_bundle, "agent-v0.4.0")
         self.assertEqual(confirmed, metadata)
         with patch.object(TOOLS, "verify_signature"):
-            with self.assertRaises(ValueError):
+            with self.assertRaisesRegex(ValueError, "ipquality"):
                 TOOLS.verify_bundle(ci_bundle, ["dummy-root"], "minisign", "agent-v0.4.0")
         RELEASE.panel_tree(ci_bundle, self.directory / "ci-panel-artifacts", confirmed, TOOLS)
+
+        if shutil.which("minisign"):
+            with contextlib.redirect_stdout(io.StringIO()):
+                RELEASE.main([
+                    "--source", str(source),
+                    "--bundle", str(self.directory / "real-subset-bundle"),
+                    "--panel-root", str(self.directory / "real-subset-panel"),
+                    "--agent-version", "0.4.0",
+                    "--arch", "amd64",
+                ])
+            full_source = self.directory / "full-source"
+            full_target = full_source / "agent/0.4.0/amd64"
+            full_target.parent.mkdir(parents=True)
+            full_target.write_bytes(
+                b"TEST_ONLY full Agent fixture"
+                + encode_embedded_agent_manifest_frame(build_embedded_agent_manifest("0.4.0", "amd64"))
+            )
+            with contextlib.redirect_stdout(io.StringIO()):
+                RELEASE.main([
+                    "--source", str(full_source),
+                    "--bundle", str(self.directory / "real-full-bundle"),
+                    "--panel-root", str(self.directory / "real-full-panel"),
+                    "--agent-version", "0.4.0",
+                    "--arch", "amd64",
+                ])
+            with self.assertRaises(ValueError):
+                TOOLS.load_roots(RELEASE.FIXTURES / "public-keys.json", publication=True)
 
         no_singbox_source = self.directory / "no-singbox-source"
         no_singbox_target = no_singbox_source / "agent/0.4.0/amd64"
         no_singbox_target.parent.mkdir(parents=True)
         no_singbox_target.write_bytes(
             b"missing sing-box"
-            + TOOLS.encode_embedded_agent_manifest_frame(
-                TOOLS.build_embedded_agent_manifest("0.4.0", "amd64", omit_component="sing-box")
+            + encode_embedded_agent_manifest_frame(
+                build_embedded_agent_manifest("0.4.0", "amd64", omit_component="sing-box")
             )
         )
-        with self.assertRaises(ValueError):
+        with self.assertRaisesRegex(ValueError, "sing-box"):
             RELEASE.assemble_ci_fixture(
                 no_singbox_source,
                 self.directory / "no-singbox-bundle",

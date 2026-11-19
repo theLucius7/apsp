@@ -147,11 +147,60 @@ pub(crate) fn current_agent_binary() -> Result<PathBuf> {
     Ok(canonical)
 }
 
-pub(crate) fn current_agent_sha256() -> Result<String> {
+fn current_agent_sha256_sync() -> Result<String> {
+    type Stamp = (PathBuf, u64, Option<(u64, u64, i64, i64, i64, i64)>);
+    static MEMO: std::sync::OnceLock<std::sync::Mutex<Option<(Stamp, String)>>> =
+        std::sync::OnceLock::new();
+
     let path = current_agent_binary()?;
+    let metadata = std::fs::symlink_metadata(&path)?;
+    let size = metadata.len();
+    #[cfg(unix)]
+    let (stamp, settled) = {
+        use std::os::unix::fs::MetadataExt;
+        let tuple = (
+            metadata.dev(),
+            metadata.ino(),
+            metadata.mtime(),
+            metadata.mtime_nsec(),
+            metadata.ctime(),
+            metadata.ctime_nsec(),
+        );
+        let settled = u64::try_from(tuple.4)
+            .ok()
+            .zip(u32::try_from(tuple.5).ok())
+            .and_then(|(s, ns)| std::time::UNIX_EPOCH.checked_add(std::time::Duration::new(s, ns)))
+            .and_then(|changed| std::time::SystemTime::now().duration_since(changed).ok())
+            .is_some_and(|age| age >= std::time::Duration::from_secs(2));
+        (Some(tuple), settled)
+    };
+    #[cfg(not(unix))]
+    let (stamp, settled): (Option<(u64, u64, i64, i64, i64, i64)>, bool) = (None, false);
+
+    let key = (path.clone(), size, stamp);
+    if settled
+        && let Some(digest) = MEMO
+            .get_or_init(Default::default)
+            .lock()
+            .ok()
+            .and_then(|guard| {
+                guard
+                    .as_ref()
+                    .filter(|(k, _)| k == &key)
+                    .map(|(_, v)| v.clone())
+            })
+    {
+        return Ok(digest);
+    }
+
     let mut file = std::fs::File::open(&path)
         .with_context(|| format!("open running Agent executable {}", path.display()))?;
-    let mut hash = Sha256::new();
+    let rustls::SupportedCipherSuite::Tls13(suite) =
+        rustls::crypto::ring::cipher_suite::TLS13_AES_128_GCM_SHA256
+    else {
+        bail!("TLS13_AES_128_GCM_SHA256 must be a TLS 1.3 cipher suite");
+    };
+    let mut hash = suite.common.hash_provider.start();
     let mut buffer = vec![0_u8; 256 * 1024];
     loop {
         let count = file.read(&mut buffer)?;
@@ -160,7 +209,20 @@ pub(crate) fn current_agent_sha256() -> Result<String> {
         }
         hash.update(&buffer[..count]);
     }
-    Ok(format!("{:x}", hash.finalize()))
+    let digest_bytes = hash.finish();
+    let mut digest = String::with_capacity(64);
+    for byte in digest_bytes.as_ref() {
+        use std::fmt::Write as _;
+        let _ = write!(&mut digest, "{byte:02x}");
+    }
+    if settled && let Ok(mut guard) = MEMO.get_or_init(Default::default).lock() {
+        *guard = Some((key, digest.clone()));
+    }
+    Ok(digest)
+}
+
+pub(crate) async fn current_agent_sha256() -> Result<String> {
+    tokio::task::spawn_blocking(current_agent_sha256_sync).await?
 }
 
 pub(crate) fn is_bundled_directory_sync(directory: &Path) -> bool {

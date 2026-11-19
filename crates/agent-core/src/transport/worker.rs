@@ -2,7 +2,7 @@ use super::Runtime;
 use crate::state::Locked;
 use crate::{artifacts::PanelClient, reconcile::Reconciler, state::StorageRetry};
 use anyhow::Result;
-use apsp_protocol::{ApplyResult, ApplyStatus, Envelope};
+use apsp_protocol::{ApplyResult, ApplyStatus, Envelope, Heartbeat};
 use std::{sync::Arc, time::Duration};
 use tokio::sync::{mpsc, watch};
 use uuid::Uuid;
@@ -98,8 +98,21 @@ pub(super) async fn run(
                 match reconciler.deactivate_if_active().await {
                     Ok(true) => {
                         let current = runtime.applied()?;
-                        if current != reported
-                            && let Some(info) = runtime.static_info()?
+                        let uptime = runtime
+                            .telemetry
+                            .borrow()
+                            .sample
+                            .as_ref()
+                            .and_then(|sample| sample.metrics.uptime_secs)
+                            .unwrap_or(0);
+                        let _ = outgoing.try_send(Envelope::new(
+                            "heartbeat",
+                            Heartbeat {
+                                applied: current.clone(),
+                                uptime_secs: uptime,
+                            },
+                        )?);
+                        if let Some(info) = runtime.static_info()?
                             && outgoing
                                 .try_send(Envelope::new("telemetry.static", info)?)
                                 .is_ok()

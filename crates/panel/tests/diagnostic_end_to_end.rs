@@ -242,52 +242,126 @@ impl SignedAgentFixture {
     fn prepare(harness: &Harness) -> Result<Self> {
         use apsp_protocol::{
             bundled::{extract_embedded_agent_manifest, extract_embedded_agent_manifest_optional},
-            release::canonical_asset_name,
+            release::{ReleaseArtifact, canonical_asset_name},
         };
         use release_fixture::{
             archive, build_signed_agent_entry, encode_embedded_agent_manifest_frame,
             pinned_components, write_entries_tagged,
         };
+        use std::sync::OnceLock;
 
-        let base_exe = fs::read(std::env::current_exe()?)?;
-        anyhow::ensure!(
-            extract_embedded_agent_manifest_optional(&base_exe)
-                .map_err(anyhow::Error::msg)?
-                .is_none(),
-            "base test executable must not contain an embedded manifest frame"
-        );
+        struct CachedSignedAgent {
+            entry: ReleaseArtifact,
+            proof_files: Vec<(&'static str, Vec<u8>)>,
+            agent_bytes: Vec<u8>,
+        }
+        static CACHED: OnceLock<CachedSignedAgent> = OnceLock::new();
 
-        let (target, _) = signed_agent_target();
-        let tar_gz = archive("nodequality", NODEQUALITY_SCRIPT)?;
-        let tar_sha = release_support::hash(&tar_gz);
-        let mut components = pinned_components(&["nodequality"])?;
-        assert_eq!(components["nodequality"].version, VERSION);
-        components
-            .get_mut("nodequality")
-            .context("pinned nodequality component")?
-            .sha256 = Some(tar_sha);
-        let (_, template) = build_signed_agent_entry("0.4.0", target, components)?;
-        let raw = &template.raw_binary;
-        let manifest = extract_embedded_agent_manifest(raw).map_err(anyhow::Error::msg)?;
-        let frame = encode_embedded_agent_manifest_frame(&manifest).map_err(anyhow::Error::msg)?;
+        let cached = CACHED.get_or_init(|| {
+            let cache_root = std::env::temp_dir().join(format!(
+                "apsp-diag-e2e-agent-cache-{}",
+                uuid::Uuid::new_v4()
+            ));
+            fs::create_dir_all(&cache_root).expect("create cache root");
+            let stripped_exe = cache_root.join("stripped-base-exe");
+            fs::copy(std::env::current_exe().expect("current_exe"), &stripped_exe)
+                .expect("copy base executable");
+            #[cfg(unix)]
+            {
+                let strip_tool = if cfg!(target_os = "macos") {
+                    std::process::Command::new("strip")
+                        .arg("-x")
+                        .arg(&stripped_exe)
+                        .status()
+                } else {
+                    std::process::Command::new("strip")
+                        .arg("--strip-unneeded")
+                        .arg(&stripped_exe)
+                        .status()
+                };
+                if let Ok(status) = strip_tool {
+                    assert!(status.success(), "strip test executable copy");
+                }
+            }
+            let base_exe = fs::read(&stripped_exe).expect("read stripped base executable");
+            assert!(
+                extract_embedded_agent_manifest_optional(&base_exe)
+                    .expect("scan base executable")
+                    .is_none(),
+                "base test executable must not contain an embedded manifest frame"
+            );
 
-        let mut agent_bytes = base_exe;
-        agent_bytes.extend_from_slice(&tar_gz);
-        agent_bytes.extend_from_slice(&frame);
-        agent_bytes.extend_from_slice(&(tar_gz.len() as u64).to_le_bytes());
-        agent_bytes.extend_from_slice(&(frame.len() as u64).to_le_bytes());
-        agent_bytes.extend_from_slice(SUBPROCESS_BUNDLE_FOOTER_MAGIC);
-        assert_eq!(
-            extract_embedded_agent_manifest(&agent_bytes).map_err(anyhow::Error::msg)?,
-            manifest
-        );
+            let (target, _) = signed_agent_target();
+            let tar_gz = archive("nodequality", NODEQUALITY_SCRIPT).expect("archive nodequality");
+            let tar_sha = release_support::hash(&tar_gz);
+            let mut components =
+                pinned_components(&["nodequality"]).expect("pinned nodequality component");
+            assert_eq!(components["nodequality"].version, VERSION);
+            components
+                .get_mut("nodequality")
+                .expect("pinned nodequality component")
+                .sha256 = Some(tar_sha);
+            let (_, template) =
+                build_signed_agent_entry("0.4.0", target, components).expect("signed template");
+            let raw = &template.raw_binary;
+            let manifest = extract_embedded_agent_manifest(raw).expect("template manifest");
+            let frame = encode_embedded_agent_manifest_frame(&manifest).expect("encode frame");
+
+            let mut agent_bytes = base_exe;
+            agent_bytes.extend_from_slice(&tar_gz);
+            agent_bytes.extend_from_slice(&frame);
+            agent_bytes.extend_from_slice(&(tar_gz.len() as u64).to_le_bytes());
+            agent_bytes.extend_from_slice(&(frame.len() as u64).to_le_bytes());
+            agent_bytes.extend_from_slice(SUBPROCESS_BUNDLE_FOOTER_MAGIC);
+            assert_eq!(
+                extract_embedded_agent_manifest(&agent_bytes).expect("extract manifest"),
+                manifest
+            );
+
+            let mut entry = release_support::entry(
+                "agent",
+                "0.4.0",
+                "apsp-agent",
+                "raw",
+                &agent_bytes,
+                &agent_bytes,
+            );
+            entry.arch = target.into();
+            entry.asset_name = canonical_asset_name(&entry).expect("canonical asset name");
+            let release_dir = write_entries_tagged(
+                &cache_root,
+                "agent-v0.4.0",
+                vec![(entry.clone(), agent_bytes.clone())],
+            )
+            .expect("write cached release");
+            let proof_files = [
+                "release.json",
+                "SHA256SUMS",
+                "SHA256SUMS.minisig",
+                "install.sh",
+            ]
+            .into_iter()
+            .map(|name| {
+                (
+                    name,
+                    fs::read(release_dir.join(name)).expect("read proof file"),
+                )
+            })
+            .collect();
+            let _ = fs::remove_dir_all(&cache_root);
+            CachedSignedAgent {
+                entry,
+                proof_files,
+                agent_bytes,
+            }
+        });
 
         let control_dir = harness.directory.join("agent-subprocess");
         fs::create_dir_all(&control_dir)?;
         let exe_path = control_dir.join("apsp-agent");
         {
             let mut file = fs::File::create(&exe_path)?;
-            file.write_all(&agent_bytes)?;
+            file.write_all(&cached.agent_bytes)?;
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
@@ -296,21 +370,20 @@ impl SignedAgentFixture {
             file.sync_all()?;
         }
 
-        let mut entry = release_support::entry(
-            "agent",
-            "0.4.0",
-            "apsp-agent",
-            "raw",
-            &agent_bytes,
-            &agent_bytes,
-        );
-        entry.arch = target.into();
-        entry.asset_name = canonical_asset_name(&entry)?;
-        write_entries_tagged(
-            &harness.state.config.data_dir,
-            "agent-v0.4.0",
-            vec![(entry, agent_bytes)],
-        )?;
+        let dst_release = harness
+            .state
+            .config
+            .data_dir
+            .join("artifacts/releases/agent-v0.4.0");
+        let dst_arch_dir = dst_release
+            .join(&cached.entry.name)
+            .join(&cached.entry.version);
+        fs::create_dir_all(&dst_arch_dir)?;
+        for (file_name, content) in &cached.proof_files {
+            fs::write(dst_release.join(file_name), content)?;
+        }
+        let dst_payload = dst_arch_dir.join(&cached.entry.arch);
+        fs::write(&dst_payload, &cached.agent_bytes)?;
 
         let services = IndependentServices::open(control_dir.join("services"))?;
         Ok(Self {
@@ -392,7 +465,7 @@ fn extract_subprocess_nodequality(
         tools: BTreeMap::from([(
             "nodequality".into(),
             BundledItem {
-                artifact_name: "nodequality".into(),
+                component_name: "nodequality".into(),
                 binary_name: "nodequality".into(),
                 version: record.version.clone(),
                 payload: BundledPayload::TarGz {

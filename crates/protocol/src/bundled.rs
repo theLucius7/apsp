@@ -10,10 +10,24 @@ pub const MAX_BUNDLED_UNPACKED_BYTES: u64 = 512 * 1024 * 1024;
 pub const MAX_BUNDLED_PATH_DEPTH: usize = 12;
 pub const MAX_EMBEDDED_MANIFEST_JSON_BYTES: usize = 65_536;
 
-const FRAME_PREFIX_A: &[u8] = b"\0APSP_EMBEDDED_";
-const FRAME_PREFIX_B: &[u8] = b"COMPONENTS_V1:";
-const FRAME_TRAILER_A: &[u8] = b"\n:END_APSP_EMBEDDED_";
-const FRAME_TRAILER_B: &[u8] = b"COMPONENTS_V1\0";
+static FRAME_PREFIX_A: [u8; 16] = *b"\0APSP_EMBEDDED_!";
+static FRAME_PREFIX_B: [u8; 15] = *b"!COMPONENTS_V1:";
+static FRAME_TRAILER_A: [u8; 21] = *b"\n:END_APSP_EMBEDDED_!";
+static FRAME_TRAILER_B: [u8; 15] = *b"!COMPONENTS_V1\0";
+
+fn frame_prefix_parts() -> (&'static [u8], &'static [u8]) {
+    (
+        std::hint::black_box(&FRAME_PREFIX_A[..15]),
+        std::hint::black_box(&FRAME_PREFIX_B[1..]),
+    )
+}
+
+fn frame_trailer_parts() -> (&'static [u8], &'static [u8]) {
+    (
+        std::hint::black_box(&FRAME_TRAILER_A[..20]),
+        std::hint::black_box(&FRAME_TRAILER_B[1..]),
+    )
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -125,41 +139,70 @@ pub fn encode_embedded_agent_manifest_frame(
         return Err("embedded Agent manifest JSON size outside 1..=65536".into());
     }
     let json_sha256 = format!("{:x}", Sha256::digest(&json_bytes));
+    let (prefix_a, prefix_b) = frame_prefix_parts();
+    let (trailer_a, trailer_b) = frame_trailer_parts();
     let mut frame = Vec::with_capacity(103 + json_bytes.len() + 34);
-    frame.extend_from_slice(FRAME_PREFIX_A);
-    frame.extend_from_slice(FRAME_PREFIX_B);
+    frame.extend_from_slice(prefix_a);
+    frame.extend_from_slice(prefix_b);
     frame.extend_from_slice(format!("{:08x}:{json_sha256}\n", json_bytes.len()).as_bytes());
     frame.extend_from_slice(&json_bytes);
-    frame.extend_from_slice(FRAME_TRAILER_A);
-    frame.extend_from_slice(FRAME_TRAILER_B);
+    frame.extend_from_slice(trailer_a);
+    frame.extend_from_slice(trailer_b);
     Ok(frame)
+}
+
+fn matches_split_at(bytes: &[u8], anchor: usize, first: &[u8], second: &[u8]) -> bool {
+    bytes.get(anchor..anchor.saturating_add(second.len())) == Some(second)
+        && anchor
+            .checked_sub(first.len())
+            .and_then(|start| bytes.get(start..anchor))
+            == Some(first)
 }
 
 pub fn extract_embedded_agent_manifest_optional(
     bytes: &[u8],
 ) -> Result<Option<EmbeddedAgentManifest>, String> {
-    let prefix_len = FRAME_PREFIX_A.len() + FRAME_PREFIX_B.len();
-    let trailer_len = FRAME_TRAILER_A.len() + FRAME_TRAILER_B.len();
-    let mut positions = Vec::new();
-    let mut index = 0usize;
-    while index + prefix_len <= bytes.len() {
-        if &bytes[index..index + FRAME_PREFIX_A.len()] == FRAME_PREFIX_A
-            && &bytes[index + FRAME_PREFIX_A.len()..index + prefix_len] == FRAME_PREFIX_B
+    let (prefix_a, prefix_b) = frame_prefix_parts();
+    let (trailer_a, trailer_b) = frame_trailer_parts();
+    debug_assert_eq!(prefix_b.first(), Some(&b'C'));
+    debug_assert_eq!(trailer_b.first(), Some(&b'C'));
+    let prefix_len = prefix_a.len() + prefix_b.len();
+    let trailer_len = trailer_a.len() + trailer_b.len();
+    let mut prefix_start = None;
+    let mut trailer_start = None;
+    let mut cursor = prefix_a.len().min(trailer_a.len());
+    while let Some(rel) = bytes
+        .get(cursor..)
+        .and_then(|rest| rest.iter().position(|&b| b == b'C'))
+    {
+        let pos = cursor + rel;
+        cursor = pos + 1;
+        if matches_split_at(bytes, pos, prefix_a, prefix_b)
+            && prefix_start.replace(pos - prefix_a.len()).is_some()
         {
-            positions.push(index);
-            if positions.len() > 1 {
-                return Err(
-                    "signed Agent binary must contain at most one embedded component manifest frame"
-                        .into(),
-                );
-            }
-            index += prefix_len;
-        } else {
-            index += 1;
+            return Err(
+                "signed Agent binary must contain at most one embedded component manifest frame"
+                    .into(),
+            );
+        }
+        if matches_split_at(bytes, pos, trailer_a, trailer_b)
+            && trailer_start.replace(pos - trailer_a.len()).is_some()
+        {
+            return Err(
+                "signed Agent binary must contain at most one embedded component manifest frame"
+                    .into(),
+            );
         }
     }
-    let Some(&start) = positions.first() else {
-        return Ok(None);
+    let start = match (prefix_start, trailer_start) {
+        (None, None) => return Ok(None),
+        (None, Some(_)) => {
+            return Err(
+                "signed Agent binary contains an orphan embedded component manifest frame trailer"
+                    .into(),
+            );
+        }
+        (Some(start), _) => start,
     };
     let header_end = start
         .checked_add(103)
@@ -202,8 +245,9 @@ pub fn extract_embedded_agent_manifest_optional(
     let trailer = bytes
         .get(payload_end..trailer_end)
         .ok_or_else(|| "truncated embedded component manifest frame trailer".to_owned())?;
-    if &trailer[..FRAME_TRAILER_A.len()] != FRAME_TRAILER_A
-        || &trailer[FRAME_TRAILER_A.len()..] != FRAME_TRAILER_B
+    if &trailer[..trailer_a.len()] != trailer_a
+        || &trailer[trailer_a.len()..] != trailer_b
+        || trailer_start != Some(payload_end)
     {
         return Err("embedded component manifest frame trailer mismatch".into());
     }
@@ -777,6 +821,28 @@ mod tests {
         let mut duplicate = binary.clone();
         duplicate.extend_from_slice(&frame);
         assert!(extract_embedded_agent_manifest(&duplicate).is_err());
+
+        let (trailer_a, trailer_b) = frame_trailer_parts();
+        let mut raw_trailer = Vec::new();
+        raw_trailer.extend_from_slice(trailer_a);
+        raw_trailer.extend_from_slice(trailer_b);
+        let mut orphan_trailer = b"\x7fELF\x02\x01orphan".to_vec();
+        orphan_trailer.extend_from_slice(&raw_trailer);
+        assert!(extract_embedded_agent_manifest_optional(&orphan_trailer).is_err());
+        assert!(extract_embedded_agent_manifest(&orphan_trailer).is_err());
+
+        let mut leading_extra_trailer = raw_trailer.clone();
+        leading_extra_trailer.extend_from_slice(&binary);
+        assert!(extract_embedded_agent_manifest_optional(&leading_extra_trailer).is_err());
+
+        let mut trailing_extra_trailer = binary.clone();
+        trailing_extra_trailer.extend_from_slice(&raw_trailer);
+        assert!(extract_embedded_agent_manifest_optional(&trailing_extra_trailer).is_err());
+
+        let mut overlapping_extra_trailer = raw_trailer[..raw_trailer.len() - 1].to_vec();
+        overlapping_extra_trailer.extend_from_slice(&frame);
+        assert!(extract_embedded_agent_manifest_optional(&overlapping_extra_trailer).is_err());
+
         assert_eq!(
             extract_embedded_agent_manifest_optional(unrelated_hex.as_bytes()).unwrap(),
             None

@@ -497,7 +497,7 @@ pub(crate) async fn create_job(
 
 pub const LEGACY_UNFROZEN_DENIAL: &str = "历史未冻结签名 Agent 发布与内置组件身份的诊断任务不再派发执行；已有检查点与历史记录保留只读收据与清理回执";
 
-pub(super) async fn reject_queued(
+pub(crate) async fn reject_queued(
     connection: &mut sqlx::PgConnection,
     server_id: i64,
 ) -> ApiResult<()> {

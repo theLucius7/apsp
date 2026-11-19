@@ -916,12 +916,15 @@ class ReleaseTests(unittest.TestCase):
         bad_digest = valid_frame[:40] + (b"0" if valid_frame[40:41] != b"0" else b"1") + valid_frame[41:]
         cases = {
             "bare_dev_binary": b"TEST ONLY raw apsp-agent without embedded manifest frame",
+            "orphan_trailer": b"elf" + release.EMBEDDED_FRAME_SUFFIX,
             "truncated_header": b"elf" + release.EMBEDDED_FRAME_PREFIX + b"00000010",
             "bad_hex_length": b"elf" + release.EMBEDDED_FRAME_PREFIX + b"0000001G:" + b"a" * 64 + b"\n{}",
             "missing_suffix": b"elf" + valid_frame[:-5],
             "corrupted_digest": b"elf" + bad_digest,
             "duplicate_valid_frames": b"elf" + valid_frame + b"mid" + valid_frame,
             "valid_plus_corrupted_prefix": b"elf" + valid_frame + release.EMBEDDED_FRAME_PREFIX + b"broken",
+            "valid_plus_leading_trailer": b"elf" + release.EMBEDDED_FRAME_SUFFIX + valid_frame,
+            "valid_plus_trailing_trailer": b"elf" + valid_frame + b"mid" + release.EMBEDDED_FRAME_SUFFIX,
         }
         for idx, (case_name, payload) in enumerate(cases.items()):
             with self.subTest(case=case_name):

@@ -597,7 +597,24 @@ async fn registered_tools_use_one_server_mutex_and_require_budget_aware_agents(
     ready(&panel, server).await?;
     let existing = Uuid::new_v4();
     let now = apsp_protocol::now_timestamp();
-    sqlx::query("INSERT INTO diagnostic_jobs(id,server_id,job,created_at,updated_at,expires_at) VALUES($1,$2,$3,$4,$4,$4+300)").bind(existing).bind(server).bind(json!({"plugin":"different-diagnostic-plugin"})).bind(now).execute(&panel.state.pool).await?;
+    let existing_job = json!({
+        "id": existing,
+        "plugin": "different-diagnostic-plugin",
+        "version": "1.0.0",
+        "agent_bundle": {
+            "schema": 1,
+            "agent_version": "0.4.0",
+            "release_tag": "agent-v0.4.0",
+            "target": "linux-musl-amd64",
+            "source_repo": "theLucius7/apsp",
+            "agent_sha256": "1".repeat(64),
+            "agent_bytes": 1024,
+            "component": "different-diagnostic-plugin",
+            "component_version": "1.0.0",
+            "component_sha256": "2".repeat(64)
+        }
+    });
+    sqlx::query("INSERT INTO diagnostic_jobs(id,server_id,job,created_at,updated_at,expires_at) VALUES($1,$2,$3,$4,$4,$4+300)").bind(existing).bind(server).bind(existing_job).bind(now).execute(&panel.state.pool).await?;
     for status in ["queued", "running", "cleaning", "cancel_requested"] {
         let expiry = if matches!(status, "cleaning" | "cancel_requested") {
             now - 1
@@ -795,14 +812,15 @@ async fn ipquality_dispatch_freezes_signed_bundle_verifies_receipts_and_keeps_le
         .bind(at + 600)
         .execute(&panel.state.pool)
         .await?;
+    let tampered_text = {
+        let mut v = receipt_body(&digests["nodequality"]);
+        v["job_id"] = json!(legacy_id);
+        v.to_string()
+    };
     let tampered_legacy_upload = json!({
         "id": legacy_id,
         "name": "ipquality_result",
-        "text": {
-            let mut v = receipt_body(&digests["nodequality"]);
-            v["job_id"] = json!(legacy_id);
-            v.to_string()
-        },
+        "text": tampered_text,
         "complete": true,
         "revision": 2,
         "collected_at": at + 3

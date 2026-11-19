@@ -158,7 +158,7 @@ async fn explicit_redeploy_requires_active_configuration_and_reissues_current_bu
         .error_for_status()?
         .json()
         .await?;
-    assert_eq!(redeployed["rev"], 2);
+    assert_eq!(redeployed["revision"], 2);
 
     let second_sha: String = sqlx::query_scalar(
         "SELECT bundle_sha256 FROM deployments WHERE server_id=$1 AND module='singbox' AND rev=2",

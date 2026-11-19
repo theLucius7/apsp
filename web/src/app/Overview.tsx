@@ -35,7 +35,7 @@ export default function Overview() {
   const enrolled = servers.data?.filter(server => server.device_public_key) ?? []
   const offline = enrolled.filter(server => !server.online)
   const configured = runtimeServers.data?.filter(server => server.configured) ?? []
-  const failing = configured.filter(server => server.status.state === 'failed')
+  const failing = configured.filter(server => server.status?.state === 'failed')
   const active = alerts.data?.filter(event => event.resolved_at === null) ?? []
   const due = renewals.data?.upcoming ?? []
 

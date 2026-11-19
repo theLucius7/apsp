@@ -105,6 +105,9 @@ impl Harness {
         let status = response.status();
         let text = response.text().await?;
         anyhow::ensure!(status.is_success(), "{path} returned {status}: {text}");
+        if status == reqwest::StatusCode::NO_CONTENT || text.trim().is_empty() {
+            return Ok(Value::Null);
+        }
         Ok(serde_json::from_str(&text)?)
     }
 

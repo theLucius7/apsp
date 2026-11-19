@@ -4,8 +4,7 @@ use super::{
     models::Configuration,
     x509,
 };
-// Keep crate-root governance re-export referenced while naming/src/lib.rs re-exports releases.
-use crate::{AppState, error::ApiError, releases as _};
+use crate::{AppState, error::ApiError};
 use anyhow::{Context, ensure};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -400,7 +399,10 @@ pub(crate) async fn verify_builtin_binary(
         #[cfg(unix)]
         {
             use std::os::unix::fs::MetadataExt;
-            if metadata.mode() & 0o022 != 0 || (require_root_owner && metadata.uid() != 0) {
+            let sticky_shared = !require_root_owner && (metadata.mode() & 0o1000 != 0);
+            if (!sticky_shared && metadata.mode() & 0o022 != 0)
+                || (require_root_owner && metadata.uid() != 0)
+            {
                 return Err(ExecutionFailure::before(
                     "issuer_builtin_permissions_invalid",
                 ));

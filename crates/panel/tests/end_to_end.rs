@@ -514,6 +514,13 @@ async fn published_configuration_usage_and_lost_ack_survive_agent_restart(
     // Deleting the last node deactivates sing-box and keeps it stopped across Agent restarts.
     panel
         .api(
+            Method::PUT,
+            &format!("/api/access/policy-groups/{}", group["id"]),
+            json!({"name": "E2E group", "node_ids": [], "chain_ids": []}),
+        )
+        .await?;
+    panel
+        .api(
             Method::DELETE,
             &format!("/api/traffic/nodes/{node_id}"),
             Value::Null,

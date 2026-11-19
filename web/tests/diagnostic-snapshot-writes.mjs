@@ -25,8 +25,11 @@ const forceClick = button => button.evaluate(element => {
   try { element.click() } finally { element.disabled = disabled }
 })
 try {
-  for (const width of [1440, 390]) for (const tool of ['nodequality', 'tcpquality']) {
-    const page = await browser.newPage({ viewport: { width, height: 1000 } }); page.setDefaultTimeout(12000)
+  // Run the four isolated viewport/tool pages concurrently so real 5s resource polls stay well within the suite budget.
+  const scenarios = [1440, 390].flatMap(width => ['nodequality', 'tcpquality'].map(tool => [width, tool]))
+  const settled = await Promise.allSettled(scenarios.map(async ([width, tool]) => {
+    const context = await browser.newContext({ viewport: { width, height: 1000 }, serviceWorkers: 'block' })
+    const page = await context.newPage(); page.setDefaultTimeout(12000)
     page.on('pageerror', error => totals.errors.push(error.message))
     const readPath = tool === 'nodequality' ? `${base}/node-quality/reports` : `${base}/diagnostics`
     const createPath = tool === 'nodequality' ? readPath : `${base}/diagnostics/tcpquality`
@@ -75,10 +78,12 @@ try {
       : page.getByLabel('IP 版本', { exact: true })
     const refreshFailed = async () => {
       const observed = page.waitForResponse(response => new URL(response.url()).pathname === readPath && response.request().method() === 'GET')
+      observed.catch(() => {})
       await page.getByRole('button', { name: '重试', exact: true }).first().click(); await observed
     }
     const poll = async (condition = () => cancel.count().then(count => count > 0 ? cancel.isEnabled() : start.isEnabled())) => {
       const observed = page.waitForResponse(response => new URL(response.url()).pathname === readPath && response.request().method() === 'GET')
+      observed.catch(() => {})
       const gate = hold(readPath); await wait(() => gate.reached > 0, 'The actual diagnostic poll starts')
       gate.release(); gates.delete(readPath)
       await observed
@@ -149,8 +154,11 @@ try {
       if (process.env.APSP_UI_SCREENSHOT_DIR) { await mkdir(process.env.APSP_UI_SCREENSHOT_DIR, { recursive: true }); await page.screenshot({ path: resolve(process.env.APSP_UI_SCREENSHOT_DIR, `diagnostic-snapshot-${tool}-${width}.png`), fullPage: true }) }
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
       ++totals.scenarios
-    } finally { for (const gate of gates.values()) gate.release(); await Promise.all(pending); await page.close() }
-  }
+    } finally { for (const gate of gates.values()) gate.release(); await Promise.all(pending); await context.close() }
+  }))
+  const rejected = settled.find(item => item.status === 'rejected')
+  if (rejected) throw rejected.reason
+  assert.equal(totals.scenarios, 4); assert.equal(totals.blocked, 42); assert.equal(totals.recovered, 8)
   assert.deepEqual(totals.external, []); assert.deepEqual(totals.unexpected, []); assert.deepEqual(totals.errors, [])
   console.log(JSON.stringify({ result: 'PASS', ...totals }))
 } finally { await browser.close(); await new Promise(resolve => server.close(resolve)) }

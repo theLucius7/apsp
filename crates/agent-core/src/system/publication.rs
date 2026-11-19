@@ -17,17 +17,17 @@ pub(super) fn is_request(program: &Path, args: &[String]) -> bool {
 pub(super) fn validate(args: &[String]) -> Result<()> {
     let source = Path::new(&args[3]);
     let destination = Path::new(&args[4]);
+    let source_name = source.file_name().and_then(|n| n.to_str());
+    let dest_name = destination.file_name().and_then(|n| n.to_str());
+    let valid_names = match (source_name, dest_name) {
+        (Some(src), Some(dst)) if src.starts_with(".verified-") => safe_component(dst),
+        (Some(src), Some(dst)) if src.starts_with(".bundled-") => {
+            apsp_protocol::bundled::valid_version_segment(dst)
+        }
+        _ => false,
+    };
     ensure!(
-        source.is_absolute()
-            && source.parent() == destination.parent()
-            && source
-                .file_name()
-                .and_then(|n| n.to_str())
-                .is_some_and(|n| n.starts_with(".verified-"))
-            && destination
-                .file_name()
-                .and_then(|n| n.to_str())
-                .is_some_and(safe_component),
+        source.is_absolute() && source.parent() == destination.parent() && valid_names,
         "invalid artifact publication paths"
     );
     ensure!(

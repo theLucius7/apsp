@@ -140,7 +140,10 @@ async fn assert_terminal_retirement(at: RetireAt, expected_spawns: usize) -> Res
     let fixture = Fixture(std::fs::canonicalize(temporary)?);
     let config = Config {
         panel_url: "http://127.0.0.1:9".into(),
+        identity_dir: fixture.0.join("identity"),
         agent_root: fixture.0.join("core"),
+        install_root: fixture.0.join("install"),
+        runtime_root: fixture.0.join("runtime"),
         state_db: fixture.0.join("state/state.db"),
         status_socket: fixture.0.join("status.sock"),
         ..Config::default()
