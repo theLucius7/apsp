@@ -177,13 +177,7 @@ pub fn extract_embedded_agent_manifest_optional(
     let trailer_len = trailer_a.len() + trailer_b.len();
     let mut prefix_start = None;
     let mut trailer_start = None;
-    let mut cursor = prefix_a.len().min(trailer_a.len());
-    while let Some(rel) = bytes
-        .get(cursor..)
-        .and_then(|rest| rest.iter().position(|&b| b == b'C'))
-    {
-        let pos = cursor + rel;
-        cursor = pos + 1;
+    for pos in memchr::memchr_iter(b'C', bytes) {
         if matches_split_at(bytes, pos, prefix_a, prefix_b)
             && prefix_start.replace(pos - prefix_a.len()).is_some()
         {

@@ -514,6 +514,7 @@ dependencies = [
  "base64 0.22.1",
  "blake2",
  "ed25519-dalek",
+ "memchr",
  "minisign-verify",
  "serde",
  "serde_json",
