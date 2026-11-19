@@ -148,9 +148,14 @@ fi
 
 target_key=${target//-/_}
 linker_key=$(printf '%s' "$target_key" | tr '[:lower:]' '[:upper:]')
-export "CARGO_TARGET_${linker_key}_LINKER=musl-gcc"
+# Some musl-gcc versions add a dynamic interpreter when Rust requests static
+# PIE. Link with Rust's musl startup objects and LLD, and keep musl-gcc for C.
+rust_host=$(rustc -vV | sed -n 's/^host: //p')
+rust_linker=$(rustc --print sysroot)/lib/rustlib/$rust_host/bin/rust-lld
+[[ -x $rust_linker ]] || die 'Rust toolchain is missing rust-lld'
+export "CARGO_TARGET_${linker_key}_LINKER=$rust_linker"
 export "CC_${target_key}=musl-gcc"
-export "RUSTFLAGS=${RUSTFLAGS:+$RUSTFLAGS }-Ctarget-feature=+crt-static"
+export "RUSTFLAGS=${RUSTFLAGS:+$RUSTFLAGS }-Ctarget-feature=+crt-static -Clink-self-contained=yes"
 cargo build --locked --release --package apsp-agent --target "$target" --manifest-path "$repo/Cargo.toml"
 binary=$target_dir/$target/release/apsp-agent
 binary_size=$(stat -c '%s' "$binary")
