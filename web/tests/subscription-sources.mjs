@@ -26,8 +26,6 @@ try {
   for (const width of [1440, 390, 320]) {
     const page = await browser.newPage({ viewport: { width, height: 1000 } })
     page.setDefaultTimeout(8000)
-    await page.clock.install()
-    // Dialogs finish closing on animation frames, which the page clock holds here; with reduced motion they close at once.
     await page.emulateMedia({ reducedMotion: 'reduce' })
     const errors = [], writes = [], receipts = new Map(), jobs = new Map()
     const servers = [1, 2].map(id => runtimeServerFixture(id, { name: `受管服务器 ${id}`, online: false }))
@@ -231,7 +229,8 @@ try {
     await dialog.locator('[name=source_name]').fill('文件来源'); await dialog.getByRole('combobox', { name: '订阅输入方式', exact: true }).selectOption('inline')
     await dialog.locator('[name=source_file]').setInputFiles({ name: 'source.txt', mimeType: 'text/plain', buffer: Buffer.from('trojan://TEST_ONLY_FILE@exit.example.com:443#file') })
     await dialog.getByText('已读取：source.txt', { exact: true }).waitFor(); createMode = 'timeout'; await dialog.getByRole('button', { name: '保存来源', exact: true }).click(); await timeoutStarted
-    await page.clock.fastForward(30000); await dialog.getByRole('alert').filter({ hasText: '请求超时' }).waitFor(); timeoutRelease()
+    // Wait for the actual 30-second request deadline without changing the dialog animation clock.
+    await dialog.getByRole('alert').filter({ hasText: '请求超时' }).waitFor({ timeout: 40000 }); timeoutRelease()
     const fileFirst = writes.filter(write => write.path === sourceRoot && write.method === 'POST').at(-1)
     assert.equal(await dialog.locator('[name=source_content]').inputValue(), 'trojan://TEST_ONLY_FILE@exit.example.com:443#file')
     await enable(dialog.getByRole('button', { name: '重试原请求', exact: true })); await dialog.getByRole('button', { name: '重试原请求', exact: true }).click(); await dialog.waitFor({ state: 'hidden' })
@@ -267,7 +266,7 @@ try {
     await manager.locator('[data-source-id="1"]').getByRole('button', { name: '查看来源', exact: true }).click(); await enable(dialog.getByRole('button', { name: '取消来源任务', exact: true })); await dialog.getByRole('button', { name: '取消来源任务', exact: true }).click()
     await dialog.getByRole('button', { name: '等待取消确认', exact: true }).waitFor(); assert.equal(await dialog.getByRole('button', { name: '等待取消确认', exact: true }).isDisabled(), true)
     const running = sources[0].active_job; running.status = 'cancelled'; running.stage = 'done'; running.finished_at = 1790860810; sources[0].active_job = null
-    await page.clock.fastForward(1500); await dialog.getByText('已取消', { exact: true }).waitFor()
+    await dialog.getByText('已取消', { exact: true }).waitFor()
     await dialog.getByRole('button', { name: '关闭来源详情', exact: true }).click()
     await manager.locator('[data-source-id="1"]').getByRole('button', { name: '查看来源', exact: true }).click(); await enable(dialog.getByRole('button', { name: '更换来源', exact: true })); await dialog.getByRole('button', { name: '更换来源', exact: true }).click()
     assert.equal(await dialog.locator('[name=source_url]').inputValue(), '')
