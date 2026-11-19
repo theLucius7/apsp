@@ -50,15 +50,8 @@ exit $LASTEXITCODE
             "& $verifier verify-installed --binary $binary --name '{name}' --format tar.gz"
         );
         let replacement = format!("& {} $verifier $binary '{}'", ps(&shim), name);
-        return replace_command(
-            ops,
-            &root.join("runtime-launcher.ps1"),
-            &anchor,
-            &replacement,
-            0o755,
-        )
-        .await
-        .map(|_| ());
+        let launcher = root.join("runtime-launcher.ps1");
+        return replace_command(ops, &launcher, &launcher, &anchor, &replacement, 0o755).await;
     }
 
     let shim = root.join("verify-runtime");
@@ -117,9 +110,20 @@ exit $LASTEXITCODE
         ),
         _ => anyhow::bail!("unsupported managed runtime verifier"),
     };
-    if replace_command(ops, &path, &old, &replacement, mode).await?
-        && backend == ServiceBackend::Systemd
-    {
+    let source = if backend == ServiceBackend::Systemd {
+        let name = spec.descriptor.systemd_unit_definition_name();
+        super::systemd_definition(
+            &path,
+            &Path::new("/lib/systemd/system").join(&name),
+            &Path::new("/usr/lib/systemd/system").join(&name),
+        )?
+        .context("managed runtime service is missing")?
+    } else {
+        path.clone()
+    };
+    replace_command(ops, &source, &path, &old, &replacement, mode).await?;
+    if backend == ServiceBackend::Systemd {
+        // A prior worker may have stopped between the atomic write and reload.
         native::command(ops, "systemctl", &["daemon-reload".into()]).await?;
     }
     Ok(())
@@ -127,25 +131,74 @@ exit $LASTEXITCODE
 
 async fn replace_command(
     ops: &dyn Privileged,
+    source: &Path,
     path: &Path,
     old: &str,
     replacement: &str,
     mode: u32,
-) -> Result<bool> {
-    let original = std::fs::read_to_string(path).context("read managed runtime service")?;
-    if original.contains(replacement) {
-        return Ok(false);
+) -> Result<()> {
+    let original = std::fs::read_to_string(source).context("read managed runtime service")?;
+    let mut matched = false;
+    let mut updated = String::with_capacity(original.len());
+    for line in original.split_inclusive('\n') {
+        let command = line.trim_start_matches([' ', '\t']);
+        let is_prefix = |prefix: &str| {
+            command
+                .strip_prefix(prefix)
+                .is_some_and(|tail| tail.is_empty() || tail.starts_with(char::is_whitespace))
+        };
+        if is_prefix(old) {
+            matched = true;
+            updated.push_str(&line.replacen(old, replacement, 1));
+        } else {
+            matched |= is_prefix(replacement);
+            updated.push_str(line);
+        }
     }
-    ensure!(
-        original.contains(old),
-        "runtime service has no managed verification step"
-    );
-    ops.write_file(
-        path,
-        original.replace(old, replacement).as_bytes(),
-        mode,
-        None,
-    )
-    .await?;
-    Ok(true)
+    ensure!(matched, "runtime service has no managed verification step");
+    if source != path || updated != original {
+        ops.write_file(path, updated.as_bytes(), mode, None).await?;
+    }
+    Ok(())
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::{fs, os::unix::fs::MetadataExt};
+    use uuid::Uuid;
+
+    #[tokio::test]
+    async fn trial_overrides_vendor_unit_without_editing_vendor_bytes() {
+        let dir = std::env::temp_dir().join(format!("apsp-vendor-unit-{}", Uuid::new_v4()));
+        fs::create_dir(&dir).unwrap();
+        let local = dir.join("etc-unit");
+        let lib = dir.join("lib-unit");
+        let usr_lib = dir.join("usr-unit");
+        let old = "ExecStartPre=/current verify-installed --binary /runtime";
+        let new = "ExecStartPre=/shim verify-installed --binary /runtime";
+        let content = format!("# {old}\r\n[Service]\r\n{old} --name demo\r\nExecStart=/runtime");
+        fs::write(&usr_lib, &content).unwrap();
+        assert_eq!(
+            systemd_definition(&local, &lib, &usr_lib).unwrap(),
+            Some(usr_lib.clone())
+        );
+        let expected = content.replace(&format!("\n{old}"), &format!("\n{new}"));
+        for _ in 0..2 {
+            let source = systemd_definition(&local, &lib, &usr_lib).unwrap().unwrap();
+            replace_command(&SystemOps, &source, &local, old, new, 0o644)
+                .await
+                .unwrap();
+            assert_eq!(fs::read_to_string(&local).unwrap(), expected);
+            assert_eq!(fs::read_to_string(&usr_lib).unwrap(), content);
+            assert_eq!(
+                systemd_definition(&local, &lib, &usr_lib).unwrap(),
+                Some(local.clone())
+            );
+            let metadata = fs::metadata(&local).unwrap();
+            assert_eq!(metadata.mode() & 0o7777, 0o644);
+            assert_eq!(metadata.uid(), fs::metadata(&dir).unwrap().uid());
+        }
+        fs::remove_dir_all(dir).unwrap();
+    }
 }

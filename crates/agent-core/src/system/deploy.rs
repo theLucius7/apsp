@@ -99,6 +99,15 @@ async fn ensure_linux_account(ops: &dyn Privileged, name: &str) -> Result<()> {
     Ok(())
 }
 
+fn systemd_definition(local: &Path, lib: &Path, usr_lib: &Path) -> Result<Option<PathBuf>> {
+    for path in [local, lib, usr_lib] {
+        if path.try_exists()? {
+            return Ok(Some(path.to_owned()));
+        }
+    }
+    Ok(None)
+}
+
 pub(crate) async fn ensure_runtime_registered(
     ops: &dyn Privileged,
     backend: ServiceBackend,
@@ -150,7 +159,7 @@ pub(crate) async fn ensure_runtime_registered(
             let etc_unit = Path::new("/etc/systemd/system").join(&unit_name);
             let lib_unit = Path::new("/lib/systemd/system").join(&unit_name);
             let usr_unit = Path::new("/usr/lib/systemd/system").join(&unit_name);
-            if !etc_unit.exists() && !lib_unit.exists() && !usr_unit.exists() {
+            if systemd_definition(&etc_unit, &lib_unit, &usr_unit)?.is_none() {
                 let journal_conf = Path::new("/etc/systemd/journald@apsp-runtime.conf");
                 if !journal_conf.exists() {
                     ops.write_file(

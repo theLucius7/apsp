@@ -1,9 +1,20 @@
 //! A released 0.3.x supervisor only rolls back the Agent executable. It does,
 //! however, run a worker which recovers the existing ApplyIntent journal.
 use super::*;
-use crate::state::IntentRecord;
+use crate::state::{IntentRecord, State, write_json};
 
 const GUARD: &str = "agent_upgrade_trial";
+
+fn commit_desired(db: &mut State, module: &str, value: bool) -> Result<()> {
+    let transaction = db.connection.transaction()?;
+    write_json(&transaction, &format!("desired:{module}"), &value)?;
+    transaction.execute(
+        "DELETE FROM kv WHERE key=?1",
+        [format!("upgrade_desired:{module}")],
+    )?;
+    transaction.commit()?;
+    Ok(())
+}
 
 impl Reconciler {
     pub(crate) fn legacy_trial(&self) -> Result<Option<String>> {
@@ -23,7 +34,8 @@ impl Reconciler {
                 return Ok(Some(value));
             }
             if crate::upgrade::state(&self.config)?.is_some_and(|s| s.current == version) {
-                db.set_json(&key, &value)?;
+                commit_desired(&mut db, module, value)?;
+                return Ok(Some(value));
             }
             db.remove_json(&staging)?;
         }
@@ -37,9 +49,8 @@ impl Reconciler {
                 .locked()?
                 .set_json(&format!("upgrade_desired:{module}"), &(version, value));
         }
-        self.state
-            .locked()?
-            .set_json(&format!("desired:{module}"), &value)
+        let mut db = self.state.locked()?;
+        commit_desired(&mut db, module, value)
     }
 
     pub(crate) async fn finish_confirmed_trial(&self) -> Result<()> {
@@ -91,5 +102,59 @@ impl Reconciler {
             return Ok(true);
         }
         Ok(false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        fake::{FakeAdapter, FakeServiceManager},
+        system::SystemOps,
+    };
+    use std::{fs, path::Path};
+
+    #[test]
+    fn post_promotion_desired_update_supersedes_staged_value() {
+        let agent_root = std::env::temp_dir().join(format!("apsp-desired-{}", Uuid::new_v4()));
+        fs::create_dir(&agent_root).unwrap();
+        let upgrade = crate::upgrade::UpgradeState {
+            current: "0.4.0".into(),
+            ..Default::default()
+        };
+        fs::write(
+            agent_root.join("update-state.json"),
+            serde_json::to_vec(&upgrade).unwrap(),
+        )
+        .unwrap();
+        let state = Arc::new(std::sync::Mutex::new(
+            State::open(Path::new(":memory:")).unwrap(),
+        ));
+        state
+            .locked()
+            .unwrap()
+            .set_json("upgrade_desired:demo", &("0.4.0", true))
+            .unwrap();
+        let reconciler = Reconciler::new(
+            Config {
+                agent_root: agent_root.clone(),
+                ..Config::default()
+            },
+            state.clone(),
+            Arc::new(FakeAdapter::default()),
+            Arc::new(SystemOps),
+            Arc::new(FakeServiceManager::default()),
+        );
+        reconciler.set_desired("demo", false).unwrap();
+        assert_eq!(
+            state
+                .locked()
+                .unwrap()
+                .get_json::<(String, bool)>("upgrade_desired:demo")
+                .unwrap(),
+            None
+        );
+        assert_eq!(reconciler.desired("demo").unwrap(), Some(false));
+        fs::remove_dir_all(agent_root).unwrap();
     }
 }

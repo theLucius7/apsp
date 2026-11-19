@@ -5,7 +5,7 @@
 - PostgreSQL 16 上分别使用合成数据和生产库纯结构副本演练了基线接入。两者均达到新装库结构指纹 `3809eb993072dab6903cdcacf2bbfc3f`，重复执行按预期拒绝。
 - 核对了 Linux Agent 第四个组件 IPQuality 的依赖来源。从经签名索引取得 Debian `debian-archive-keyring 2023.3+deb12u2`，核对软件包后提取的 bookworm 密钥环 SHA-256 为 `506b815cbb32d9b6066b4a2aa524071e071761e7e7f68c3ac74f3061ba852017`，已验证两个固定快照的签名。[Debian 主仓库](https://snapshot.debian.org/archive/debian/20261001T142720Z/dists/bookworm/InRelease)、[Debian 安全仓库](https://snapshot.debian.org/archive/debian-security/20261001T142623Z/dists/bookworm-security/InRelease)。现有材料中没有双架构构建镜像的独立批准记录，也没有与实际打包库存对应的逐包许可审查记录，四组件正式发布仍待这两项。
 - 修正旧订阅入口在路径令牌中处理 `+`、`&` 的方式。镜像站或带标签的 IPQuality 构建镜像仍由审核记录里的摘要锁定，显式摘要不符会终止构建。
-- 从编进 Agent 的归档派生逐文件清单摘要，缓存复用和旧版本回退均核对签名来源与磁盘文件。对旧版 0.3.9 Supervisor 增补试用期运行时验证及可恢复的配置日志，旧版真实 systemd 验证器拒绝首次启动内置运行时的问题已在隔离环境复现。
+- 从编进 Agent 的归档派生逐文件清单摘要，缓存复用和旧版本回退均核对签名来源与磁盘文件。对旧版 0.3.9 Supervisor 增补试用期运行时验证及可恢复的配置日志，旧版真实 systemd 验证器拒绝首次启动内置运行时的问题已在隔离环境复现。试用期间也支持发行版目录中的 systemd 单元；中断后可重试重载。新版被确认后，下一次配置写入会一并清除旧的试用暂存值。
 - 已通过 Rust 格式、领域与路由守卫（497 条路由）、Web 生产构建、241 项单元测试及 37 个改动涉及的 Chromium 场景（订阅源场景改为等待真实请求超时，并在三种屏宽单独重验）、Python 发布与安装测试（256 通过，1 项缺独立跨架构 TCP 制品跳过）及 10 项构建脚本测试。隔离 Linux 试用与 Rust 全量结果另行回填。
 
 ## 2026-11-18 一体化自带能力 Agent 重构
