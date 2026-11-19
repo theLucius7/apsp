@@ -266,6 +266,13 @@ pub(super) async fn confirm_devices(state: &AppState) -> Result<()> {
                 .is_some(),
             "TEST_ONLY signed manifest preparation is missing"
         );
+        // This simulated Agent fetched its manifest. The real device channel
+        // refreshes contact on each received frame, including regular heartbeats.
+        sqlx::query("UPDATE servers SET last_seen=$2,last_contact_at=$2 WHERE id=$1 AND device_public_key='TEST_ONLY-device-key' AND deleted_at IS NULL")
+            .bind(server)
+            .bind(now_timestamp())
+            .execute(&state.pool)
+            .await?;
     }
     let servers: Vec<i64> = sqlx::query_scalar(&format!(
         "SELECT m.server_id FROM server_module_status m JOIN servers s ON s.id=m.server_id WHERE m.module='singbox' AND m.target_rev>0 AND {configured} AND s.capabilities @> $1::jsonb AND (NOT m.healthy OR NOT EXISTS(SELECT 1 FROM runtime_module_checkpoints r WHERE r.server_id=m.server_id AND r.module=m.module AND (r.checkpoint_json->'binding'->>'revision')::bigint=m.target_rev AND r.checkpoint_json->>'healthy'='true')) AND NOT EXISTS(SELECT 1 FROM runtime_publications p WHERE p.server_id=s.id AND p.dirty_at IS NOT NULL) AND s.deleted_at IS NULL ORDER BY m.server_id",

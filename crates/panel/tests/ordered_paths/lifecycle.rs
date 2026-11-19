@@ -335,6 +335,12 @@ async fn orphan_probe_request_cannot_be_reassociated_with_a_later_complete_vecto
     advance(&fixture, chain, "applied").await?;
     let (original,probe_id,original_vector):(Uuid,Uuid,Value)=sqlx::query_as("SELECT request_id,probe_id,dependency_vector FROM singbox_path_probes WHERE chain_id=$1 AND generation=1 AND stage='switched'")
         .bind(chain).fetch_one(&fixture.panel.state.pool).await?;
+    // The simulated Agents will report again after their previous contact aged out.
+    sqlx::query("UPDATE servers SET last_seen=$2 WHERE id=ANY($1)")
+        .bind(&fixture.servers)
+        .bind(now_timestamp() - 61)
+        .execute(&fixture.panel.state.pool)
+        .await?;
     change_middle_configuration(&fixture, "TEST_ONLY first middle change").await?;
     let first_vector = observed_vector(&fixture).await?;
     assert_ne!(first_vector, original_vector);
