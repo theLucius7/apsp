@@ -141,29 +141,14 @@ async fn register(state: &AppState, config: &TemplateConfig, name: &str) -> ApiR
     .bind(json!(config.asset_settings))
     .fetch_one(&mut *tx)
     .await?;
-    crate::server_observation::save_telemetry_settings_tx(&mut tx, id, &config.telemetry_settings)
-        .await?;
-    for spec in &config.probes {
-        let mut spec = spec.clone();
-        spec.id = Uuid::new_v4();
-        sqlx::query("INSERT INTO network_probes(id,server_id,spec) VALUES($1,$2,$3)")
-            .bind(spec.id)
-            .bind(id)
-            .bind(json!(spec))
-            .execute(&mut *tx)
-            .await?;
-    }
-    for alert in &config.alerts {
-        let mut spec = alert.clone();
-        spec["all_servers"] = json!(false);
-        spec["server_ids"] = json!([id]);
-        sqlx::query("INSERT INTO alert_rules(id,spec,revision) VALUES($1,$2,1)")
-            .bind(Uuid::new_v4())
-            .bind(spec)
-            .execute(&mut *tx)
-            .await?;
-    }
-    crate::server_observation::assign_default_latency_tasks_tx(&mut tx, id).await?;
+    crate::server_observation::initialize_tx(
+        &mut tx,
+        id,
+        &config.telemetry_settings,
+        &config.probes,
+        &config.alerts,
+    )
+    .await?;
     sqlx::query("INSERT INTO enrollment_tokens(token_hash,server_id,expires_at) VALUES($1,$2,$3)")
         .bind(auth::hash_token(&token))
         .bind(id)

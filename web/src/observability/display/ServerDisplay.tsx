@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNow } from './useNow'
+import { useNow } from '@/lib/useNow'
 import { CircleUserIcon, MoonIcon, SunIcon } from 'lucide-react'
 import { Brand, PageHeader } from '../../components'
 import { LanguageSelect, useI18n } from '../../i18n'

@@ -88,6 +88,17 @@ pub(crate) async fn freeze_endpoint(
         .fetch_optional(&mut **tx)
         .await?
         .ok_or(ApiError::NotFound)?;
+    let preserved: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM singbox_nexus_runtime_nodes WHERE node_id=$1)",
+    )
+    .bind(node_id)
+    .fetch_one(&mut **tx)
+    .await?;
+    if preserved {
+        return Err(ApiError::Conflict(
+            "迁移线路保留原客户端身份，不能用作链路节点；调整谁能使用请编辑它所在的策略组".into(),
+        ));
+    }
     let node = row
         .model(vec![])
         .map_err(|_| ApiError::BadRequest(format!("节点 #{node_id} 的协议参数无法解析")))?;
@@ -258,7 +269,7 @@ pub async fn refresh_availability(connection: &mut PgConnection) -> ApiResult<Ve
 }
 
 /// The chains among `ids` whose entry and current managed hop nodes all exist,
-/// are enabled REALITY nodes on live sing-box servers and pass validation.
+/// are enabled REALITY nodes on non-retired servers and pass structural validation.
 /// Three statements serve any number of chains; each node is validated once.
 pub async fn chains_structurally_available(
     connection: &mut PgConnection,
@@ -280,9 +291,8 @@ pub async fn chains_structurally_available(
         return Ok(HashSet::new());
     }
     let query = format!(
-        "SELECT n.id FROM nodes n JOIN servers s ON s.id=n.server_id {} WHERE n.id=ANY($1) AND n.deleted_at IS NULL AND n.enabled AND s.deleted_at IS NULL AND ({}) IS NOT NULL",
-        super::super::settings::ENABLEMENT_JOIN,
-        super::super::settings::SOURCE_SQL
+        "SELECT n.id FROM nodes n JOIN servers s ON s.id=n.server_id WHERE n.id=ANY($1) AND n.deleted_at IS NULL AND n.enabled AND s.deleted_at IS NULL AND NOT {}",
+        crate::nexus_nodes::held_host_sql("s.id")
     );
     let serving: HashSet<i64> = sqlx::query_scalar(&query)
         .bind(&nodes)
@@ -413,68 +423,6 @@ pub(crate) async fn reserve_probe_capacity(
         return Err(ApiError::Conflict(
             "入口服务器的签名路径探测计划已达到容量上限，请使用另一入口服务器".into(),
         ));
-    }
-    Ok(())
-}
-pub(crate) async fn require_capabilities(
-    tx: &mut Transaction<'_, Postgres>,
-    servers: &BTreeSet<i64>,
-) -> ApiResult<()> {
-    for id in servers {
-        let capabilities: Value =
-            sqlx::query_scalar("SELECT capabilities FROM servers WHERE id=$1")
-                .bind(id)
-                .fetch_one(&mut **tx)
-                .await?;
-        for capability in [
-            "runtime:checkpoint-v1",
-            "runtime:barrier-v1",
-            "runtime:path-probe-v1",
-        ] {
-            if !capabilities
-                .as_array()
-                .is_some_and(|items| items.iter().any(|value| value.as_str() == Some(capability)))
-            {
-                return Err(ApiError::Conflict(format!(
-                    "服务器 #{id} 尚不支持完整路径确认、探测和恢复屏障，请升级 Agent"
-                )));
-            }
-        }
-    }
-    Ok(())
-}
-pub(crate) async fn pin_runtimes(
-    state: &AppState,
-    tx: &mut Transaction<'_, Postgres>,
-    chain_id: i64,
-    generation: i64,
-    frozen: &FrozenVersion,
-) -> ApiResult<()> {
-    let mut servers = BTreeSet::from([frozen.entry.server_id]);
-    for hop in &frozen.hops {
-        if let FrozenHop::Managed { endpoint, .. } = hop {
-            servers.insert(endpoint.server_id);
-        }
-    }
-    for server in servers {
-        let info: Value = sqlx::query_scalar("SELECT static_info FROM servers WHERE id=$1")
-            .bind(server)
-            .fetch_one(&mut **tx)
-            .await?;
-        let artifact = super::super::agent::runtime_artifact(state, &info)
-            .await
-            .map_err(|_| {
-                ApiError::Conflict(format!(
-                    "服务器 #{server} 缺少已验签的固定 sing-box 1.14.4-apsp.2 制品或平台信息"
-                ))
-            })?;
-        let incompatible:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_chain_runtime_requirements p JOIN singbox_chains c ON c.id=p.chain_id WHERE p.server_id=$1 AND (c.deleted_at IS NULL OR c.phase<>'retired') AND p.generation=ANY(ARRAY[c.applied_generation,c.candidate_generation,c.recovery_generation]) AND p.artifact_sha256<>$2)").bind(server).bind(&artifact.sha256).fetch_one(&mut **tx).await?;
-        if incompatible {
-            return Err(ApiError::Conflict(format!(
-                "服务器 #{server} 仍有依赖另一固定制品的链路，请先完成原代数撤销"
-            )));
-        }
-        sqlx::query("INSERT INTO singbox_chain_runtime_requirements(chain_id,generation,server_id,runtime_version,artifact_sha256,artifact) VALUES($1,$2,$3,'1.14.4-apsp.2',$4,$5)").bind(chain_id).bind(generation).bind(server).bind(&artifact.sha256).bind(json!(artifact)).execute(&mut **tx).await?;
     }
     Ok(())
 }

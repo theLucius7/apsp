@@ -7,6 +7,97 @@ pub(super) struct Fixture {
     pub nodes: Vec<i64>,
     pub source: i64,
     pub external: Value,
+    pub agent_sha: String,
+    pub singbox_sha: String,
+}
+
+pub(super) fn install_signed_self_contained_agent(
+    panel: &TestPanel,
+) -> Result<release_fixture::SignedTestAgent> {
+    let target = format!("linux-musl-{}", apsp_protocol::release::native_arch()?);
+    let components = release_fixture::pinned_components(&["sing-box"])?;
+    release_fixture::write_signed_agents(
+        &panel.state.config.data_dir,
+        "0.4.0",
+        &["linux-musl-amd64", "linux-musl-arm64"],
+        &components,
+    )?
+    .into_iter()
+    .find(|agent| agent.target == target)
+    .context("native signed test Agent")
+}
+
+pub(super) async fn mark_verified_self_contained_agent(
+    pool: &PgPool,
+    server: i64,
+    agent_sha: &str,
+    singbox_sha: &str,
+) -> Result<()> {
+    let now = now_timestamp();
+    sqlx::query(
+        "UPDATE servers SET device_public_key='TEST_ONLY-device-key',last_seen=$2,static_info_received_at=$2,capabilities=$3,static_info=$4 WHERE id=$1",
+    )
+    .bind(server)
+    .bind(now)
+    .bind(json!([
+        "singbox",
+        SELF_CONTAINED_AGENT_CAPABILITY,
+        RUNTIME_CHECKPOINT_CAPABILITY,
+        RUNTIME_RECOVERY_BARRIER_CAPABILITY,
+        RUNTIME_PATH_PROBE_CAPABILITY,
+    ]))
+    .bind(json!({
+        "os": "linux",
+        "arch": apsp_protocol::release::native_arch()?,
+        "libc": "musl",
+        "agent_version": "0.4.0",
+        "runtime_version": apsp_traffic::RUNTIME_VERSION,
+        "components": {"sing-box": apsp_traffic::RUNTIME_VERSION},
+        "component_digests": {
+            "agent": agent_sha,
+            "sing-box": singbox_sha,
+        },
+    }))
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub(super) async fn create_inline_source(
+    panel: &TestPanel,
+    cookie: &str,
+    name: &str,
+) -> Result<(i64, Value)> {
+    let receipt = api(
+        panel,
+        cookie,
+        Method::POST,
+        "/ordered-subscription-sources",
+        Some(json!({
+            "request_id": Uuid::new_v4(),
+            "name": name,
+            "input": {"kind": "inline", "content": content("TEST_ONLY external password")},
+        })),
+        StatusCode::ACCEPTED,
+    )
+    .await?;
+    let source = receipt["source_id"].as_i64().context("source ID")?;
+    apsp_traffic::subscription_sources::worker::run_once(&panel.state).await?;
+    let page = api(
+        panel,
+        cookie,
+        Method::GET,
+        &format!("/ordered-subscription-sources/{source}/nodes"),
+        None,
+        StatusCode::OK,
+    )
+    .await?;
+    let external = page["nodes"][0].clone();
+    ensure!(
+        external["selectable"] == true,
+        "controlled external fixture is not selectable"
+    );
+    Ok((source, external))
 }
 
 pub(super) async fn api(
@@ -33,57 +124,34 @@ pub(super) async fn api(
 
 pub(super) async fn fixture(pool: PgPool) -> Result<Fixture> {
     let panel = TestPanel::start_with_public_url(pool, Some("https://panel.example")).await?;
-    let archive = release_fixture::archive("sing-box", b"TEST_ONLY native binary never executed")?;
-    release_fixture::write(
-        &panel.state.config.data_dir,
-        "sing-box",
-        "1.14.4-apsp.2",
-        "sing-box",
-        &archive,
-        b"TEST_ONLY native binary never executed",
-        "tar.gz",
-    )?;
+    let signed = install_signed_self_contained_agent(&panel)?;
+    let agent_sha = signed.agent_sha256;
+    let singbox_sha = signed.component_digests["sing-box"].clone();
     let cookie = panel.admin_cookie().await?;
     let mut servers = Vec::new();
     let mut nodes = Vec::new();
     for name in ["A", "M", "B"] {
         let server = panel.create_server(&cookie, name).await?;
-        sqlx::query("UPDATE servers SET capabilities=$2,static_info=$3 WHERE id=$1")
-            .bind(server).bind(json!([RUNTIME_CHECKPOINT_CAPABILITY,RUNTIME_RECOVERY_BARRIER_CAPABILITY,RUNTIME_PATH_PROBE_CAPABILITY]))
-            .bind(json!({"os":"linux","arch":apsp_protocol::release::native_arch()?,"libc":"gnu","runtime_libc":"gnu"}))
-            .execute(&panel.state.pool).await?;
-        let node = id(&panel.create_node(&cookie, server, name).await?)?;
-        api(
+        mark_verified_self_contained_agent(&panel.state.pool, server, &agent_sha, &singbox_sha)
+            .await?;
+        let node = id(&api(
             &panel,
             &cookie,
-            Method::PATCH,
-            &format!("/nodes/{node}"),
-            Some(json!({"public_host":format!("{}.example.net",name.to_lowercase())})),
-            StatusCode::OK,
+            Method::POST,
+            "/nodes",
+            Some(json!({
+                "name": name,
+                "server_id": server,
+                "public_host": format!("{}.example.net", name.to_lowercase()),
+                "sni": "www.example.com",
+            })),
+            StatusCode::CREATED,
         )
-        .await?;
+        .await?)?;
         nodes.push(node);
         servers.push(server);
     }
-    let receipt = api(&panel, &cookie, Method::POST, "/ordered-subscription-sources", Some(json!({
-        "request_id":Uuid::new_v4(),"name":"Controlled X","input":{"kind":"inline","content":content("TEST_ONLY external password")}
-    })), StatusCode::ACCEPTED).await?;
-    let source = receipt["source_id"].as_i64().context("source ID")?;
-    apsp_traffic::subscription_sources::worker::run_once(&panel.state).await?;
-    let page = api(
-        &panel,
-        &cookie,
-        Method::GET,
-        &format!("/ordered-subscription-sources/{source}/nodes"),
-        None,
-        StatusCode::OK,
-    )
-    .await?;
-    let external = page["nodes"][0].clone();
-    ensure!(
-        external["selectable"] == true,
-        "controlled external fixture is not selectable"
-    );
+    let (source, external) = create_inline_source(&panel, &cookie, "Controlled X").await?;
     Ok(Fixture {
         panel,
         cookie,
@@ -91,6 +159,8 @@ pub(super) async fn fixture(pool: PgPool) -> Result<Fixture> {
         nodes,
         source,
         external,
+        agent_sha,
+        singbox_sha,
     })
 }
 
@@ -177,7 +247,18 @@ pub(super) async fn authorize(fixture: &Fixture, chain: i64) -> Result<Value> {
 
 /// Device observations are explicit TEST_ONLY facts; this never runs a native process.
 pub(super) async fn confirm_devices(state: &AppState) -> Result<()> {
-    let manifests:Vec<(i64,Value)>=sqlx::query_as("SELECT s.id,s.static_info FROM servers s WHERE s.deleted_at IS NULL AND NOT EXISTS(SELECT 1 FROM runtime_publications p WHERE p.server_id=s.id AND p.dirty_at IS NOT NULL) AND EXISTS(SELECT 1 FROM deployments d WHERE d.server_id=s.id AND d.module='singbox') ORDER BY s.id").fetch_all(&state.pool).await?;
+    let required_caps = json!([
+        "singbox",
+        SELF_CONTAINED_AGENT_CAPABILITY,
+        RUNTIME_CHECKPOINT_CAPABILITY,
+    ]);
+    let configured = apsp_traffic::settings::configured_sql("s.id");
+    let manifests: Vec<(i64, Value)> = sqlx::query_as(&format!(
+        "SELECT s.id,s.static_info FROM servers s WHERE s.deleted_at IS NULL AND {configured} AND s.capabilities @> $1::jsonb AND NOT EXISTS(SELECT 1 FROM runtime_publications p WHERE p.server_id=s.id AND p.dirty_at IS NOT NULL) AND EXISTS(SELECT 1 FROM deployments d WHERE d.server_id=s.id AND d.module='singbox') ORDER BY s.id",
+    ))
+    .bind(&required_caps)
+    .fetch_all(&state.pool)
+    .await?;
     for (server, info) in manifests {
         ensure!(
             apsp_traffic::agent::manifest_module(state, server, &info)
@@ -186,8 +267,12 @@ pub(super) async fn confirm_devices(state: &AppState) -> Result<()> {
             "TEST_ONLY signed manifest preparation is missing"
         );
     }
-    let servers: Vec<i64> = sqlx::query_scalar("SELECT m.server_id FROM server_module_status m JOIN servers s ON s.id=m.server_id WHERE m.module='singbox' AND m.target_rev>0 AND (NOT m.healthy OR NOT EXISTS(SELECT 1 FROM runtime_module_checkpoints r WHERE r.server_id=m.server_id AND r.module=m.module AND (r.checkpoint_json->'binding'->>'revision')::bigint=m.target_rev AND r.checkpoint_json->>'healthy'='true')) AND NOT EXISTS(SELECT 1 FROM runtime_publications p WHERE p.server_id=s.id AND p.dirty_at IS NOT NULL) AND s.deleted_at IS NULL ORDER BY m.server_id")
-        .fetch_all(&state.pool).await?;
+    let servers: Vec<i64> = sqlx::query_scalar(&format!(
+        "SELECT m.server_id FROM server_module_status m JOIN servers s ON s.id=m.server_id WHERE m.module='singbox' AND m.target_rev>0 AND {configured} AND s.capabilities @> $1::jsonb AND (NOT m.healthy OR NOT EXISTS(SELECT 1 FROM runtime_module_checkpoints r WHERE r.server_id=m.server_id AND r.module=m.module AND (r.checkpoint_json->'binding'->>'revision')::bigint=m.target_rev AND r.checkpoint_json->>'healthy'='true')) AND NOT EXISTS(SELECT 1 FROM runtime_publications p WHERE p.server_id=s.id AND p.dirty_at IS NOT NULL) AND s.deleted_at IS NULL ORDER BY m.server_id",
+    ))
+    .bind(&required_caps)
+    .fetch_all(&state.pool)
+    .await?;
     for server in servers {
         let request = runtime_control::request_checkpoint(state, server, "singbox").await?;
         let revision = request.expected.revision;

@@ -1,5 +1,6 @@
 import type { Server } from '../../types'
-import { filterServers, fresh, network, number, ratio } from './data'
+import { nonnegativeNumber as number } from '@/lib/validate'
+import { filterServers, fresh, network, ratio } from './data'
 
 export type DashboardView = 'cards' | 'table'
 export type DashboardSort = 'default' | 'name' | 'attention' | 'cpu' | 'memory' | 'network'

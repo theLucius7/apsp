@@ -7,7 +7,7 @@ import PageBoundary from './PageBoundary'
 import AdminShell from './AdminShell'
 import Login from './Login'
 import { currentNavigation, homePath } from './navigation'
-import { resolveRoute } from './routes'
+import { canonicalUserPath, resolveRoute } from './routes'
 import { useI18n } from '../i18n'
 import { useSessionStore } from '../stores/session'
 import { acceptHashChange, guardLinks } from '@/lib/leave-guard'
@@ -37,7 +37,10 @@ function Boot({ message, onRetry }: { message?: string; onRetry?: () => void }) 
 }
 
 function addressPath() {
-  return window.location.hash.slice(1) || '/dashboard'
+  const raw = window.location.hash.slice(1) || '/dashboard'
+  const canonical = canonicalUserPath(raw)
+  if (canonical !== raw) window.history.replaceState(null, '', `#${canonical}`)
+  return canonical
 }
 
 /** Pages with their own sign-in; the administrator's endpoints are not used there. */

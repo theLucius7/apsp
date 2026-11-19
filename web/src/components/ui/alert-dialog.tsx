@@ -53,7 +53,7 @@ function AlertDialogOverlay({
       <m.div
         {...fadeMotion}
         exit={reduce ? undefined : fadeMotion.exit}
-        className={cn("bg-[color-mix(in_oklch,var(--foreground)_16%,transparent)] supports-backdrop-filter:backdrop-blur-[2px] fixed inset-0 z-50 data-[state=closed]:pointer-events-none!", className)}
+        className={cn("bg-overlay supports-backdrop-filter:backdrop-blur-[2px] fixed inset-0 z-50 data-[state=closed]:pointer-events-none!", className)}
       />
     </AlertDialogPrimitive.Overlay>
   )
@@ -97,7 +97,7 @@ function AlertDialogContent({
             <AlertDialogBox
               {...dialogMotion}
               className={cn(
-                "bg-popover text-popover-foreground ring-foreground/10 gap-4 rounded-2xl p-5 ring-1 shadow-lifted data-[size=default]:max-w-xs data-[size=sm]:max-w-xs data-[size=default]:sm:max-w-sm group/alert-dialog-content fixed top-1/2 left-1/2 z-50 grid w-full -translate-x-1/2 -translate-y-1/2 outline-none",
+                "bg-popover text-popover-foreground border-border/85 gap-4 rounded-2xl border p-5 shadow-lifted data-[size=default]:max-w-[calc(100%-2rem)] data-[size=sm]:max-w-xs data-[size=default]:sm:max-w-sm group/alert-dialog-content fixed top-1/2 left-1/2 z-50 grid w-full -translate-x-1/2 -translate-y-1/2 outline-none",
                 className
               )}
             >
@@ -131,7 +131,7 @@ function AlertDialogFooter({
     <div
       data-slot="alert-dialog-footer"
       className={cn(
-        "bg-muted/50 -mx-4 -mb-4 rounded-b-xl border-t p-4 flex flex-col-reverse gap-2 group-data-[size=sm]/alert-dialog-content:grid group-data-[size=sm]/alert-dialog-content:grid-cols-2 sm:flex-row sm:justify-end",
+        "bg-muted/45 -mx-5 -mb-5 rounded-b-2xl border-t px-5 py-3.5 flex flex-col-reverse gap-2 group-data-[size=sm]/alert-dialog-content:grid group-data-[size=sm]/alert-dialog-content:grid-cols-2 sm:flex-row sm:justify-end",
         className
       )}
       {...props}
@@ -146,7 +146,7 @@ function AlertDialogMedia({
   return (
     <div
       data-slot="alert-dialog-media"
-      className={cn("bg-muted mb-2 inline-flex size-10 items-center justify-center rounded-md sm:group-data-[size=default]/alert-dialog-content:row-span-2 *:[svg:not([class*='size-'])]:size-6", className)}
+      className={cn("bg-muted mb-2 inline-flex size-10 items-center justify-center rounded-lg sm:group-data-[size=default]/alert-dialog-content:row-span-2 *:[svg:not([class*='size-'])]:size-6", className)}
       {...props}
     />
   )
@@ -159,7 +159,7 @@ function AlertDialogTitle({
   return (
     <AlertDialogPrimitive.Title
       data-slot="alert-dialog-title"
-      className={cn("text-base font-medium sm:group-data-[size=default]/alert-dialog-content:group-has-data-[slot=alert-dialog-media]/alert-dialog-content:col-start-2", className)}
+      className={cn("text-base leading-snug font-semibold tracking-[-0.01em] sm:group-data-[size=default]/alert-dialog-content:group-has-data-[slot=alert-dialog-media]/alert-dialog-content:col-start-2", className)}
       {...props}
     />
   )
@@ -172,7 +172,7 @@ function AlertDialogDescription({
   return (
     <AlertDialogPrimitive.Description
       data-slot="alert-dialog-description"
-      className={cn("text-muted-foreground *:[a]:hover:text-foreground text-sm text-balance md:text-pretty *:[a]:underline *:[a]:underline-offset-3", className)}
+      className={cn("text-muted-foreground *:[a]:hover:text-foreground text-sm leading-relaxed text-balance md:text-pretty *:[a]:underline *:[a]:underline-offset-3", className)}
       {...props}
     />
   )

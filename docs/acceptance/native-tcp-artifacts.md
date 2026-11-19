@@ -1,38 +1,45 @@
 # 原生 TCP 固定源码与签名制品：独立验收
 
-本项只交付构建、验证与辅助文件通路，依赖原生引擎 PR #68。插件登记、目标配置、探测执行和 UI 分别交付。未签正式 release，未在生产节点运行探测。
+> **现行架构对齐说明（2026-11-18，[ADR 0140](../adr/0140-domain-consolidation.md)、[ADR 0141](../adr/0141-self-contained-agent-and-desired-service-config.md)）**：`crates/tcp-probe` 现已直接编入单文件一体化 `apsp-agent` 作为内置 `apsp-agent tcp-probe` 子命令交付（构建期以 `APSP_NATIVE_TCP_SOURCE_COMMIT` 固化来源提交），正式发布工作流（`.github/workflows/release.yml`）只产出各平台自包含 `raw` `apsp-agent` 二进制、不可变安装器、签名清单与配对对应源码包，**不再单独构建、组装或经面板分发 `tcpquality` 与 `sing-box` 独立安装制品**。面板 `POST /api/system/agent-releases/import` 仅收录单文件 `raw` `agent` 条目。下文「当前证据」起完整保留 2026-10-01 独立包阶段的源码、Bookworm 启动修复与 bundled musl 1.2.5 版权复核证据；现行可复制构建与组装命令以本节下方为准。包含 Linux 四组件内嵌闭环与原生 `tcp-probe` 的新版一体化 Agent 正式签名 Release 及 P2 TCP 实机签收尚未执行。
 
-## 复现步骤
+## 现行一体化 Agent 构建与发布组装
 
-在干净且包含固定 commit 对象的 Linux amd64 或 arm64 仓库，安装 Rust 对应 musl 目标、musl-tools、Python 3.11+、minisign：
-
-```sh
-python3 tools/build-tcp-probe.py amd64 /tmp/sinan-tcp-artifacts --source-commit <完整40位源码SHA>
-python3 -m unittest discover -s tests -p test_tcp_probe_artifacts.py
-export SINAN_TCP_ARCH=amd64
-export SINAN_TCP_SOURCE_COMMIT=<与构建一致的完整40位SHA>
-export SINAN_TCP_ARTIFACT_ROOT=/tmp/sinan-tcp-artifacts
-python3 -m unittest discover -s tests -p test_tcp_probe_native_bundle.py
-```
-
-arm64 使用 arm64 本机及对应参数，不交叉执行二进制。制品位置为 `tcpquality/0.3.0-<SHA>-r1/<arch>`，伴有 SHA256SUMS；二次写同一制品必须失败。
-
-已有全部默认模块先按旧流程完成。明确加入本制品时使用：
+在干净且具备目标平台内嵌输入（同 ABI `sing-box` `1.14.4-apsp.2`、`-r22` `nodequality`、`ipquality` 离线 rootfs 包与 `network-workbench` `1.0.0` 自包含离线包，准备入口见 `tools/prepare-agent-linux-inputs.py` 与 `.github/workflows/release.yml`）的 Linux 构建环境中，编译内置 `tcp-probe` 的自包含 `raw` Agent 并组装候选发布目录：
 
 ```sh
-python3 tools/release.py assemble --source <制品根目录> --output <新输出目录> --agent-version <Agent版本> --runtime-version <runtime版本> --tag <Agent标签> --installer <安装器> --tcp-probe-version 0.3.0-<SHA>-r1
+# 1. 构建内嵌四组件闭环与原生 tcp-probe 子命令的 Linux 静态 musl 自包含 Agent（GNU 动态目标改用 python3 tools/build-agent.py）
+export APSP_RELEASE_EMBED_REQUIRED=1
+export APSP_NATIVE_TCP_SOURCE_COMMIT=<完整40位源码SHA>
+bash tools/build-agent.sh amd64 <内嵌输入与产物根目录>
+
+# 2. 渲染不可变安装器并组装自包含 Release（不传已废弃独立分发的 --runtime-version / --tcp-probe-version）
+python3 tools/release.py render-installer \
+  --template deploy/install.sh.tmpl \
+  --agent-unit deploy/apsp-agent.service \
+  --runtime-unit deploy/apsp-singbox@.service \
+  --output /tmp/apsp-install.sh
+
+python3 tools/release.py assemble \
+  --source <内嵌输入与产物根目录> \
+  --output <新输出目录> \
+  --agent-version <Agent版本> \
+  --tag agent-v<Agent版本> \
+  --installer /tmp/apsp-install.sh \
+  --target amd64 --target arm64 \
+  --target linux-gnu-amd64 --target linux-gnu-arm64 \
+  --require-paired-sources
 ```
 
-离线正式签名继续沿用既有 ADR 0017；本项自动验收只有公开 TEST_ONLY 私钥，不产生可供正式安装信任的 release。
+离线正式签名与发布核验继续沿用 [ADR 0017](../adr/0017-signed-release-artifacts.md) 与 [签名发布说明](../release.md)（测试夹具公钥 `TEST_ONLY` 禁止用于正式安装或发布）。`tools/release.py` 中保留的历史兼容参数仅服务旧归档回归测试，不能用于现行产品发布或面板导入。
 
-## 接受标准与行为测试
+## 历史独立制品阶段接受标准（2026-10-01 记录背景）
+
+以下条目对应 2026-10-01 原生引擎 PR #68 合入时独立 `tcpquality` 归档与五辅助文件阶段的验收标准（现行交付已转为上文一体化 `apsp-agent` 内置子命令与配对源码包）：
 
 - 合法历史 commit 可构建；main/ref、不存在对象、脏仓库、unknown pin 均拒绝。旧固定配方实际从归档执行，当前配方修改不能替换它。
-- 实际构建使用 --locked、明确 musl 目标、固定编译期 SHA；二进制静态 ELF 与本机架构一致，version/help/build-info 可执行，help/build-info 不打开诊断工作目录。
-- 签名精确覆盖二进制和五辅助文件。改动任一文件拒绝；重新签名但缺源码、unknown 来源、未锁定依赖、锁文件来源冲突仍拒绝。
-- Agent 下载全部五辅助文件，之后逐个修改缓存均拒绝复用；未声明、缺文件、prepare 后文件被修改均不会启动服务。旧默认空集合继续通过旧测试。
-- 默认 release 仍只需要旧三模块。第四模块是显式选项，不允许因此放宽旧模块完整性要求。
-- 两个架构在独立 CI 矩阵构建/运行，错误架构 ELF fixture 拒绝；正式 trust root 加载公开 TEST_ONLY 根必须拒绝。
+- 实际构建使用 `--locked`、明确 musl 目标、固定编译期 SHA；二进制静态 ELF 与本机架构一致，`version`/`help`/`build-info` 可执行，`help`/`build-info` 不打开诊断工作目录。
+- 当轮独立包签名精确覆盖二进制和五辅助文件；改动任一文件、缺源码、unknown 来源、未锁定依赖或锁文件来源冲突均拒绝。
+- 两个架构在独立 CI 矩阵构建/运行，错误架构 ELF fixture 拒绝；正式 trust root 加载公开 `TEST_ONLY` 根必须拒绝。
 
 ## 当前证据
 

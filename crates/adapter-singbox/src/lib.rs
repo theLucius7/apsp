@@ -89,7 +89,7 @@ impl Adapter for SingboxAdapter {
     fn describe(&self) -> Descriptor {
         Descriptor {
             module: "singbox".into(),
-            plugin_name: "sing-box".into(),
+            artifact_name: "sing-box".into(),
             binary_name: if cfg!(windows) {
                 "sing-box.exe"
             } else {
@@ -188,7 +188,10 @@ impl Adapter for SingboxAdapter {
     ) -> BoxFuture<'a, Plan> {
         Box::pin(async move {
             Ok(match previous {
-                Some(previous) if previous.spec.kernel_version != target.spec.kernel_version => {
+                Some(previous)
+                    if previous.spec.kernel_version != target.spec.kernel_version
+                        || previous.spec.binary_path != target.spec.binary_path =>
+                {
                     Plan::Restart
                 }
                 Some(previous) if previous.spec.config_hash == target.spec.config_hash => {

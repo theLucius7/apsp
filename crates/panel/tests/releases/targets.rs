@@ -75,7 +75,7 @@ async fn arm_import_downloads_only_arm_and_can_append_amd_without_redownloading(
     let downloads = Mutex::new(Vec::new());
     assert_eq!(
         import_target(&fixture.state, &bundle, "linux-gnu-arm64", &downloads).await?,
-        2
+        1
     );
     assert!(
         downloads
@@ -84,14 +84,10 @@ async fn arm_import_downloads_only_arm_and_can_append_amd_without_redownloading(
             .iter()
             .all(|name| !name.contains("amd64"))
     );
-    assert_eq!(downloads.lock().unwrap().len(), 3);
-    let entries = releases::entries(&fixture.state).await?;
-    assert_eq!(entries.len(), 2);
+    assert_eq!(downloads.lock().unwrap().len(), 2);
+    let entries = releases::signed_agents(&fixture.state).await?;
+    assert_eq!(entries.len(), 1);
     assert!(entries.iter().all(|entry| entry.arch == "arm64"));
-    assert!(matches!(
-        releases::artifact(&fixture.state, "agent", "0.3.0", "amd64").await,
-        Err(ApiError::NotFound)
-    ));
     // Agent updates use the complete signed proof even when another ABI is cached.
     let update = releases::newer_agent(&fixture.state, &["amd64".into()], (0, 2, 0))
         .await?
@@ -103,7 +99,7 @@ async fn arm_import_downloads_only_arm_and_can_append_amd_without_redownloading(
     );
     assert_eq!(update.artifact.sha256, signing::hash(b"amd agent"));
     assert_eq!(update.artifact.proof, Some(bundle.proof.clone()));
-    assert_eq!(downloads.lock().unwrap().len(), 3);
+    assert_eq!(downloads.lock().unwrap().len(), 2);
     assert!(
         releases::newer_agent(&fixture.state, &["arm64".into()], (0, 2, 0))
             .await?
@@ -116,9 +112,9 @@ async fn arm_import_downloads_only_arm_and_can_append_amd_without_redownloading(
     downloads.lock().unwrap().clear();
     assert_eq!(
         import_target(&fixture.state, &bundle, "linux-gnu-amd64", &downloads).await?,
-        4
+        2
     );
-    assert_eq!(downloads.lock().unwrap().len(), 2);
+    assert_eq!(downloads.lock().unwrap().len(), 1);
     assert!(
         downloads
             .lock()
@@ -126,11 +122,11 @@ async fn arm_import_downloads_only_arm_and_can_append_amd_without_redownloading(
             .iter()
             .all(|name| name.contains("amd64"))
     );
-    assert_eq!(releases::entries(&fixture.state).await?.len(), 4);
+    assert_eq!(releases::signed_agents(&fixture.state).await?.len(), 2);
     downloads.lock().unwrap().clear();
     assert_eq!(
         import_target(&fixture.state, &bundle, "arm64", &downloads).await?,
-        4
+        2
     );
     assert!(downloads.lock().unwrap().is_empty());
     no_staging(&fixture.release_root())?;
@@ -151,8 +147,8 @@ async fn interrupted_append_keeps_inventory_and_existing_artifacts_unchanged() -
         |name, _| {
             let bytes = bundle.assets.get(&name).cloned();
             async move {
-                if name.starts_with("sing-box-") {
-                    bail!("fixture interrupted while appending runtime");
+                if name.starts_with("agent-") {
+                    bail!("fixture interrupted while appending Agent");
                 }
                 bytes.context("fixture asset missing")
             }
@@ -185,7 +181,7 @@ async fn inventory_rejects_unsigned_paths_duplicates_and_missing_advertised_payl
             serde_json::to_vec(&serde_json::json!({"paths": paths}))?,
         )?;
         assert!(matches!(
-            releases::entries(&fixture.state).await,
+            releases::signed_agents(&fixture.state).await,
             Err(ApiError::Conflict(_))
         ));
         assert!(matches!(
@@ -196,7 +192,7 @@ async fn inventory_rejects_unsigned_paths_duplicates_and_missing_advertised_payl
     std::fs::write(&inventory, original)?;
     std::fs::remove_file(directory.join("agent/0.3.0/arm64"))?;
     assert!(matches!(
-        releases::entries(&fixture.state).await,
+        releases::signed_agents(&fixture.state).await,
         Err(ApiError::Conflict(_))
     ));
     // The signed catalogue can still issue a command that repairs this Agent on demand.
@@ -207,11 +203,11 @@ async fn inventory_rejects_unsigned_paths_duplicates_and_missing_advertised_payl
     let downloads = Mutex::new(Vec::new());
     assert_eq!(
         import_target(&fixture.state, &bundle, "arm64", &downloads).await?,
-        2
+        1
     );
     assert_eq!(downloads.lock().unwrap().len(), 1);
     assert!(downloads.lock().unwrap()[0].contains("arm64"));
-    assert_eq!(releases::entries(&fixture.state).await?.len(), 2);
+    assert_eq!(releases::signed_agents(&fixture.state).await?.len(), 1);
     Ok(())
 }
 
@@ -225,7 +221,7 @@ async fn legacy_complete_imports_remain_usable_and_corrupt_unrequested_abis_are_
     import_target(&fixture.state, &bundle, "amd64", &downloads).await?;
     let directory = fixture.release_root().join(&bundle.tag);
     std::fs::remove_file(directory.join("inventory.json"))?;
-    assert_eq!(releases::entries(&fixture.state).await?.len(), 4);
+    assert_eq!(releases::signed_agents(&fixture.state).await?.len(), 2);
     downloads.lock().unwrap().clear();
     assert_eq!(
         import_target(&fixture.state, &bundle, "arm64", &downloads).await?,
@@ -240,7 +236,7 @@ async fn legacy_complete_imports_remain_usable_and_corrupt_unrequested_abis_are_
     );
     assert!(downloads.lock().unwrap().is_empty());
     assert_eq!(std::fs::read(&stale)?, b"damaged AMD payload");
-    assert_eq!(releases::entries(&fixture.state).await?.len(), 3);
+    assert_eq!(releases::signed_agents(&fixture.state).await?.len(), 1);
     Ok(())
 }
 

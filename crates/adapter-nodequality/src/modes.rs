@@ -33,8 +33,10 @@ pub(super) fn validate(spec: &DiagnosticSpec) -> Result<Mode> {
         bail!("only official node IP diagnostics accept frozen IP addresses");
     }
     if mode == "ip" {
-        if spec.version != NODE_QUERY_VERSION
-            || spec.options.contains_key("daily_targets")
+        if !matches!(
+            spec.version.as_str(),
+            NODE_QUERY_VERSION | VERSION | NATIVE_VERSION
+        ) || spec.options.contains_key("daily_targets")
             || spec
                 .options
                 .get("network_mode")

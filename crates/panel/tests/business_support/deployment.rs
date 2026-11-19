@@ -1,56 +1,17 @@
-use super::{TestPanel, release_fixture};
+use super::TestPanel;
 use anyhow::{Context, Result, ensure};
 use apsp_panel_host::AppState;
 use apsp_protocol::{
+    SELF_CONTAINED_AGENT_CAPABILITY,
     fleet::{JobResult, Operation, Work},
     now_timestamp,
 };
 use reqwest::{Client, Method, Response, header};
 use serde_json::{Value, json};
-use sqlx::{PgPool, Row};
+use sqlx::Row;
 use uuid::Uuid;
 
-/// Ordinary publisher tests exercise compilation and accounting, not public DNS
-/// or native runtime execution. They still cross the production request, dispatch,
-/// receipt, current-fingerprint and explicit confirmation boundaries.
-pub(super) async fn prepare(panel: &TestPanel) -> Result<()> {
-    let servers = selected(&panel.state.pool).await?;
-    if servers.is_empty() {
-        return Ok(());
-    }
-    let cookie = panel.admin_cookie().await?;
-    let fixture = Fixture {
-        state: &panel.state,
-        client: &panel.client,
-        base: &panel.base,
-    };
-    for server in servers {
-        prepare_server(&fixture, &cookie, server, true, None).await?;
-    }
-    Ok(())
-}
-
-/// Reuse the same explicit API gate when a fixture owns its own HTTP harness.
-/// Its Agent runner must be paused while controlled typed observations are sent.
-/// The supplied administrator cookie must carry its real recent login proof.
-pub async fn prepare_with(
-    state: &AppState,
-    client: &Client,
-    base: &str,
-    cookie: &str,
-) -> Result<()> {
-    let fixture = Fixture {
-        state,
-        client,
-        base,
-    };
-    for server in selected(&state.pool).await? {
-        prepare_server(&fixture, cookie, server, true, None).await?;
-    }
-    Ok(())
-}
-
-/// Observe the actual queued requests without recording administrator confirmation.
+/// Observe the actual queued preflight requests on `server`.
 pub async fn observe(panel: &TestPanel, cookie: &str, server: i64) -> Result<Uuid> {
     prepare_server(
         &Fixture {
@@ -60,20 +21,17 @@ pub async fn observe(panel: &TestPanel, cookie: &str, server: i64) -> Result<Uui
         },
         cookie,
         server,
-        false,
         None,
     )
     .await
 }
 
-/// A running managed runtime: the device reports the runtime statistics
-/// listener held by `listener_pid` and the managed unit's MainPID.
+/// Observe as `observe`, with a running runtime on the device.
 pub struct RuntimeObservation {
     pub listener_pid: u32,
     pub managed_pid: u32,
 }
 
-/// Observe as `observe`, with a running runtime on the device.
 pub async fn observe_runtime(
     panel: &TestPanel,
     cookie: &str,
@@ -88,7 +46,6 @@ pub async fn observe_runtime(
         },
         cookie,
         server,
-        false,
         Some(runtime),
     )
     .await
@@ -120,17 +77,10 @@ impl Fixture<'_> {
     }
 }
 
-async fn selected(pool: &PgPool) -> Result<Vec<i64>> {
-    let servers:Vec<i64>=sqlx::query_scalar("SELECT s.id FROM servers s JOIN runtime_enablements p ON p.server_id=s.id AND p.module='singbox' AND p.enabled AND p.source='administrator' WHERE s.deleted_at IS NULL AND EXISTS(SELECT 1 FROM runtime_publications rp WHERE rp.server_id=s.id AND rp.dirty_at IS NOT NULL) AND EXISTS(SELECT 1 FROM nodes n WHERE n.server_id=s.id AND n.deleted_at IS NULL AND n.enabled AND EXISTS(SELECT 1 FROM singbox_eligible_accesses($1) a WHERE a.node_id=n.id) AND NOT EXISTS(SELECT 1 FROM singbox_chains c WHERE (c.deleted_at IS NULL OR c.phase<>'retired') AND (c.entry_node_id=n.id OR EXISTS(SELECT 1 FROM singbox_ordered_chain_hops h WHERE h.chain_id=c.id AND h.managed_node_id=n.id)))) ORDER BY s.id")
-        .bind(now_timestamp()).fetch_all(pool).await?;
-    Ok(servers)
-}
-
 async fn prepare_server(
     panel: &Fixture<'_>,
     cookie: &str,
     server: i64,
-    confirm: bool,
     running: Option<RuntimeObservation>,
 ) -> Result<Uuid> {
     let row = sqlx::query("SELECT capabilities,static_info FROM servers WHERE id=$1")
@@ -139,6 +89,7 @@ async fn prepare_server(
         .await?;
     let mut capabilities: Vec<String> = serde_json::from_value(row.get("capabilities"))?;
     for capability in [
+        SELF_CONTAINED_AGENT_CAPABILITY,
         "singbox",
         apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY,
         apsp_protocol::fleet::OPERATIONS_CAPABILITY,
@@ -162,25 +113,9 @@ async fn prepare_server(
             info[key] = json!(value);
         }
     }
-    let target = apsp_protocol::platform::artifact_target(
-        info["os"].as_str().context("TEST_ONLY platform")?,
-        info["runtime_libc"]
-            .as_str()
-            .or_else(|| info["libc"].as_str()),
-        info["arch"].as_str().context("TEST_ONLY architecture")?,
-    )
-    .context("TEST_ONLY supported runtime artifact target")?;
-    let legacy = if info["os"] == "linux"
-        && matches!(info["runtime_libc"].as_str(), Some("gnu" | "glibc"))
-    {
-        match info["arch"].as_str() {
-            Some("x86_64" | "amd64") => Some("amd64"),
-            Some("aarch64" | "arm64") => Some("arm64"),
-            _ => None,
-        }
-    } else {
-        None
-    };
+    if info.get("components").is_none_or(Value::is_null) {
+        info["components"] = json!({"sing-box": apsp_traffic::RUNTIME_VERSION});
+    }
     sqlx::query("UPDATE servers SET capabilities=$2,static_info=$3,last_seen=$4 WHERE id=$1")
         .bind(server)
         .bind(json!(capabilities))
@@ -188,34 +123,6 @@ async fn prepare_server(
         .bind(now_timestamp())
         .execute(&panel.state.pool)
         .await?;
-    let runtime = panel
-        .state
-        .config
-        .data_dir
-        .join("artifacts/releases/agent-v0.3.0/sing-box/1.14.4-apsp.2");
-    if !runtime.join(&target).is_file() && !legacy.is_some_and(|arch| runtime.join(arch).is_file())
-    {
-        ensure!(
-            !panel
-                .state
-                .config
-                .data_dir
-                .join("artifacts/releases/agent-v0.3.0/release.json")
-                .exists(),
-            "TEST_ONLY existing signed release lacks the requested runtime fixture; preserve it rather than rewrite its proof"
-        );
-        let binary = b"TEST_ONLY inert deployment preflight fixture; never executed";
-        let archive = release_fixture::archive("sing-box", binary)?;
-        release_fixture::write(
-            &panel.state.config.data_dir,
-            "sing-box",
-            "1.14.4-apsp.2",
-            "sing-box",
-            &archive,
-            binary,
-            "tar.gz",
-        )?;
-    }
     let profile_path = format!("/api/servers/{server}/fleet");
     let profile: Value = panel
         .admin(Method::GET, &profile_path, cookie, None)
@@ -245,7 +152,7 @@ async fn prepare_server(
 
     // Seed a controlled authenticated-device session, as other HTTP fixtures do.
     // Work must actually dispatch each requested typed job before a receipt can
-    // be accepted. No operation status or confirmation is updated directly.
+    // be accepted. No operation status is updated directly.
     let token = format!("TEST_ONLY-preflight-{}", Uuid::new_v4());
     sqlx::query("INSERT INTO device_sessions(token_hash,server_id,expires_at) VALUES($1,$2,$3)")
         .bind(apsp_governance::auth::hash_token(&token))
@@ -265,19 +172,13 @@ async fn prepare_server(
                 Operation::RuntimePermissions{module}=>{
                     ensure!(module=="sing-box"&&job.policy.runtime_inspection,"TEST_ONLY runtime inspection requires the current allowed policy");
                     let root="/var/lib/apsp/runtimes/sing-box@main";
-                    json!({"module":module,"sampled_at":now_timestamp(),"privileged_effective_uid":0,"runtime_account":{"known":true,"uid":65534,"gid":65534,"supplementary_gids":[65534],"source":"TEST_ONLY controlled installed runtime account"},"runtime_directory":directory(root),"data_directory":directory(&format!("{root}/data")),"certificate_directory":directory(&format!("{root}/data/certificates")),"service_manager":{"kind":"systemd","available":true,"management_authorized":true,"privileged_effective_uid":0,"managed_unit":"apsp-singbox@main.service","managed_pid":running.as_ref().map(|runtime|runtime.managed_pid),"load_state":"loaded","authorization_basis":"TEST_ONLY controlled privileged service backend"},"secret_values_recorded":false})
+                    json!({"module":module,"sampled_at":now_timestamp(),"privileged_effective_uid":0,"runtime_account":{"known":true,"uid":65534,"gid":65534,"supplementary_gids":[65534],"source":"TEST_ONLY controlled installed runtime account"},"runtime_directory":directory(root),"data_directory":directory(&format!("{root}/data")),"certificate_directory":directory(&format!("{root}/data/certificates")),"service_manager":{"kind":"systemd","available":true,"management_authorized":true,"privileged_effective_uid":0,"managed_effective_uid":0,"managed_unit":"apsp-singbox@main.service","managed_pid":running.as_ref().map(|runtime|runtime.managed_pid),"load_state":"loaded","authorization_basis":"TEST_ONLY controlled privileged service backend"},"secret_values_recorded":false})
                 }
                 other=>anyhow::bail!("unexpected TEST_ONLY preflight operation: {other:?}"),
             };
             let receipt=JobResult{id:job.id,succeeded:true,result,error:None,completed_at:now_timestamp()};
             let acknowledged:Value=panel.client.post(format!("{}/api/agent/v1/fleet/results",panel.base)).bearer_auth(&token).json(&receipt).send().await?.error_for_status()?.json().await?;
             ensure!(acknowledged["acknowledged"]==json!(job.id),"TEST_ONLY result did not acknowledge the delivered job");
-        }
-        if confirm {
-            let response=panel.admin(Method::POST,&format!("{path}/confirm"),cookie,Some(json!({"id":preflight,"confirm":true}))).await?;
-            ensure!(response.status().is_success(),"TEST_ONLY deployment preflight confirmation failed: {}",response.text().await?);
-            let confirmed:Value=response.json().await?;
-            ensure!(confirmed["confirmed"]==true&&confirmed["deployment_requested"]==false,"TEST_ONLY preflight confirmation must not claim deployment");
         }
         Ok::<_,anyhow::Error>(())
     }.await;

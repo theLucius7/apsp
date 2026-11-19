@@ -31,9 +31,13 @@ class NativeBundleTests(unittest.TestCase):
             output.mkdir(parents=True)
             shutil.copyfile(source, output / arch)
             shutil.rmtree(fixture.bundle)
-            fixture.arguments.arch = [arch]
-            fixture.arguments.tcp_probe_version = version
-            contracts.release.assemble(fixture.arguments)
+            test_release.stage_historical_0_3_bundle(
+                fixture.source,
+                fixture.bundle,
+                fixture.installer,
+                architectures=(arch,),
+                tcp_probe_version=version,
+            )
             fixture.sign()
             entries = fixture.verify()["artifacts"]
             self.assertEqual(len(entries), 4)

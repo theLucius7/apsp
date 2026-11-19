@@ -21,35 +21,37 @@ const MODULE: &str = "singbox";
 pub(crate) const FRESH_SECS: i64 = 60;
 const RETAIN_SECS: i64 = 300;
 
-/// Members currently authorized on the hosts' taken-over nodes, as distinct
-/// `(server_id, node_id, user_id)` rows for the servers in `$2`. `$1` is the
-/// evaluation time, or the users the caller already found allowed (`allowed`).
-fn members_sql(allowed: bool) -> String {
-    let allowed_users = if allowed {
-        "SELECT unnest($1::bigint[]) AS user_id"
-    } else {
-        "SELECT user_id FROM singbox_entitlements($1) WHERE allowed"
-    };
-    format!(
-        "WITH e AS MATERIALIZED ({allowed_users}) SELECT DISTINCT r.server_id,r.node_id,i.user_id FROM singbox_nexus_runtime_nodes r JOIN singbox_policy_nodes pn ON pn.node_id=r.node_id JOIN singbox_user_policies up ON up.group_id=pn.group_id JOIN e ON e.user_id=up.user_id JOIN singbox_nexus_identities i ON i.user_id=e.user_id WHERE r.server_id=ANY($2)"
-    )
-}
-
-/// One evaluation of every user's entitlement serves all the hosts: the
-/// caller's when it has one, otherwise one at `now`.
+/// Bridge-served members currently authorized on the hosts' taken-over nodes, as
+/// distinct `(server_id, node_id, user_id)` rows for the servers in `servers`.
 async fn members(
     tx: &mut Transaction<'_, Postgres>,
     servers: &[i64],
     now: i64,
     allowed: Option<&[i64]>,
 ) -> anyhow::Result<Vec<(i64, i64, i64)>> {
-    let query = members_sql(allowed.is_some());
+    let lines = apsp_traffic::nexus_nodes::host_runtime_nodes(tx, servers).await?;
+    if lines.is_empty() {
+        return Ok(Vec::new());
+    }
+    let (line_servers, line_nodes): (Vec<i64>, Vec<i64>) = lines.into_iter().unzip();
+    let allowed_users = if allowed.is_some() {
+        "SELECT unnest($1::bigint[]) AS user_id"
+    } else {
+        "SELECT user_id FROM singbox_entitlements($1) WHERE allowed"
+    };
+    let query = format!(
+        "WITH e AS MATERIALIZED ({allowed_users}) SELECT DISTINCT r.server_id,r.node_id,i.user_id FROM UNNEST($2::bigint[],$3::bigint[]) AS r(server_id,node_id) JOIN singbox_policy_nodes pn ON pn.node_id=r.node_id JOIN singbox_user_policies up ON up.group_id=pn.group_id JOIN e ON e.user_id=up.user_id JOIN singbox_nexus_identities i ON i.user_id=e.user_id WHERE NOT EXISTS(SELECT 1 FROM singbox_native_adoptions adopted WHERE adopted.user_id=i.user_id)"
+    );
     let query = sqlx::query_as(&query);
     let query = match allowed {
         Some(users) => query.bind(users),
         None => query.bind(now),
     };
-    Ok(query.bind(servers).fetch_all(&mut **tx).await?)
+    Ok(query
+        .bind(&line_servers)
+        .bind(&line_nodes)
+        .fetch_all(&mut **tx)
+        .await?)
 }
 
 fn principal(value: &str) -> Option<(i64, i64)> {
@@ -70,8 +72,7 @@ pub async fn ingest(
         "invalid runtime session report"
     );
     let mut tx = state.pool.begin().await?;
-    let nodes: Vec<i64> = sqlx::query_scalar("SELECT r.node_id FROM singbox_nexus_runtime_nodes r JOIN singbox_nexus_runtime_hosts h ON h.server_id=r.server_id WHERE r.server_id=$1 AND h.state='active'")
-        .bind(server).fetch_all(&mut *tx).await?;
+    let nodes = apsp_traffic::nexus_nodes::active_runtime_nodes(&mut tx, server).await?;
     let nodes: BTreeSet<i64> = nodes.into_iter().collect();
     // Received time, not device time: freshness is judged by the panel clock.
     let now = now_timestamp();
@@ -83,8 +84,8 @@ pub async fn ingest(
     .execute(&mut *tx)
     .await?;
     // One statement for the whole snapshot; a repeated address counts once. Only
-    // members' addresses are kept: the bridge hands them to the legacy panel, which knows
-    // no one else (ADR 0138).
+    // bridge-served members' addresses are kept: the bridge hands them to the legacy
+    // panel, which knows no one else (ADR 0138).
     let mut rows = BTreeMap::<(&str, String), (i64, i64)>::new();
     for (name, addresses) in &report.principals {
         let Some((user, node)) = principal(name).filter(|(_, node)| nodes.contains(node)) else {
@@ -97,7 +98,7 @@ pub async fn ingest(
     if !rows.is_empty() {
         let (names, addresses): (Vec<&str>, Vec<String>) = rows.keys().cloned().unzip();
         let (users, nodes): (Vec<i64>, Vec<i64>) = rows.values().copied().unzip();
-        sqlx::query("INSERT INTO singbox_runtime_session_addresses(server_id,stat_name,user_id,node_id,address,observed_at) SELECT $1,stat_name,user_id,node_id,address,$6 FROM UNNEST($2::text[],$3::bigint[],$4::bigint[],$5::text[]) AS t(stat_name,user_id,node_id,address) WHERE EXISTS(SELECT 1 FROM singbox_nexus_identities i WHERE i.user_id=t.user_id) ON CONFLICT(server_id,stat_name,address) DO UPDATE SET observed_at=EXCLUDED.observed_at")
+        sqlx::query("INSERT INTO singbox_runtime_session_addresses(server_id,stat_name,user_id,node_id,address,observed_at) SELECT $1,stat_name,user_id,node_id,address,$6 FROM UNNEST($2::text[],$3::bigint[],$4::bigint[],$5::text[]) AS t(stat_name,user_id,node_id,address) WHERE EXISTS(SELECT 1 FROM singbox_nexus_identities i WHERE i.user_id=t.user_id AND NOT EXISTS(SELECT 1 FROM singbox_native_adoptions adopted WHERE adopted.user_id=i.user_id)) ON CONFLICT(server_id,stat_name,address) DO UPDATE SET observed_at=EXCLUDED.observed_at")
             .bind(server).bind(&names).bind(&users).bind(&nodes).bind(&addresses).bind(now)
             .execute(&mut *tx).await?;
     }
@@ -214,8 +215,9 @@ pub async fn push_policies(state: &AppState, allowed: Option<&[i64]>) -> anyhow:
     sqlx::query("UPDATE singbox_nexus_device_state SET legacy_addresses='[]'::jsonb WHERE observed_at<$1 AND legacy_addresses<>'[]'::jsonb")
         .bind(cutoff).execute(&mut *tx).await?;
     tx.commit().await?;
-    let hosts: Vec<i64> = sqlx::query_scalar("SELECT h.server_id FROM singbox_nexus_runtime_hosts h JOIN servers s ON s.id=h.server_id WHERE h.state='active' AND s.deleted_at IS NULL AND s.capabilities @> jsonb_build_array($1::text) ORDER BY h.server_id")
-        .bind(RUNTIME_ADMISSION_CAPABILITY).fetch_all(&state.pool).await?;
+    let hosts =
+        apsp_traffic::nexus_nodes::active_capable_hosts(&state.pool, RUNTIME_ADMISSION_CAPABILITY)
+            .await?;
     let mut tx = state.pool.begin().await?;
     let policies = policies(&mut tx, &hosts, now_timestamp(), allowed).await?;
     tx.commit().await?;
@@ -250,9 +252,10 @@ pub async fn limits_on_host(
     .fetch_one(&mut **tx)
     .await?;
     let synchronized: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM singbox_nexus_device_state WHERE observed_at>=$1)",
+        "SELECT NOT EXISTS(SELECT 1 FROM unnest($2::bigint[]) AS member(user_id) WHERE NOT EXISTS(SELECT 1 FROM singbox_native_adoptions adopted WHERE adopted.user_id=member.user_id)) OR EXISTS(SELECT 1 FROM singbox_nexus_device_state WHERE observed_at>=$1)",
     )
     .bind(now - 120)
+    .bind(&users)
     .fetch_one(&mut **tx)
     .await?;
     Ok((limited, synchronized))

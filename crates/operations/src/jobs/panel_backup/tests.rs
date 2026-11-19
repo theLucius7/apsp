@@ -44,13 +44,12 @@ async fn setup(pool: PgPool) -> anyhow::Result<(AppState, Directory, Uuid, Uuid)
         .bind(schedule).bind(now+86400).bind(format!("age1{}","q".repeat(58))).execute(&pool).await?;
     let plan = Plan {
         name: "TEST_ONLY one recovery point".into(),
-        steps: vec![super::super::model::Step {
-            kind: "panel_backup".into(),
-            service: None,
-            timeout_secs: 600,
-            runtime_version: None,
-            backup_schedule_id: Some(schedule),
-        }],
+        steps: vec![super::super::model::Step::new(
+            "panel_backup",
+            None,
+            600,
+            Some(schedule),
+        )],
         batch_size: 2,
         concurrency: 1,
         pause_between_batches: false,

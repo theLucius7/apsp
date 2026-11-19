@@ -22,42 +22,37 @@ use std::collections::BTreeSet;
 use std::ops::Deref;
 use uuid::Uuid;
 
-struct ControlledPanel(TestPanel);
+struct ControlledPanel {
+    panel: TestPanel,
+    signed: release_fixture::SignedTestAgent,
+}
 
 impl Deref for ControlledPanel {
     type Target = TestPanel;
     fn deref(&self) -> &TestPanel {
-        &self.0
+        &self.panel
     }
 }
 
 impl ControlledPanel {
-    /// TEST_ONLY device capabilities and platform facts; no native binary is executed.
+    /// TEST_ONLY signed self-contained Agent facts; no native binary is executed.
     async fn create_server(&self, cookie: &str, name: &str) -> Result<i64> {
-        let server = self.0.create_server(cookie, name).await?;
-        sqlx::query("UPDATE servers SET capabilities=$2,static_info=$3 WHERE id=$1")
-            .bind(server)
-            .bind(json!([RUNTIME_CHECKPOINT_CAPABILITY,RUNTIME_RECOVERY_BARRIER_CAPABILITY,RUNTIME_PATH_PROBE_CAPABILITY]))
-            .bind(json!({"os":"linux","arch":apsp_protocol::release::native_arch()?,"libc":"gnu","runtime_libc":"gnu"}))
-            .execute(&self.state.pool).await?;
+        let server = self.panel.create_server(cookie, name).await?;
+        ordered_support::mark_verified_self_contained_agent(
+            &self.state.pool,
+            server,
+            &self.signed.agent_sha256,
+            &self.signed.component_digests["sing-box"],
+        )
+        .await?;
         Ok(server)
     }
 }
 
 async fn controlled_panel(pool: PgPool) -> Result<ControlledPanel> {
     let panel = TestPanel::start_with_public_url(pool, Some("https://panel.example")).await?;
-    let binary = b"TEST_ONLY native binary never executed";
-    let archive = release_fixture::archive("sing-box", binary)?;
-    release_fixture::write(
-        &panel.state.config.data_dir,
-        "sing-box",
-        "1.14.4-apsp.2",
-        "sing-box",
-        &archive,
-        binary,
-        "tar.gz",
-    )?;
-    Ok(ControlledPanel(panel))
+    let signed = ordered_support::install_signed_self_contained_agent(&panel)?;
+    Ok(ControlledPanel { panel, signed })
 }
 
 /// Drive product publication and exact digest-bound TEST_ONLY receipts, never coarse SQL health.
@@ -187,7 +182,7 @@ async fn clean_servers(pool: &PgPool) -> Result<()> {
 
 async fn state(pool: &PgPool) -> Result<Value> {
     Ok(sqlx::query_scalar(
-        "SELECT jsonb_build_object('nodes',(SELECT COUNT(*) FROM nodes),'chains',(SELECT COUNT(*) FROM singbox_chains),'active_nodes',(SELECT COUNT(*) FROM nodes WHERE deleted_at IS NULL),'grants',(SELECT COUNT(*) FROM accesses),'versions',(SELECT COUNT(*) FROM singbox_ordered_chain_versions),'hops',(SELECT COUNT(*) FROM singbox_ordered_chain_hops),'endpoint_versions',(SELECT COUNT(*) FROM singbox_managed_endpoint_versions),'runtime_requirements',(SELECT COUNT(*) FROM singbox_chain_runtime_requirements),'receipts',(SELECT COUNT(*) FROM singbox_ordered_chain_creation_requests),'servers',(SELECT jsonb_agg(jsonb_build_array(s.id,p.dirty_at) ORDER BY s.id) FROM servers s LEFT JOIN runtime_publications p ON p.server_id=s.id))",
+        "SELECT jsonb_build_object('nodes',(SELECT COUNT(*) FROM nodes),'chains',(SELECT COUNT(*) FROM singbox_chains),'active_nodes',(SELECT COUNT(*) FROM nodes WHERE deleted_at IS NULL),'grants',(SELECT COUNT(*) FROM accesses),'versions',(SELECT COUNT(*) FROM singbox_ordered_chain_versions),'hops',(SELECT COUNT(*) FROM singbox_ordered_chain_hops),'endpoint_versions',(SELECT COUNT(*) FROM singbox_managed_endpoint_versions),'receipts',(SELECT COUNT(*) FROM singbox_ordered_chain_creation_requests),'servers',(SELECT jsonb_agg(jsonb_build_array(s.id,p.dirty_at) ORDER BY s.id) FROM servers s LEFT JOIN runtime_publications p ON p.server_id=s.id))",
     )
     .fetch_one(pool)
     .await?)
@@ -283,7 +278,19 @@ async fn catalog_has_typed_ids_distinct_grant_counts_and_preserves_existing_subs
     )
     .await?;
     let entry_server = panel.create_server(&cookie, "Entry server").await?;
-    panel.enable_runtime(&cookie, entry_server).await?;
+    let entry_runtime: Value = panel
+        .admin(
+            Method::GET,
+            &format!("/api/traffic/servers/{entry_server}"),
+            &cookie,
+            None,
+        )
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    assert_eq!(entry_runtime["configured"], false);
+    assert_eq!(entry_runtime["status"]["state"], "unconfigured");
     let legacy = panel.create_user(&cookie, "Existing subscriber").await?;
     let legacy_id = id(&legacy)?;
     let grant = panel.grant(&cookie, legacy_id, exit).await?;
@@ -327,7 +334,8 @@ async fn catalog_has_typed_ids_distinct_grant_counts_and_preserves_existing_subs
     assert_eq!(chain, exit);
     let first = policy(&panel, &cookie, "First", &[exit], &[chain]).await?;
     let second = policy(&panel, &cookie, "Second", &[exit], &[chain]).await?;
-    let member = id(&panel.create_user(&cookie, "Union member").await?)?;
+    let member_user = panel.create_user(&cookie, "Union member").await?;
+    let member = id(&member_user)?;
     panel.grant(&cookie, member, exit).await?;
     memberships(&panel, &cookie, member, &[first, second]).await?;
     let other = id(&panel.create_user(&cookie, "Policy member").await?)?;
@@ -342,6 +350,12 @@ async fn catalog_has_typed_ids_distinct_grant_counts_and_preserves_existing_subs
     let phases = advance_phase(&panel, chain, "applied").await?;
     assert!(phases.iter().any(|phase| phase == "preparing_entry"));
     assert!(phases.iter().any(|phase| phase == "switching_entry"));
+    // Temporary device heartbeat absence does not flip structural `available` or wipe an
+    // already verified path from public subscriptions.
+    sqlx::query("UPDATE servers SET last_seen=1 WHERE id=$1")
+        .bind(entry_server)
+        .execute(&pool)
+        .await?;
 
     assert_eq!(
         panel
@@ -400,6 +414,56 @@ async fn catalog_has_typed_ids_distinct_grant_counts_and_preserves_existing_subs
     assert_eq!(route["exit"]["port"], old_node["port"]);
     assert_eq!(route["entry"]["public_port"], route["entry"]["port"]);
     assert_eq!(route["entry"]["online"], false);
+    let expected_endpoint_keys: BTreeSet<&str> = [
+        "id",
+        "name",
+        "server_id",
+        "server_name",
+        "protocol",
+        "port",
+        "public_port",
+        "public_host",
+        "sni",
+        "enabled",
+        "node_deleted",
+        "server_deleted",
+        "online",
+        "desired_revision",
+        "applied_revision",
+        "applied_observed_at",
+    ]
+    .into_iter()
+    .collect();
+    for endpoint in [&direct["entry"], &route["entry"], &route["exit"]] {
+        let actual: BTreeSet<&str> = endpoint
+            .as_object()
+            .context("endpoint object")?
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(actual, expected_endpoint_keys);
+    }
+    let member_sub: Value = panel
+        .client
+        .get(format!(
+            "{}/sub/{}?format=singbox",
+            panel.base,
+            member_user["subscription_token"]
+                .as_str()
+                .context("member token")?
+        ))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    assert!(
+        member_sub["outbounds"]
+            .as_array()
+            .context("member outbounds")?
+            .iter()
+            .any(|outbound| outbound["server"] == "entry.example.com")
+    );
     assert_eq!(
         call(
             &panel,
@@ -489,7 +553,6 @@ async fn batch_middle_failure_rolls_back_entries_chains_and_dirty_markers(
     let panel = controlled_panel(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let entry_server = panel.create_server(&cookie, "Entry").await?;
-    panel.enable_runtime(&cookie, entry_server).await?;
     let exit_server = panel.create_server(&cookie, "Exit").await?;
     let exit = id(&panel.create_node(&cookie, exit_server, "Exit").await?)?;
     clean_servers(&pool).await?;
@@ -524,7 +587,6 @@ async fn concurrent_same_request_replays_normalized_body_and_rejects_changed_ord
     let panel = controlled_panel(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let entry_server = panel.create_server(&cookie, "Entry").await?;
-    panel.enable_runtime(&cookie, entry_server).await?;
     let exit_server = panel.create_server(&cookie, "Exit").await?;
     let exit = id(&panel.create_node(&cookie, exit_server, "Exit").await?)?;
     let body = request(vec![
@@ -582,7 +644,6 @@ async fn concurrent_batches_allocate_unique_auto_ports_without_partial_reservati
     let panel = controlled_panel(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let entry_server = panel.create_server(&cookie, "Entry").await?;
-    panel.enable_runtime(&cookie, entry_server).await?;
     let exit_server = panel.create_server(&cookie, "Exit").await?;
     let exit = id(&panel
         .create_node(&cookie, exit_server, "Shared exit")
@@ -696,15 +757,47 @@ async fn batch_rejects_unauthorized_entries_and_invalid_managed_topologies(
         .bind(retired_server)
         .execute(&pool)
         .await?;
-    let no_plugin = panel.create_server(&cookie, "Never enabled").await?;
-    let legacy_server = panel.create_server(&cookie, "Legacy configuration").await?;
-    let legacy_node = id(&panel
-        .create_node(&cookie, legacy_server, "Preserved legacy")
+    let nexus_server = panel.create_server(&cookie, "Nexus takeover").await?;
+    let nexus_node = id(&panel
+        .create_node(&cookie, nexus_server, "Preserved Nexus line")
         .await?)?;
+    let cred_id = Uuid::new_v4();
     sqlx::query(
-        "UPDATE runtime_enablements SET enabled=FALSE WHERE server_id=$1 AND module='singbox'",
+        "INSERT INTO credential_entries(id,name,kind,key_id,nonce,ciphertext,created_at,updated_at) VALUES($1,'TEST_ONLY nexus','external-api','test',$2,$3,1,1)",
     )
-    .bind(legacy_server)
+    .bind(cred_id)
+    .bind(vec![0u8; 12])
+    .bind(vec![1u8; 16])
+    .execute(&pool)
+    .await?;
+    sqlx::query(
+        "INSERT INTO singbox_nexus_node_imports(source_id,digest,infrastructure_digest,exported_at,imported_at,node_count) VALUES('nexus-test',$1,$2,1,1,1)",
+    )
+    .bind("a".repeat(64))
+    .bind("b".repeat(64))
+    .execute(&pool)
+    .await?;
+    let inventory_id: i64 = sqlx::query_scalar(
+        "INSERT INTO singbox_nexus_nodes(source_id,legacy_node_id,legacy_machine_id,legacy_host_id,server_id,credential_id,display) VALUES('nexus-test',1,1,1,$1,$2,'{}'::jsonb) RETURNING id",
+    )
+    .bind(nexus_server)
+    .bind(cred_id)
+    .fetch_one(&pool)
+    .await?;
+    sqlx::query(
+        "INSERT INTO singbox_nexus_runtime_hosts(server_id,source_id,credential_id,digest,state,created_at) VALUES($1,'nexus-test',$2,$3,'active',1)",
+    )
+    .bind(nexus_server)
+    .bind(cred_id)
+    .bind("a".repeat(64))
+    .execute(&pool)
+    .await?;
+    sqlx::query(
+        "INSERT INTO singbox_nexus_runtime_nodes(inventory_id,node_id,server_id,legacy_group_ids,rate) VALUES($1,$2,$3,'{}'::bigint[],1)",
+    )
+    .bind(inventory_id)
+    .bind(nexus_node)
+    .bind(nexus_server)
     .execute(&pool)
     .await?;
     clean_servers(&pool).await?;
@@ -725,7 +818,15 @@ async fn batch_rejects_unauthorized_entries_and_invalid_managed_topologies(
             StatusCode::BAD_REQUEST,
         ),
         (
-            existing_entry("Disabled plugin", legacy_node, nb),
+            existing_entry("Preserved Nexus entry", nexus_node, nb),
+            StatusCode::CONFLICT,
+        ),
+        (
+            new_entry("Preserved Nexus hop", a, nexus_node, None),
+            StatusCode::CONFLICT,
+        ),
+        (
+            new_entry("Read-only Nexus host", nexus_server, nb, None),
             StatusCode::CONFLICT,
         ),
         (
@@ -769,10 +870,6 @@ async fn batch_rejects_unauthorized_entries_and_invalid_managed_topologies(
             StatusCode::CONFLICT,
         ),
         (
-            new_entry("Never enabled entry", no_plugin, nb, None),
-            StatusCode::CONFLICT,
-        ),
-        (
             existing_entry("Missing entry", i64::MAX, nb),
             StatusCode::BAD_REQUEST,
         ),
@@ -797,18 +894,59 @@ async fn batch_rejects_unauthorized_entries_and_invalid_managed_topologies(
         Some(json!({"public_host":"exit-b.example.com"})),
     )
     .await?;
-    // Existing nodes cannot override an explicit disabled plugin.
-    let (status, created) = batch(
+    // Pure monitoring (`configured = false`), offline and legacy-Agent servers save and queue
+    // valid ordered chains without requiring pre-enablement or runtime capabilities at save time.
+    let unconfigured = panel
+        .panel
+        .create_server(&cookie, "Pure monitor entry")
+        .await?;
+    let offline_hop_server = panel
+        .panel
+        .create_server(&cookie, "Offline legacy hop")
+        .await?;
+    let offline_hop = id(&panel
+        .create_node(&cookie, offline_hop_server, "Offline hop")
+        .await?)?;
+    call(
         &panel,
         &cookie,
-        request(vec![existing_entry(
-            "Disabled plugin remains disabled",
-            legacy_node,
-            nb,
+        Method::PATCH,
+        &format!("/nodes/{offline_hop}"),
+        Some(json!({"public_host":"offline-hop.example.com"})),
+    )
+    .await?;
+    let (queued_status, queued) = batch(
+        &panel,
+        &cookie,
+        request(vec![new_entry(
+            "Queued on unconfigured",
+            unconfigured,
+            offline_hop,
+            None,
         )]),
     )
     .await?;
-    assert_eq!(status, StatusCode::CONFLICT, "{created}");
+    assert_eq!(queued_status, StatusCode::CREATED, "{queued}");
+    let queued_chain = ids(&queued, "chain_ids")?[0];
+    let queued_view = call(
+        &panel,
+        &cookie,
+        Method::GET,
+        &format!("/ordered-proxy-resources/chain/{queued_chain}"),
+        None,
+    )
+    .await?;
+    assert_eq!(queued_view["available"], true);
+    assert_eq!(queued_view["path_state"]["phase"], "preparing_dependencies");
+    apsp_traffic::ordered_paths::reconcile_pending(&panel.state).await?;
+    let (queued_phase, queued_route, queued_error): (String, bool, Option<String>) =
+        sqlx::query_as("SELECT phase,route_enabled,last_error FROM singbox_chains WHERE id=$1")
+            .bind(queued_chain)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(queued_phase, "preparing_dependencies");
+    assert!(!queued_route);
+    assert!(queued_error.is_some());
     panel.insert_chain("AB", na, nb).await?;
     let before = state(&pool).await?;
     for item in [
@@ -824,6 +962,18 @@ async fn batch_rejects_unauthorized_entries_and_invalid_managed_topologies(
         );
         assert_eq!(state(&pool).await?, before);
     }
+    assert_eq!(
+        panel
+            .admin(
+                Method::POST,
+                "/api/access/policy-groups",
+                &cookie,
+                Some(json!({"name":"Nexus direct allowed","node_ids":[nexus_node],"chain_ids":[]}))
+            )
+            .await?
+            .status(),
+        StatusCode::CREATED
+    );
     assert_eq!(
         panel
             .admin(
@@ -846,7 +996,6 @@ async fn batch_limits_and_unsupported_paths_fail_before_mutating_existing_busine
     let panel = controlled_panel(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let a = panel.create_server(&cookie, "Entry").await?;
-    panel.enable_runtime(&cookie, a).await?;
     let b = panel.create_server(&cookie, "Exit").await?;
     let exit = id(&panel.create_node(&cookie, b, "Exit").await?)?;
     clean_servers(&pool).await?;
@@ -898,7 +1047,6 @@ async fn resource_delete_preserves_shared_exit_history_and_deleted_request_repla
     let panel = controlled_panel(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let a = panel.create_server(&cookie, "Entry").await?;
-    panel.enable_runtime(&cookie, a).await?;
     let b = panel.create_server(&cookie, "Exit").await?;
     let exit = id(&panel.create_node(&cookie, b, "Shared exit").await?)?;
     let legacy = panel.create_user(&cookie, "Direct subscriber").await?;
@@ -1333,12 +1481,6 @@ async fn damaged_chains_stay_readable_and_cleanable_without_exposing_private_con
         .bind(b)
         .execute(&pool)
         .await?;
-    sqlx::query(
-        "UPDATE runtime_enablements SET enabled=FALSE WHERE server_id=$1 AND module='singbox'",
-    )
-    .bind(b)
-    .execute(&pool)
-    .await?;
     let list = call(
         &panel,
         &cookie,
@@ -1352,8 +1494,7 @@ async fn damaged_chains_stay_readable_and_cleanable_without_exposing_private_con
     assert_eq!(route["exit"]["id"], exit);
     assert_eq!(route["exit"]["node_deleted"], true);
     assert_eq!(route["exit"]["server_deleted"], true);
-    // Current enablement follows the explicit administrator setting.
-    assert_eq!(route["exit"]["plugin_enabled"], false);
+    assert!(route["exit"].get("runtime_enabled").is_none());
     let reasons = route["unavailable_reasons"]
         .as_array()
         .context("unavailable reasons")?;
@@ -1446,7 +1587,6 @@ async fn retired_node_cleanup_keeps_damaged_ordered_owners_and_bounded_public_re
     let panel = controlled_panel(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let a = panel.create_server(&cookie, "Entry").await?;
-    panel.enable_runtime(&cookie, a).await?;
     let b = panel.create_server(&cookie, "Exit").await?;
     let exit = id(&panel.create_node(&cookie, b, "Shared exit").await?)?;
     let body = request(vec![new_entry("Retained owner", a, exit, None)]);

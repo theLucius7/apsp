@@ -8,7 +8,6 @@ pub mod batch_enrollment;
 pub mod bootstrap;
 pub mod cloud;
 pub mod cloud_resources;
-pub mod device_artifacts;
 pub mod device_channel;
 pub mod installation;
 pub mod locks;

@@ -1,6 +1,6 @@
 # 代理管理与高级配置
 
-构建工具的内核基线为 `1.14.4-apsp.2`；面板在它签名发布并导入前仍下发 `1.14.4-apsp.1`（切换顺序见[签名发布](release.md)），依赖新内核的连接管理、Naive 出站与新增端点在切换后才可用。单台服务器仍只运行一个受管 sing-box。下面入口沿用服务器、节点与用户页面，见 ADR 0129。
+面板与构建工具当前的运行时目标版本均为 `1.14.4-apsp.2`（已随 `agent-v0.3.9` 签名发布，包含逐用户限制、S-UI 能力对齐与 REALITY 仿真加固补丁，见 [ADR 0124](adr/0124-stable-runtime-and-user-limits.md)、[ADR 0129](adr/0129-sui-capability-alignment.md)、[ADR 0139](adr/0139-reality-hardening-on-stable-runtime.md)）。尚未导入目标平台制品或尚未升级到支持运行时附件能力 Agent 的服务器，继续运行现有已应用内核与配置（`current_healthy=true`，安装状态分别标记 `sync_blocked` 或 `upgrade_required`），按低峰期计划逐台升级（见[交接说明](handoff/2026-11-17-reality-hardening.md)）。单台服务器仍只运行一个受管 sing-box。下面入口沿用服务器详情（`/#/servers/{id}/services`）、节点与用户页面。
 
 ## 用户与连接
 
@@ -26,10 +26,10 @@ Hysteria2 Realm 分别填写服务端和客户端令牌。订阅只包含客户�
 
 ## 服务端配置
 
-服务器详情的代理业务区域提供服务端 JSON 配置及示例，包含 `outbounds`、`endpoints`、`services`、`cloudflared`、`dns` 和 `route`。自定义标签使用 `extra-` 前缀，出口与端点可被路由引用。路由只作用于受管公开节点，已有链路内部配置、计量、用户限制和控制接口不能被覆盖；不能引用任意文件、命令或系统接口。
+服务器详情的「网络服务」分页（`/#/servers/{id}/services`）提供服务端 JSON 配置及示例，包含 `outbounds`、`endpoints`、`services`、`cloudflared`、`dns` 和 `route`。自定义标签使用 `extra-` 前缀，出口与端点可被路由引用。路由只作用于受管公开节点，已有链路内部配置、计量、用户限制和控制接口不能被覆盖；不能引用任意文件、命令或系统接口。
 
 支持 Naive 出口、Cloudflared 隧道、Realm 服务，以及 WireGuard、Tailscale、OpenVPN 客户端、OpenConnect 用户空间端点。Cloudflared 必须引用本机回环 VLESS 隧道节点。使用真实服务前先填写地址、认证及证书；保存通过编译后仍须部署预检，Agent 原生检查失败时保留已应用配置。
 
 凭据读取为 `__APSP_REDACTED__`，保留此占位符即沿用原值。对象重排按标签或名称保留凭据；新对象必须填真实值。版本冲突不会自动覆盖其他编辑，编辑区保留草稿，重新载入前自行保存需要保留的内容。
 
-Naive 出口依赖随签名制品提供的 Cronet。使用包含该附件的新制品前须升级到声明版本化运行时附件能力的当前 Agent；预检与清单下发均会拦截旧 Agent。Linux glibc 要求 2.31 及以上；Windows 随包提供 DLL，macOS 与 musl 使用静态构建，FreeBSD 不提供该出口。各平台与真实外部服务的验收状态见[本轮验收记录](acceptance/sui-capabilities-20261107.md)。
+Naive 出口依赖随签名制品提供的 Cronet。面板只按该服务器选中的已验签平台制品判断是否附带运行时附件，不因同一 Release 中其他平台的附件拦截该设备；使用包含附件的制品前须升级到声明版本化运行时附件能力的当前 Agent（预检与清单下发均会拦截旧 Agent 并标记 `upgrade_required`）。Linux glibc 要求 2.31 及以上；Windows 随包提供 DLL，macOS 与 musl 使用静态构建，FreeBSD 不提供该出口。各平台与真实外部服务的验收状态见[本轮验收记录](acceptance/sui-capabilities-20261107.md)。

@@ -1,5 +1,6 @@
 import { Badge, Field } from '../components'
 import type { ChainDraftHop, ProxyWriteSnapshot } from './Chains'
+import { canConfigureServer } from './Runtimes'
 import { validSourceNodePage, validSubscriptionSources } from './orderedSourceTypes'
 import { Button } from '@/components/ui/button'
 import { NativeSelect } from '@/components/ui/native-select'
@@ -17,7 +18,7 @@ export function moveChainHop(hops: ChainDraftHop[], from: number, to: number): C
 export default function ChainPathEditor({ label, hops, onChange, snapshot }: { label: string; hops: ChainDraftHop[]; onChange: (hops: ChainDraftHop[]) => void; snapshot: ProxyWriteSnapshot }) {
   const managed = snapshot.nodes.data?.filter(node => node.protocol === 'vless-reality' && node.enabled !== false
     && snapshot.resources.data?.some(resource => resource.kind === 'direct' && resource.id === node.id && resource.available)
-    && snapshot.servers.data?.some(server => server.id === node.server_id && server.enabled)) ?? []
+    && snapshot.servers.data?.some(server => server.id === node.server_id && canConfigureServer(server))) ?? []
   const sources = validSubscriptionSources(snapshot.sources?.data) ? snapshot.sources!.data! : []
   const update = (index: number, hop: ChainDraftHop) => onChange(hops.map((current, i) => i === index ? hop : current))
   return <fieldset className="my-4 min-w-0 rounded-lg border p-4" aria-label={label}><legend className="px-2 text-sm font-semibold">{label} · {hops.length} / 8 跳</legend><p className="text-muted-foreground mt-3 text-xs leading-relaxed">从入口到出口依次排列；最后一跳是最终出口。移动会改变真实连接顺序，提交后拓扑身份与顺序不可原地修改。</p>

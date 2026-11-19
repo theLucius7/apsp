@@ -43,7 +43,9 @@ struct Attempt {
 #[serde(deny_unknown_fields)]
 pub(crate) struct Report {
     schema: u32,
-    plugin: String,
+    // Preserve the signed report format produced by the installed diagnostic tool.
+    #[serde(rename = "plugin")]
+    tool: String,
     version: String,
     job_id: String,
     ip_version: String,
@@ -159,7 +161,7 @@ impl Report {
         let now = files::now()?;
         ensure!(
             report.schema == 1
-                && report.plugin == "ipquality"
+                && report.tool == "ipquality"
                 && report.version == VERSION
                 && report.job_id == context.job_id
                 && report.ip_version == context.ip_version

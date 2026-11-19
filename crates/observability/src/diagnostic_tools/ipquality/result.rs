@@ -21,7 +21,8 @@ use receipts::{Attempt, Status};
 #[serde(deny_unknown_fields)]
 struct Envelope {
     schema: u32,
-    plugin: String,
+    #[serde(rename = "plugin")]
+    tool: String,
     version: String,
     job_id: Uuid,
     ip_version: String,

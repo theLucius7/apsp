@@ -48,7 +48,11 @@ async fn identity(
     deadline: Instant,
 ) -> Result<()> {
     for flag in ["--version", "--build-info"] {
-        let args = [flag.into()];
+        let mut args = Vec::with_capacity(2);
+        if input.self_binary {
+            args.push(input::SUBCOMMAND.into());
+        }
+        args.push(flag.into());
         let execution = timeout_at(
             deadline.min(Instant::now() + files::IO_TIMEOUT),
             privileged.execute_bounded(&input.spec.binary_path, &args, 2, 4096),
@@ -73,10 +77,17 @@ async fn identity(
         } else {
             let info: BuildInfo =
                 serde_json::from_str(&output).context("invalid TCP build identity")?;
+            let valid_commit = match input.source {
+                Some(pinned) => info.source_commit.as_deref() == Some(pinned),
+                None => info
+                    .source_commit
+                    .as_deref()
+                    .is_none_or(|commit| input::digest(commit, 40)),
+            };
             ensure!(
                 info.version == input::ENGINE_VERSION
                     && info.source_repo == "theLucius7/apsp"
-                    && info.source_commit.as_deref() == Some(input.source),
+                    && valid_commit,
                 "TCP binary source pin mismatch"
             );
         }
@@ -114,7 +125,7 @@ impl DiagnosticAdapter for TcpQualityAdapter {
     }
     fn describe(&self) -> DiagnosticDescriptor {
         DiagnosticDescriptor {
-            plugin_name: "tcpquality".into(),
+            artifact_name: "tcpquality".into(),
             binary_name: input::BINARY.into(),
         }
     }
@@ -181,24 +192,29 @@ impl DiagnosticAdapter for TcpQualityAdapter {
                 Instant::now() < deadline,
                 "TCP preparation exhausted its deadline"
             );
+            let mut args = Vec::with_capacity(14);
+            if input.self_binary {
+                args.push(input::SUBCOMMAND.into());
+            }
+            args.extend([
+                "--workspace".into(),
+                input::path(&spec.job_dir)?,
+                "--targets".into(),
+                "targets.json".into(),
+                "--target-digest".into(),
+                input.digest.into(),
+                "--ip-version".into(),
+                input.ip_version.into(),
+                "--count".into(),
+                input.count.to_string(),
+                "--concurrency".into(),
+                input.concurrency.to_string(),
+                "--no-rank-upload".into(),
+            ]);
             Ok(ServiceJob {
                 unit: format!("apsp-diagnostic-{}.service", spec.id),
                 program: spec.binary_path.clone(),
-                args: vec![
-                    "--workspace".into(),
-                    input::path(&spec.job_dir)?,
-                    "--targets".into(),
-                    "targets.json".into(),
-                    "--target-digest".into(),
-                    input.digest.into(),
-                    "--ip-version".into(),
-                    input.ip_version.into(),
-                    "--count".into(),
-                    input.count.to_string(),
-                    "--concurrency".into(),
-                    input.concurrency.to_string(),
-                    "--no-rank-upload".into(),
-                ],
+                args,
                 working_directory: spec.job_dir.clone(),
                 timeout_secs,
                 memory_max: apsp_adapter_sdk::MemoryMax::new(64 * 1024 * 1024)?,

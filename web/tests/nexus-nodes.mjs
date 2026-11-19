@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { extname, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { installControlCenterFixtures } from './control-center-fixtures.mjs'
-import { catalogNodeFixtures, catalogResourceFixtures, proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
+import { catalogNodeFixtures, catalogResourceFixtures, proxyResourceFixtures, runtimeServerFixture } from './proxy-resource-fixtures.mjs'
 
 // Exercise the final bundle with isolated public DTOs, never a live migration.
 const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
@@ -32,7 +32,7 @@ try {
     page.setDefaultTimeout(8000)
     const errors = [], unexpected = [], external = [], writes = []
     page.on('pageerror', error => errors.push(error.message))
-    const hosts = [{ id: 1, name: '受管服务器', enabled: true, online: true, read_only: false, agent_supported: true }]
+    const hosts = [runtimeServerFixture(1, { name: '受管服务器' })]
     const nodes = [{ id: 1, name: 'TEST_ONLY 受管入口', server_id: 1, protocol: 'vless-reality', enabled: true, port: 443,
       public_host: 'managed.example.invalid', sni: 'www.example.invalid', public_key: 'TEST_ONLY', short_id: 'abcd' }]
     // The imported ID deliberately overlaps a managed ID; the inventories stay separate.

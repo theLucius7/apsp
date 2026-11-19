@@ -10,7 +10,7 @@ pub(super) async fn inspect(
     ops: &dyn Privileged,
     services: &dyn ServiceManager,
 ) -> Result<Value> {
-    let module = &descriptor.plugin_name;
+    let module = &descriptor.artifact_name;
     ensure!(
         cfg!(target_os = "linux")
             && !module.is_empty()
@@ -209,7 +209,7 @@ mod tests {
         std::fs::create_dir(&root)?;
         let outcome=async {
             let config=Config{runtime_root:root.clone(),..Default::default()};
-            let descriptor=Descriptor{module:"example-wire".into(),plugin_name:"example-runtime".into(),binary_name:"example".into(),auxiliary_files:Vec::new(),service_unit:"apsp-example-runtime@main.service".into(),service_group:"example-runtime".into()};
+            let descriptor=Descriptor{module:"example-wire".into(),artifact_name:"example-runtime".into(),binary_name:"example".into(),auxiliary_files:Vec::new(),service_unit:"apsp-example-runtime@main.service".into(),service_group:"example-runtime".into()};
             let ops=Arc::new(MetadataOps{observed:Mutex::new(None),load:"not-found",account:""});
             let backend=crate::system::SystemServiceManager::new(ops.clone(),crate::system::ServiceBackend::Systemd);
             let receipt=inspect(&config,&descriptor,ops.as_ref(),&backend).await?;

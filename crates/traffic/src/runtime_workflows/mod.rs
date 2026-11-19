@@ -1,16 +1,11 @@
 //! Each server's proxy runtime as the traffic service checks it: the operations view with
-//! its configuration checkpoint, deployment preflights and the signed runtime inventory, and
-//! the rules operations follows when it retries a fixed deployment (`automation`) or rolls a
-//! runtime version out in stages (`rollouts`).
+//! its configuration checkpoint and read-only deployment environment preflights, and the rules
+//! operations follows when it retries a fixed deployment (`automation`).
 
 pub mod automation;
-mod inventory;
 mod preflight;
 mod preflight_network;
-use preflight::{bootstrap_install, confirm as confirm_preflight, request as preflight_request};
-pub(crate) use preflight::{ordinary_shape_changes_tx, publisher_ready_tx};
-pub mod rollouts;
-use inventory::inventory;
+use preflight::request as preflight_request;
 
 /// Deletes deployment checks created before `before`; access decides the retention period.
 pub async fn prune_preflights(tx: &mut Transaction<'_, Postgres>, before: i64) -> ApiResult<()> {
@@ -21,7 +16,7 @@ pub async fn prune_preflights(tx: &mut Transaction<'_, Postgres>, before: i64) -
     Ok(())
 }
 
-/// Deployment checks and the runtime inventory of each server's proxy runtime.
+/// Read-only deployment checks and runtime configuration checkpoints for each server.
 pub fn router() -> axum::Router<AppState> {
     use axum::routing::{get, post};
     axum::Router::new()
@@ -34,15 +29,6 @@ pub fn router() -> axum::Router<AppState> {
             "/api/traffic/servers/{id}/operations-view/preflight",
             post(preflight_request),
         )
-        .route(
-            "/api/traffic/servers/{id}/operations-view/preflight/confirm",
-            post(confirm_preflight),
-        )
-        .route(
-            "/api/traffic/servers/{id}/operations-view/preflight/bootstrap",
-            post(bootstrap_install),
-        )
-        .route("/api/traffic/runtime-inventory", get(inventory))
 }
 
 use crate::{
@@ -99,8 +85,15 @@ pub(super) async fn view(
     let mut tx = state.pool.begin().await?;
     crate::business::lock_publication(&mut tx).await?;
     crate::servers::lock(&mut tx, server).await?;
-    crate::settings::require_enabled(&mut tx, server).await?;
-    let row=sqlx::query(&format!("SELECT s.static_info,s.capabilities,s.last_seen,{} AS pending,m.target_rev,m.applied_rev,m.healthy,m.updated_at,m.last_error,{} AS retiring FROM servers s LEFT JOIN server_module_status m ON m.server_id=s.id AND m.module='singbox' WHERE s.id=$1", crate::publications::pending_sql("s.id"), crate::retirement::retiring_sql("s.id"))).bind(server).fetch_one(&mut *tx).await?;
+    let configured = crate::settings::is_configured(&mut tx, server).await?;
+    let row = sqlx::query(&format!(
+        "SELECT s.static_info,s.capabilities,s.last_seen,{} AS pending,m.target_rev,m.applied_rev,m.healthy,m.updated_at,m.last_error,{} AS retiring FROM servers s LEFT JOIN server_module_status m ON m.server_id=s.id AND m.module='singbox' WHERE s.id=$1",
+        crate::publications::pending_sql("s.id"),
+        crate::retirement::retiring_sql("s.id")
+    ))
+    .bind(server)
+    .fetch_one(&mut *tx)
+    .await?;
     let query = format!(
         "SELECT {} FROM nodes n JOIN servers s ON s.id=n.server_id WHERE n.server_id=$1 AND n.deleted_at IS NULL ORDER BY n.id",
         crate::business::NODE_COLUMNS
@@ -111,7 +104,13 @@ pub(super) async fn view(
         .await?;
     let mut desired = Vec::new();
     for node in rows {
-        let accesses:Vec<(i64,Uuid,String)>=sqlx::query_as("SELECT user_id,uuid,credential FROM singbox_eligible_accesses($2) WHERE node_id=$1 ORDER BY user_id").bind(node.id).bind(now_timestamp()).fetch_all(&mut *tx).await?;
+        let accesses: Vec<(i64, Uuid, String)> = sqlx::query_as(
+            "SELECT user_id,uuid,credential FROM singbox_eligible_accesses($2) WHERE node_id=$1 ORDER BY user_id",
+        )
+        .bind(node.id)
+        .bind(now_timestamp())
+        .fetch_all(&mut *tx)
+        .await?;
         desired.push(
             node.model(
                 accesses
@@ -125,17 +124,48 @@ pub(super) async fn view(
             )?,
         );
     }
-    let applied_source:Option<Value>=sqlx::query_scalar("SELECT COALESCE(p.source_json,d.source_json) FROM deployments d LEFT JOIN singbox_deployment_projections p ON p.server_id=d.server_id AND p.rev=d.rev WHERE d.server_id=$1 AND d.module='singbox' AND d.rev=$2").bind(server).bind(row.get::<Option<i64>,_>("applied_rev")).fetch_optional(&mut *tx).await?;
+    let applied_rev = row
+        .get::<Option<i64>, _>("applied_rev")
+        .filter(|rev| configured && *rev > 0);
+    let applied_source: Option<Value> = if let Some(rev) = applied_rev {
+        sqlx::query_scalar(
+            "SELECT COALESCE(p.source_json,d.source_json) FROM deployments d LEFT JOIN singbox_deployment_projections p ON p.server_id=d.server_id AND p.rev=d.rev WHERE d.server_id=$1 AND d.module='singbox' AND d.rev=$2",
+        )
+        .bind(server)
+        .bind(rev)
+        .fetch_optional(&mut *tx)
+        .await?
+    } else {
+        None
+    };
     let applied = applied_source
         .map(crate::ordered_paths::models::public_nodes)
         .transpose()
         .map_err(anyhow::Error::from)?
         .unwrap_or_default();
     let changes = differences(&applied, &desired)?;
-    let history:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('revision',d.rev,'bundle_sha256',d.bundle_sha256,'created_at',d.created_at,'runtime_version',f.runtime_version,'artifact_sha256',f.artifact_sha256) FROM deployments d LEFT JOIN singbox_runtime_manifest_facts f ON f.server_id=d.server_id AND f.module=d.module AND f.revision=d.rev WHERE d.server_id=$1 AND d.module='singbox' ORDER BY d.rev DESC LIMIT 100").bind(server).fetch_all(&mut *tx).await?;
-    let paths:Vec<Value>=sqlx::query_scalar("SELECT DISTINCT jsonb_build_object('id',c.id,'name',c.name,'kind',c.path_kind,'phase',c.phase,'desired_generation',c.desired_generation,'applied_generation',c.applied_generation,'candidate_generation',c.candidate_generation,'last_error',c.last_error,'route_enabled',c.route_enabled) FROM singbox_chains c LEFT JOIN nodes n ON n.id=c.entry_node_id LEFT JOIN singbox_ordered_chain_hops h ON h.chain_id=c.id WHERE (n.server_id=$1 OR h.managed_server_id=$1) AND (c.deleted_at IS NULL OR c.phase<>'retired')").bind(server).fetch_all(&mut *tx).await?;
-    let mut hop_observations:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('server_id',s.id,'name',s.name,'last_seen',s.last_seen,'metrics',NULL,'target_revision',m.target_rev,'applied_revision',m.applied_rev,'healthy',m.healthy,'last_error',m.last_error) FROM servers s LEFT JOIN server_module_status m ON m.server_id=s.id AND m.module='singbox' WHERE s.id IN (SELECT $1 UNION SELECT h.managed_server_id FROM singbox_ordered_chain_hops h JOIN singbox_chains c ON c.id=h.chain_id JOIN nodes n ON n.id=c.entry_node_id WHERE n.server_id=$1 AND h.generation=c.desired_generation AND h.managed_server_id IS NOT NULL) ORDER BY s.id").bind(server).fetch_all(&mut *tx).await?;
-    // Observability keeps each hop's newest metrics.
+    let history: Vec<Value> = if configured {
+        sqlx::query_scalar(
+            "SELECT jsonb_build_object('revision',d.rev,'bundle_sha256',d.bundle_sha256,'created_at',d.created_at,'runtime_version',NULL) FROM deployments d WHERE d.server_id=$1 AND d.module='singbox' ORDER BY d.rev DESC LIMIT 100",
+        )
+        .bind(server)
+        .fetch_all(&mut *tx)
+        .await?
+    } else {
+        Vec::new()
+    };
+    let paths: Vec<Value> = sqlx::query_scalar(
+        "SELECT DISTINCT jsonb_build_object('id',c.id,'name',c.name,'kind',c.path_kind,'phase',c.phase,'desired_generation',c.desired_generation,'applied_generation',c.applied_generation,'candidate_generation',c.candidate_generation,'last_error',c.last_error,'route_enabled',c.route_enabled) FROM singbox_chains c LEFT JOIN nodes n ON n.id=c.entry_node_id LEFT JOIN singbox_ordered_chain_hops h ON h.chain_id=c.id WHERE (n.server_id=$1 OR h.managed_server_id=$1) AND (c.deleted_at IS NULL OR c.phase<>'retired')",
+    )
+    .bind(server)
+    .fetch_all(&mut *tx)
+    .await?;
+    let mut hop_observations: Vec<Value> = sqlx::query_scalar(
+        "SELECT jsonb_build_object('server_id',s.id,'name',s.name,'last_seen',s.last_seen,'metrics',NULL,'target_revision',NULLIF(m.target_rev,0),'applied_revision',NULLIF(m.applied_rev,0),'healthy',m.healthy,'last_error',m.last_error) FROM servers s LEFT JOIN server_module_status m ON m.server_id=s.id AND m.module='singbox' WHERE s.id IN (SELECT $1 UNION SELECT h.managed_server_id FROM singbox_ordered_chain_hops h JOIN singbox_chains c ON c.id=h.chain_id JOIN nodes n ON n.id=c.entry_node_id WHERE n.server_id=$1 AND h.generation=c.desired_generation AND h.managed_server_id IS NOT NULL) ORDER BY s.id",
+    )
+    .bind(server)
+    .fetch_all(&mut *tx)
+    .await?;
     let hops: Vec<i64> = hop_observations
         .iter()
         .filter_map(|hop| hop["server_id"].as_i64())
@@ -146,7 +176,9 @@ pub(super) async fn view(
             hop["metrics"] = metrics.remove(&id).unwrap_or_default().metrics;
         }
     }
-    let target = row.get::<Option<i64>, _>("target_rev");
+    let target = row
+        .get::<Option<i64>, _>("target_rev")
+        .filter(|rev| configured && *rev > 0);
     let checkpoint = configuration_observation(&mut tx, server, target).await?;
     tx.commit().await?;
     for hop in &mut hop_observations {
@@ -164,6 +196,37 @@ pub(super) async fn view(
     let online = row
         .get::<Option<i64>, _>("last_seen")
         .is_some_and(|at| now_timestamp().saturating_sub(at) <= 60);
+    let static_info: Value = row.get("static_info");
+    let embedded_version = crate::agent::embedded_runtime_version(&static_info);
+    let active_version = crate::agent::reported_runtime_version(&static_info);
+    let runtime_healthy = configured
+        && online
+        && applied_rev.is_some()
+        && row.get::<Option<bool>, _>("healthy") == Some(true);
+    let runtime_reason = match (
+        online,
+        embedded_version.as_deref(),
+        active_version.as_deref(),
+    ) {
+        (false, Some(embedded), _) => format!("设备当前离线（上次上报内置 {embedded}）"),
+        (false, None, _) => "设备当前离线，重连后同步内置版本与运行健康".into(),
+        (true, Some(embedded), Some(running)) if runtime_healthy => {
+            format!("当前运行 {running}，健康检查通过（内置 {embedded}）")
+        }
+        (true, Some(embedded), Some(running)) => {
+            format!("当前上报运行 {running}，健康待确认（内置 {embedded}）")
+        }
+        (true, Some(embedded), None) if configured => {
+            format!("内置 {embedded}，当前尚未运行，等待应用目标服务配置")
+        }
+        (true, Some(embedded), None) => {
+            format!("内置 {embedded}，当前无启用服务配置，未启动 sing-box")
+        }
+        (true, None, Some(running)) => {
+            format!("当前运行 {running}，尚未上报一体化内置组件版本")
+        }
+        (true, None, None) => "尚未上报一体化内置 sing-box 组件版本".into(),
+    };
     let capabilities: Value = row.get("capabilities");
     let capability = |name: &str| {
         capabilities
@@ -171,18 +234,15 @@ pub(super) async fn view(
             .is_some_and(|v| v.iter().any(|c| c == name))
     };
     let preflight = preflight::view(&state, &headers, server).await?;
-    let applied_revision = row.get::<Option<i64>, _>("applied_rev");
-    let drift = if !online {
+    let drift = if !configured {
+        "unknown"
+    } else if !online {
         "stale"
-    } else if row.get::<bool, _>("pending")
-        && preflight["application"]["state"] == "needs_preflight"
-    {
-        "needs_preflight"
     } else if row.get::<bool, _>("pending") {
         "pending_publish"
     } else if target.is_none() {
         "unknown"
-    } else if target != applied_revision {
+    } else if target != applied_rev {
         "revision_mismatch"
     } else if checkpoint["state"] == "mismatch" {
         "configuration_mismatch"
@@ -195,9 +255,39 @@ pub(super) async fn view(
     } else {
         "revision_aligned"
     };
-    Ok(Json(
-        json!({"server_id":server,"runtime":{"supported_versions":[crate::RUNTIME_VERSION],"selected_version":crate::RUNTIME_VERSION,"other_versions_available":false,"compatibility_metadata":{"version":crate::RUNTIME_VERSION,"upstream_repository":"https://github.com/SagerNet/sing-box","upstream_release":"https://github.com/SagerNet/sing-box/releases/tag/v1.14.4","upstream_commit":"c005f35300ce76427dc285481ec5695f5b179cd2","source_material":"tools/build-singbox.sh","protocols":["vless-reality","hysteria2","shadowsocks2022","tuic","anytls","naive","snell"],"acceptance_scope":"仓库固定编译器与构建输入，平台制品另需签名匹配，不代表实时获取了所有官方版本"},"reason":"当前编译器、路径快照与签名制品固定版本，其他版本尚未完成兼容支持"},"preflight":preflight,"drift":{"state":drift,"target_revision":target,"applied_revision":applied_revision,"last_observed_at":row.get::<Option<i64>,_>("updated_at"),"checkpoint":checkpoint,"checkpoint_supported":capability(apsp_protocol::RUNTIME_CHECKPOINT_CAPABILITY),"live_config_hash_available":false,"reason":"主动核对实际文件、受管进程和签名执行文件；成功仅代表核对时匹配，五分钟后证据过期。目标包摘要不是原始运行文件摘要"},"changes":changes,"history":history,"paths":paths,"hop_observations":hop_observations,"path_diagnosis":"资源、部署、路径探测分别作为证据；外部跳资源不可观测时保持未知，不据单点指标自动断言瓶颈"}),
-    ))
+    Ok(Json(json!({
+        "server_id": server,
+        "runtime": {
+            "selected_version": embedded_version
+                .clone()
+                .unwrap_or_else(|| format!("未上报（固定目标 {}）", crate::RUNTIME_VERSION)),
+            "embedded_version": embedded_version,
+            "active_runtime_version": active_version,
+            "compatibility_metadata": {
+                "upstream_release": "https://github.com/SagerNet/sing-box/releases/tag/v1.14.4",
+                "upstream_commit": "c005f35300ce76427dc285481ec5695f5b179cd2",
+                "protocols": ["vless-reality", "hysteria2", "shadowsocks2022", "tuic", "anytls", "naive", "snell"],
+                "acceptance_scope": "随一体化 Agent 内嵌交付并与面板固定编译器版本保持一致"
+            },
+            "reason": runtime_reason
+        },
+        "preflight": preflight,
+        "drift": {
+            "state": drift,
+            "target_revision": target,
+            "applied_revision": applied_rev,
+            "last_observed_at": row.get::<Option<i64>, _>("updated_at"),
+            "checkpoint": checkpoint,
+            "checkpoint_supported": capability(apsp_protocol::RUNTIME_CHECKPOINT_CAPABILITY),
+            "live_config_hash_available": false,
+            "reason": "主动核对实际文件、受管进程和内置运行时身份；成功仅代表核对时匹配，五分钟后证据过期"
+        },
+        "changes": changes,
+        "history": history,
+        "paths": paths,
+        "hop_observations": hop_observations,
+        "path_diagnosis": "资源、部署、路径探测分别作为证据；外部跳资源不可观测时保持未知，不据单点指标自动断言瓶颈"
+    })))
 }
 
 pub(super) fn inspection_reason(error: &str) -> (&'static str, &'static str) {
@@ -250,7 +340,18 @@ async fn configuration_observation(
     server: i64,
     target: Option<i64>,
 ) -> ApiResult<Value> {
-    let request=sqlx::query("SELECT q.request_id,q.request_json,q.state,q.created_at,q.expires_at,r.outcome,r.received_at,r.result_json FROM runtime_control_requests q LEFT JOIN runtime_control_receipts r USING(request_id) WHERE q.server_id=$1 AND q.module='singbox' AND q.kind='checkpoint' AND (q.request_json->'expected'->>'revision')::bigint=$2 ORDER BY q.created_at DESC,q.request_id DESC LIMIT 1").bind(server).bind(target).fetch_optional(&mut **tx).await?;
+    let Some(target_rev) = target.filter(|rev| *rev > 0) else {
+        return Ok(
+            json!({"state":"unknown","current_binding_answered":false,"reason":"当前目标尚无实际文件与进程核对结果"}),
+        );
+    };
+    let request = sqlx::query(
+        "SELECT q.request_id,q.request_json,q.state,q.created_at,q.expires_at,r.outcome,r.received_at,r.result_json FROM runtime_control_requests q LEFT JOIN runtime_control_receipts r USING(request_id) WHERE q.server_id=$1 AND q.module='singbox' AND q.kind='checkpoint' AND (q.request_json->'expected'->>'revision')::bigint=$2 ORDER BY q.created_at DESC,q.request_id DESC LIMIT 1",
+    )
+    .bind(server)
+    .bind(target_rev)
+    .fetch_optional(&mut **tx)
+    .await?;
     let Some(request) = request else {
         return Ok(
             json!({"state":"unknown","current_binding_answered":false,"reason":"当前目标尚无实际文件与进程核对结果"}),
@@ -270,7 +371,7 @@ async fn configuration_observation(
     } else {
         false
     };
-    let answered = current_binding_answered(tx, server, target).await?;
+    let answered = current_binding_answered(tx, server, Some(target_rev)).await?;
     let reason = result
         .as_ref()
         .and_then(|r| r.error.as_deref())
@@ -297,23 +398,38 @@ async fn configuration_observation(
     } else {
         "pending"
     };
-    Ok(
-        json!({"state":state,"current_binding_answered":answered,"request_id":request.get::<Uuid,_>("request_id"),"requested_at":request.get::<i64,_>("created_at"),"observed_at":request.get::<Option<i64>,_>("received_at"),"outcome":outcome,"failure_kind":reason.map(|(code,_)|code),"reason":reason.map(|(_,message)|message).unwrap_or(if state=="verified"{"目标 Agent 已逐文件核对配置并确认受管进程与签名运行时身份"}else if state=="stale"{"核对证据已过期或目标已变化，请主动重新核对"}else if state=="pending"{"等待设备实际核对结果"}else{"无法确认当前运行文件匹配，请重新核对"})}),
-    )
+    Ok(json!({
+        "state": state,
+        "current_binding_answered": answered,
+        "request_id": request.get::<Uuid, _>("request_id"),
+        "requested_at": request.get::<i64, _>("created_at"),
+        "observed_at": request.get::<Option<i64>, _>("received_at"),
+        "outcome": outcome,
+        "failure_kind": reason.map(|(code, _)| code),
+        "reason": reason.map(|(_, message)| message).unwrap_or(if state == "verified" {
+            "目标 Agent 已逐文件核对配置并确认受管进程与内置运行时身份"
+        } else if state == "stale" {
+            "核对证据已过期或目标已变化，请主动重新核对"
+        } else if state == "pending" {
+            "等待设备实际核对结果"
+        } else {
+            "无法确认当前运行文件匹配，请重新核对"
+        })
+    }))
 }
 
-/// A recent successful answer for the published target binding proves which
-/// deployment the managed process runs, even while saved business changes keep
-/// the target from being certified as current. Heartbeats keep requesting a
-/// checkpoint for an uncertified target, so a newer unanswered request must not
-/// hide the latest answer.
 async fn current_binding_answered(
     tx: &mut Transaction<'_, Postgres>,
     server: i64,
     target: Option<i64>,
 ) -> ApiResult<bool> {
-    let Some(row) = sqlx::query("SELECT q.request_json,r.received_at,r.result_json FROM runtime_control_requests q JOIN runtime_control_receipts r USING(request_id) WHERE q.server_id=$1 AND q.module='singbox' AND q.kind='checkpoint' AND (q.request_json->'expected'->>'revision')::bigint=$2 ORDER BY r.received_at DESC,q.created_at DESC,q.request_id DESC LIMIT 1")
-        .bind(server).bind(target).fetch_optional(&mut **tx).await?
+    let Some(row) = sqlx::query(
+        "SELECT q.request_json,r.received_at,r.result_json FROM runtime_control_requests q JOIN runtime_control_receipts r USING(request_id) WHERE q.server_id=$1 AND q.module='singbox' AND q.kind='checkpoint' AND (q.request_json->'expected'->>'revision')::bigint=$2 ORDER BY r.received_at DESC,q.created_at DESC,q.request_id DESC LIMIT 1",
+    )
+    .bind(server)
+    .bind(target)
+    .fetch_optional(&mut **tx)
+    .await?
     else {
         return Ok(false);
     };
@@ -345,7 +461,7 @@ pub(super) async fn checkpoint(
         crate::control_center::require_server(&state, &headers, server, "proxy:write").await?;
     let mut tx = state.pool.begin().await?;
     crate::servers::lock(&mut tx, server).await?;
-    crate::settings::require_enabled(&mut tx, server).await?;
+    crate::settings::require_configured(&mut tx, server).await?;
     let row = sqlx::query(&format!(
         "SELECT capabilities,last_seen,{} AS pending,{} AS retiring FROM servers WHERE id=$1",
         crate::publications::pending_sql("$1"),
@@ -382,7 +498,14 @@ pub(super) async fn checkpoint(
             )
         })?;
     let mut tx = state.pool.begin().await?;
-    record_event(&mut tx,Some(administrator),None,"runtime_configuration_inspect",json!({"server_id":server,"request_id":request.request_id,"expected_revision":request.expected.revision,"configuration_changed":false})).await?;
+    record_event(
+        &mut tx,
+        Some(administrator),
+        None,
+        "runtime_configuration_inspect",
+        json!({"server_id":server,"request_id":request.request_id,"expected_revision":request.expected.revision,"configuration_changed":false}),
+    )
+    .await?;
     tx.commit().await?;
     Ok(Json(
         json!({"state":"pending","request_id":request.request_id,"expires_at":request.expires_at}),

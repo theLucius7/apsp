@@ -4,7 +4,7 @@ import { createServer } from 'node:http'
 import { readFile, mkdir } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { resolve, extname, sep } from 'node:path'
-import { catalogNodeFixtures, proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
+import { catalogNodeFixtures, proxyResourceFixtures, runtimeServerFixture } from './proxy-resource-fixtures.mjs'
 
 // Shipped dist with private loopback API responses; native compiler and persistence checks are separate.
 const catalogView = resources => resources.map(resource => ({ ...resource, original_name: resource.name, tags: [], note: '', sort_order: resource.id, revision: '1'.repeat(64), metadata_revision: 0 }))
@@ -44,7 +44,7 @@ try {
     nodes.push({...structuredClone(nodes[0]),id:8,name:'链路使用中的节点',configuration_locked:true,referenced_chains:[{id:9,name:'测试链路'}]})
     const entry = {...structuredClone(nodes[0]), id:9, name:'测试有序链路入口', configuration_locked:true, referenced_chains:[{id:9,name:'测试链路'}]}
     nodes.push(entry)
-    const servers = [{id:1,name:'测试服务器',enabled:true,online:true,agent_supported:true,read_only:false,source:'administrator'}]
+    const servers = [runtimeServerFixture(1, { name: '测试服务器' })]
     const chains = [{id:9,name:'测试链路',entry_node_id:9,exit_node_id:8,path_kind:'ordered'}]
     const richResources = () => proxyResourceFixtures(nodes, servers, chains).map(resource => resource.path_kind === 'ordered' ? {...resource, path_state:{...resource.path_state,candidate_generation:null,applied_generation:1,phase:'applied',generations:[{generation:1,state:'desired',hops:resource.hops},{generation:1,state:'applied',hops:resource.hops}]}} : resource)
     await page.route('**/*',async route => {

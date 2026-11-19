@@ -1,15 +1,13 @@
-//! The proxy publication cycle (every second). It runs work of three owners in one order:
+//! The proxy publication cycle (every second). It runs work of two owners in one order:
 //! package eligibility (access) before ordered path transitions and configuration
-//! publication (traffic), then every 30 s rollout inspection results (operations) and record
-//! retention (access), and every 10 s device-limit policies (access). One heartbeat,
-//! `sing-box`, covers the whole cycle.
+//! publication (traffic), then every 30 s record retention (access), and every 10 s
+//! device-limit policies (access). One heartbeat, `sing-box`, covers the whole cycle.
 //!
 //! Every user's entitlement is evaluated once per cycle, by the eligibility refresh; host
 //! membership and device-limit policies take its allowed users. When the refresh fails
 //! they evaluate entitlements themselves, as they would on their own.
 
 use apsp_access as access;
-use apsp_operations as operations;
 use apsp_panel_host::{
     AppState,
     maintenance::{Cadence, Failure, Pass, periodic},
@@ -64,13 +62,8 @@ impl Cycle {
             failed.push("configuration-publication");
         }
         if now_timestamp() >= self.next_maintenance {
-            // Rollout inspection results (operations) and record retention (access).
-            let results = [
-                operations::runtime_rollouts::record_inspection_results(state).await,
-                access::operations_workflows::maintenance(state).await,
-            ];
             self.maintenance_healthy = true;
-            for error in results.into_iter().filter_map(Result::err) {
+            if let Err(error) = access::operations_workflows::maintenance(state).await {
                 tracing::warn!(%error, "proxy operation retention failed; work retained");
                 self.maintenance_healthy = false;
             }

@@ -10,7 +10,7 @@ on:
         required: true
         type: string
       publish:
-        description: "验签及全部制品校验通过后发布草稿"
+        description: "验签及全部资产校验通过后发布草稿"
         default: false
         type: boolean
 
@@ -39,7 +39,7 @@ jobs:
         name: Validate tag and production compile-time roots
         run: |
           python3 - <<'PY'
-          import importlib.util, json, os, pathlib, tomllib
+          import importlib.util, os, pathlib, tomllib
           spec = importlib.util.spec_from_file_location('release', 'tools/release.py')
           release = importlib.util.module_from_spec(spec)
           spec.loader.exec_module(release)
@@ -54,45 +54,9 @@ jobs:
               output.write('agent_version=' + version + '\n')
           PY
 
-  agent:
+  runtime-inputs:
     needs: metadata
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 40
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: amd64
-            runner: ubuntu-24.04
-            target: x86_64-unknown-linux-musl
-          - arch: arm64
-            runner: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-musl
-    env:
-      APSP_RELEASE_PUBLIC_KEYS: ${{ vars.APSP_RELEASE_PUBLIC_KEYS }}
-    steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@v2.9.2
-        with:
-          key: release-${{ matrix.target }}
-      - name: Install native musl toolchain
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends musl-tools build-essential binutils python3 coreutils
-      - name: Build verified native Agent
-        run: bash tools/build-agent.sh '${{ matrix.arch }}' '${{ runner.temp }}/artifacts'
-      - uses: actions/upload-artifact@v7.0.1
-        with:
-          name: release-agent-${{ matrix.arch }}
-          path: ${{ runner.temp }}/artifacts/
-          if-no-files-found: error
-
-  runtime:
-    needs: metadata
-    # The amd64 builder also prepares the pinned Cronet toolchain for musl.
+    # The amd64 builder cross-compiles GNU arm64 and prepares the pinned Cronet musl toolchains.
     runs-on: ubuntu-24.04
     timeout-minutes: 100
     strategy:
@@ -100,17 +64,21 @@ jobs:
       matrix:
         include:
           - arch: amd64
-            target: amd64
             libc: gnu
+            target: linux-gnu-amd64
+            package_sources: true
           - arch: arm64
-            target: arm64
             libc: gnu
+            target: linux-gnu-arm64
+            package_sources: false
           - arch: amd64
+            libc: musl
             target: linux-musl-amd64
-            libc: musl
+            package_sources: false
           - arch: arm64
-            target: linux-musl-arm64
             libc: musl
+            target: linux-musl-arm64
+            package_sources: false
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: actions/setup-go@v7.0.0
@@ -120,29 +88,264 @@ jobs:
       - uses: actions/cache@v6.1.0
         id: runtime-cache
         with:
-          path: ${{ runner.temp }}/artifacts/sing-box/1.14.4-apsp.2
+          path: ${{ runner.temp }}/runtime-inputs/sing-box/1.14.4-apsp.2
           key: runtime-ubuntu24-1.14.4-apsp.2-${{ matrix.target }}-${{ hashFiles('tools/build-singbox.sh', 'tools/singbox-builder.Dockerfile', 'tools/singbox-runtime/**') }}
-      - name: Build pinned runtime on cache miss
+      - name: Build pinned runtime for target ABI on cache miss
         if: steps.runtime-cache.outputs.cache-hit != 'true'
         run: |
           docker build --platform=linux/amd64 -f tools/singbox-builder.Dockerfile -t apsp-release-runtime:1.14.4-apsp.2 .
-          mkdir -p '${{ runner.temp }}/artifacts'
-          libc_args=()
-          if [[ '${{ matrix.libc }}' == musl ]]; then libc_args+=(--libc=musl); fi
-          docker run --rm --platform=linux/amd64 -v '${{ runner.temp }}/artifacts:/artifacts' apsp-release-runtime:1.14.4-apsp.2 '${{ matrix.arch }}' /artifacts "${libc_args[@]}"
-      - name: Inspect cached or fresh runtime without executing it
+          mkdir -p '${{ runner.temp }}/runtime-inputs'
+          docker run --rm --platform=linux/amd64 \
+            -v '${{ runner.temp }}/runtime-inputs:/artifacts' \
+            apsp-release-runtime:1.14.4-apsp.2 '${{ matrix.arch }}' /artifacts '--libc=${{ matrix.libc }}'
+          sudo chown -R "$(id -u):$(id -g)" '${{ runner.temp }}/runtime-inputs'
+      - name: Inspect cached or fresh runtime ABI, ELF architecture and Cronet contract without executing it
         run: |
-          libc_args=()
-          if [[ '${{ matrix.libc }}' == musl ]]; then libc_args+=(--libc=musl); fi
-          python3 tools/verify-release-runtime.py --root '${{ runner.temp }}/artifacts' --arch '${{ matrix.arch }}' "${libc_args[@]}"
+          python3 tools/verify-release-runtime.py \
+            --root '${{ runner.temp }}/runtime-inputs' \
+            --arch '${{ matrix.arch }}' \
+            --libc '${{ matrix.libc }}'
       - uses: actions/upload-artifact@v7.0.1
         with:
-          name: release-runtime-${{ matrix.target }}
-          path: ${{ runner.temp }}/artifacts/
+          name: input-runtime-${{ matrix.target }}
+          path: ${{ runner.temp }}/runtime-inputs/
+          if-no-files-found: error
+      - name: Package pinned sing-box corresponding source archive
+        if: matrix.package_sources == true
+        run: |
+          python3 tools/prepare-agent-linux-inputs.py package-singbox-sources \
+            --artifact-root '${{ runner.temp }}/singbox-sources' \
+            --work-dir '${{ runner.temp }}/singbox-sources-work'
+      - uses: actions/upload-artifact@v7.0.1
+        if: matrix.package_sources == true
+        with:
+          name: release-sources-singbox
+          path: ${{ runner.temp }}/singbox-sources/
+          if-no-files-found: error
+
+  diagnostic-inputs:
+    needs: metadata
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            arch_upper: AMD64
+            runner: ubuntu-24.04
+          - arch: arm64
+            arch_upper: ARM64
+            runner: ubuntu-24.04-arm
+    env:
+      APSP_IPQUALITY_BUILDER_IMAGE: ${{ vars.APSP_IPQUALITY_BUILDER_IMAGE }}
+      APSP_IPQUALITY_BUILDER_IMAGE_AMD64: ${{ vars.APSP_IPQUALITY_BUILDER_IMAGE_AMD64 }}
+      APSP_IPQUALITY_BUILDER_IMAGE_ARM64: ${{ vars.APSP_IPQUALITY_BUILDER_IMAGE_ARM64 }}
+      APSP_IPQUALITY_BUILDER_IMAGE_SHA256: ${{ vars.APSP_IPQUALITY_BUILDER_IMAGE_SHA256 }}
+      APSP_IPQUALITY_BUILDER_IMAGE_SHA256_AMD64: ${{ vars.APSP_IPQUALITY_BUILDER_IMAGE_SHA256_AMD64 }}
+      APSP_IPQUALITY_BUILDER_IMAGE_SHA256_ARM64: ${{ vars.APSP_IPQUALITY_BUILDER_IMAGE_SHA256_ARM64 }}
+      APSP_IPQUALITY_LICENSE_REVIEW: ${{ vars.APSP_IPQUALITY_LICENSE_REVIEW }}
+      APSP_DEBIAN_KEYRING_PROVENANCE: ${{ vars.APSP_DEBIAN_KEYRING_PROVENANCE }}
+      APSP_DEBIAN_KEYRING_PROVENANCE_AMD64: ${{ vars.APSP_DEBIAN_KEYRING_PROVENANCE_AMD64 }}
+      APSP_DEBIAN_KEYRING_PROVENANCE_ARM64: ${{ vars.APSP_DEBIAN_KEYRING_PROVENANCE_ARM64 }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Install native diagnostic packaging prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ca-certificates curl tar gzip binutils python3 coreutils
+      - name: Prepare self-contained Network Workbench and NodeQuality -r22 bundles with corresponding sources
+        run: |
+          install -d -m 0700 "$HOME/apsp-diag-inputs" "$HOME/apsp-diag-work" "$HOME/apsp-diag-work/bundled"
+          python3 tools/prepare-agent-linux-inputs.py prepare-bundled-tools \
+            --arch '${{ matrix.arch }}' \
+            --artifact-root "$HOME/apsp-diag-inputs" \
+            --work-dir "$HOME/apsp-diag-work/bundled"
+      - name: Stage approved IPQuality governance inputs and build offline rootfs with corresponding sources
+        env:
+          TARGET_ARCH: ${{ matrix.arch }}
+          TARGET_ARCH_UPPER: ${{ matrix.arch_upper }}
+        run: |
+          install -d -m 0700 "$HOME/apsp-diag-approval" "$HOME/apsp-diag-work/ipquality"
+          builder_sha=$(python3 - <<'PY'
+          import json, os, pathlib, re
+
+          arch_upper = os.environ['TARGET_ARCH_UPPER']
+          builder = (
+              os.environ.get(f'APSP_IPQUALITY_BUILDER_IMAGE_SHA256_{arch_upper}', '').strip()
+              or os.environ.get('APSP_IPQUALITY_BUILDER_IMAGE_SHA256', '').strip()
+          )
+          if not re.fullmatch(r'[0-9a-f]{64}', builder):
+              raise SystemExit(
+                  f'Missing or invalid approved Debian 12 builder image SHA256 for {arch_upper}; '
+                  'configure APSP_IPQUALITY_BUILDER_IMAGE_SHA256(_AMD64/_ARM64) before building release candidates'
+              )
+          license_raw = os.environ.get('APSP_IPQUALITY_LICENSE_REVIEW', '').strip()
+          if not license_raw:
+              raise SystemExit('Missing APSP_IPQUALITY_LICENSE_REVIEW controlled repository variable')
+          keyring_raw = (
+              os.environ.get(f'APSP_DEBIAN_KEYRING_PROVENANCE_{arch_upper}', '').strip()
+              or os.environ.get('APSP_DEBIAN_KEYRING_PROVENANCE', '').strip()
+          )
+          if not keyring_raw:
+              raise SystemExit(f'Missing APSP_DEBIAN_KEYRING_PROVENANCE(_{arch_upper}) controlled repository variable')
+          json.loads(license_raw)
+          json.loads(keyring_raw)
+
+          approval = pathlib.Path.home() / 'apsp-diag-approval'
+          for filename, payload in (
+              ('license-review.json', license_raw + '\n'),
+              ('keyring-provenance.json', keyring_raw + '\n'),
+          ):
+              target = approval / filename
+              target.write_text(payload, encoding='utf-8')
+              target.chmod(0o600)
+          print(builder)
+          PY
+          )
+          python3 tools/prepare-agent-linux-inputs.py prepare-ipquality \
+            --arch "$TARGET_ARCH" \
+            --artifact-root "$HOME/apsp-diag-inputs" \
+            --work-dir "$HOME/apsp-diag-work/ipquality" \
+            --approved-builder-image-sha256 "$builder_sha" \
+            --license-review-file "$HOME/apsp-diag-approval/license-review.json" \
+            --keyring-provenance-file "$HOME/apsp-diag-approval/keyring-provenance.json"
+          sudo chown -R "$(id -u):$(id -g)" "$HOME/apsp-diag-inputs"
+      - name: Stage disjoint binary embed inputs and paired corresponding source archives
+        env:
+          TARGET_ARCH: ${{ matrix.arch }}
+        run: |
+          python3 - <<'PY'
+          import os, pathlib, shutil
+
+          arch = os.environ['TARGET_ARCH']
+          src = pathlib.Path.home() / 'apsp-diag-inputs'
+          temp = pathlib.Path(os.environ['RUNNER_TEMP'])
+          embed_out = temp / 'embed-diag-out'
+          sources_out = temp / 'release-sources-out'
+
+          components = (
+              ('nodequality', 'a92fca6c0067df29ddd03fdc2fee6f3000f64545-r22'),
+              ('network-workbench', '1.0.0'),
+              ('ipquality', '87397e2c3196ec796f5477c83343c2354df601ea-node-r1'),
+          )
+          for name, version in components:
+              archive = src / name / version / arch
+              paired = src / name / version / f'{arch}.sources.tar.gz'
+              for candidate in (archive, paired):
+                  if candidate.is_symlink() or not candidate.is_file() or candidate.stat().st_size <= 0:
+                      raise SystemExit(f'Missing or invalid prepared input: {candidate}')
+              dest_embed = embed_out / name / version / arch
+              dest_embed.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copy2(archive, dest_embed)
+
+              dest_source = sources_out / name / version / f'{arch}.sources.tar.gz'
+              dest_source.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copy2(paired, dest_source)
+              if name == 'ipquality':
+                  # Retain the offline IPQuality archive for draft-stage source-offer cross-checking;
+                  # release.py assemble emits only raw Agent binaries and paired source tarballs.
+                  shutil.copy2(archive, sources_out / name / version / arch)
+          PY
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: input-diagnostics-linux-${{ matrix.arch }}
+          path: ${{ runner.temp }}/embed-diag-out/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: release-sources-diagnostics-${{ matrix.arch }}
+          path: ${{ runner.temp }}/release-sources-out/
+          if-no-files-found: error
+
+  agent:
+    needs: [metadata, runtime-inputs, diagnostic-inputs]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            libc: musl
+            runner: ubuntu-24.04
+            rust_target: x86_64-unknown-linux-musl
+            runtime_target: linux-musl-amd64
+            release_target: amd64
+            artifact_key: linux-musl-amd64
+          - arch: arm64
+            libc: musl
+            runner: ubuntu-24.04-arm
+            rust_target: aarch64-unknown-linux-musl
+            runtime_target: linux-musl-arm64
+            release_target: arm64
+            artifact_key: linux-musl-arm64
+          - arch: amd64
+            libc: gnu
+            runner: ubuntu-24.04
+            rust_target: x86_64-unknown-linux-gnu
+            runtime_target: linux-gnu-amd64
+            release_target: linux-gnu-amd64
+            artifact_key: linux-gnu-amd64
+          - arch: arm64
+            libc: gnu
+            runner: ubuntu-24.04-arm
+            rust_target: aarch64-unknown-linux-gnu
+            runtime_target: linux-gnu-arm64
+            release_target: linux-gnu-arm64
+            artifact_key: linux-gnu-arm64
+    env:
+      APSP_RELEASE_PUBLIC_KEYS: ${{ vars.APSP_RELEASE_PUBLIC_KEYS }}
+      APSP_RELEASE_EMBED_REQUIRED: '1'
+      APSP_NATIVE_TCP_SOURCE_COMMIT: ${{ github.sha }}
+      AGENT_VERSION: ${{ needs.metadata.outputs.agent_version }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+      - uses: Swatinem/rust-cache@v2.9.2
+        with:
+          key: release-self-contained-${{ matrix.rust_target }}
+      - name: Install native compiler toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends musl-tools build-essential binutils python3 coreutils
+      - name: Download exact target runtime archive (ABI, arch and Cronet matched)
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: input-runtime-${{ matrix.runtime_target }}
+          path: ${{ runner.temp }}/embed-inputs
+      - name: Download exact architecture diagnostic bundles
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: input-diagnostics-linux-${{ matrix.arch }}
+          path: ${{ runner.temp }}/embed-inputs
+      - name: Build and verify self-contained static musl raw Agent
+        if: matrix.libc == 'musl'
+        run: bash tools/build-agent.sh '${{ matrix.arch }}' '${{ runner.temp }}/embed-inputs'
+      - name: Build and verify self-contained dynamic GNU raw Agent
+        if: matrix.libc == 'gnu'
+        env:
+          RUSTFLAGS: -Ctarget-feature=-crt-static
+        run: python3 tools/build-agent.py '${{ matrix.rust_target }}' '${{ runner.temp }}/embed-inputs'
+      - name: Stage canonical raw Agent binary for draft assembly
+        env:
+          RELEASE_TARGET: ${{ matrix.release_target }}
+        run: |
+          src='${{ runner.temp }}/embed-inputs/agent/'"$AGENT_VERSION/$RELEASE_TARGET"
+          test -f "$src" && test ! -L "$src"
+          dest='${{ runner.temp }}/release-agent-out/agent/'"$AGENT_VERSION"
+          mkdir -p "$dest"
+          cp -p "$src" "$dest/$RELEASE_TARGET"
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: release-agent-${{ matrix.artifact_key }}
+          path: ${{ runner.temp }}/release-agent-out/
           if-no-files-found: error
 
   draft:
-    needs: [metadata, agent, runtime, nodequality]
+    needs: [metadata, runtime-inputs, diagnostic-inputs, agent]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -159,10 +362,24 @@ jobs:
           pattern: release-*
           merge-multiple: true
           path: ${{ runner.temp }}/artifacts
-      - name: Render immutable installer and canonical manifests
+      - name: Render immutable installer and canonical self-contained release manifests
         run: |
-          python3 tools/release.py render-installer --template deploy/install.sh.tmpl --agent-unit deploy/apsp-agent.service --runtime-unit deploy/apsp-singbox@.service --output '${{ runner.temp }}/install.sh'
-          python3 tools/release.py assemble --source '${{ runner.temp }}/artifacts' --output '${{ runner.temp }}/release' --agent-version "$AGENT_VERSION" --runtime-version 1.14.4-apsp.2 --include-musl-runtime --tag "$RELEASE_TAG" --installer '${{ runner.temp }}/install.sh'
+          python3 tools/release.py render-installer \
+            --template deploy/install.sh.tmpl \
+            --agent-unit deploy/apsp-agent.service \
+            --runtime-unit deploy/apsp-singbox@.service \
+            --output '${{ runner.temp }}/install.sh'
+          python3 tools/release.py assemble \
+            --source '${{ runner.temp }}/artifacts' \
+            --output '${{ runner.temp }}/release' \
+            --agent-version "$AGENT_VERSION" \
+            --tag "$RELEASE_TAG" \
+            --installer '${{ runner.temp }}/install.sh' \
+            --target amd64 \
+            --target arm64 \
+            --target linux-gnu-amd64 \
+            --target linux-gnu-arm64 \
+            --require-paired-sources
       - name: Create draft without any signing secret
         run: |
           python3 - <<'PY'
@@ -170,27 +387,18 @@ jobs:
           import os
           Path(os.environ['RUNNER_TEMP'], 'release-notes.md').write_text(
               '本草稿尚未签名，不能用于安装。\n\n'
+              '仅发布各平台一体化自包含 raw Agent 与对应源码包，不分发独立可选装运行时或诊断程序。\n'
               '在离线设备签名 SHA256SUMS，上传完整 SHA256SUMS.minisig，'
               '再手动运行签名与全部资产校验。CI 不保存正式私钥。\n')
           PY
           python3 tools/publish.py check-tag --tag "$RELEASE_TAG" --expected-sha "$BUILD_SHA"
-          gh release create "$RELEASE_TAG" '${{ runner.temp }}/release/'* --repo '${{ github.repository }}' --verify-tag --target "$BUILD_SHA" --draft --title "Agent $AGENT_VERSION" --notes-file '${{ runner.temp }}/release-notes.md'
-
-  nodequality:
-    needs: metadata
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v7.0.1
-      - name: Package the pinned NodeQuality wrapper for both architectures
-        run: |
-          bash tools/build-nodequality.sh amd64 '${{ runner.temp }}/artifacts'
-          bash tools/build-nodequality.sh arm64 '${{ runner.temp }}/artifacts'
-      - uses: actions/upload-artifact@v7.0.1
-        with:
-          name: release-nodequality-both
-          path: ${{ runner.temp }}/artifacts/
-          if-no-files-found: error
+          gh release create "$RELEASE_TAG" '${{ runner.temp }}/release/'* \
+            --repo '${{ github.repository }}' \
+            --verify-tag \
+            --target "$BUILD_SHA" \
+            --draft \
+            --title "Agent $AGENT_VERSION" \
+            --notes-file '${{ runner.temp }}/release-notes.md'
 
   verify-publication:
     if: github.event_name == 'workflow_dispatch'
@@ -209,7 +417,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends minisign
-      - name: Verify signed assets, tagged main CI and publication identities
+      - name: Verify signed raw Agents, corresponding sources, tagged main CI and publication identities
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -218,7 +426,12 @@ jobs:
           PY
           publication_args=()
           if [[ "$PUBLISH" == true ]]; then publication_args+=(--publish); fi
-          python3 tools/publish.py --evidence '${{ runner.temp }}/publication-evidence.json' verify-publication --trusted-keys '${{ runner.temp }}/production-public-keys.json' --tag "$RELEASE_TAG" "${publication_args[@]}"
+          python3 tools/publish.py \
+            --evidence '${{ runner.temp }}/publication-evidence.json' \
+            verify-publication \
+            --trusted-keys '${{ runner.temp }}/production-public-keys.json' \
+            --tag "$RELEASE_TAG" \
+            "${publication_args[@]}"
       - uses: actions/upload-artifact@v7.0.1
         with:
           name: release-publication-evidence

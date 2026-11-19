@@ -31,7 +31,20 @@ const isSimple = (entry: (typeof pageEntries)[number]): entry is SimpleEntry => 
 const pages = new Map<string, SimplePage>(pageEntries.filter(isSimple)
   .flatMap(entry => [entry.path, ...('aliases' in entry ? entry.aliases : [])].map(path => [path, entry.page] as const)))
 
-export function resolveRoute(path: string): AppRoute {
+/**
+ * External addresses already issued to proxy users and members (ADR 0126, ADR 0140)
+ * rewrite `/plugins/sing-box/{account,member,join}` to `/{account,member,join}` while
+ * leaving console routes and other paths untouched.
+ */
+export function canonicalUserPath(raw: string): string {
+  const stripped = raw.startsWith('#') ? raw.slice(1) : raw
+  const candidate = stripped.startsWith('/') ? stripped : `/${stripped}`
+  const match = candidate.match(/^\/plugins\/sing-box\/(account|member|join)(?=$|[/?])/)
+  return match ? `/${match[1]}${candidate.slice(match[0].length)}` : raw
+}
+
+export function resolveRoute(rawPath: string): AppRoute {
+  const path = canonicalUserPath(rawPath)
   if (path === '/member') return { page: 'member-login' }
   if (path === '/join') return { page: 'member-join' }
   const join = path.match(/^\/join\/([A-Za-z0-9_-]{43}|[A-Za-z0-9]{4}(?:-?[A-Za-z0-9]{4}){3})$/)
@@ -41,14 +54,11 @@ export function resolveRoute(path: string): AppRoute {
   const display = dashboardRoute(path)
   if (display) return { page: 'dashboard', ...display }
 
-  // `plugins` is the network services tab's address until 2026-11-09 (ADR 0131); kept for one release.
-  const server = path.match(/^\/servers\/([1-9]\d*)(?:\/(assets|agent|ip-info|node-quality|tcp-quality|services|plugins|ddns|fleet|network-workbench|network-configuration|operations))?$/)
+  const server = path.match(/^\/servers\/([1-9]\d*)(?:\/(assets|agent|ip-info|node-quality|tcp-quality|services|ddns|fleet|network-workbench|network-configuration|operations))?$/)
   if (server && Number.isSafeInteger(Number(server[1]))) {
-    const section = server[2] === 'plugins' ? 'services' : server[2]
+    const section = server[2]
     return { page: 'server', serverId: Number(server[1]), section: section as ServerSection | undefined }
   }
-  // The plugin centre's runtime list until 2026-11-09 is now a view of the network services workspace.
-  if (path === '/settings/plugins/servers') return { page: 'nodes', view: 'runtimes' }
 
   if (path === '/users') return { page: 'proxy-users' }
   const proxyUser = path.match(/^\/users\/([1-9]\d*)$/)

@@ -752,3 +752,212 @@ async fn a_superseded_probe_keeps_its_history_and_requires_a_new_request_without
     );
     Ok(())
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn placeholder_probe_never_blocks_draft_delete_while_dispatched_chain_requires_verified_revocation(
+    pool: PgPool,
+) -> Result<()> {
+    let fixture = fixture(pool.clone()).await?;
+    let entry_server = fixture
+        .panel
+        .create_server(&fixture.cookie, "Pure subscription entry")
+        .await?;
+
+    // 1. Pure subscription exit (0 managed hops) on an offline/unprepared entry server:
+    // `reconcile_pending` creates a `request_id IS NULL` probe placeholder and enters
+    // `preparing_entry` before any deployment is published. Deleting this undispatched candidate
+    // must settle to `retired` without hanging on a retiring checkpoint.
+    let draft_receipt = api(
+        &fixture.panel,
+        &fixture.cookie,
+        Method::POST,
+        "/chains/ordered-batch",
+        Some(json!({
+            "request_id": Uuid::new_v4(),
+            "items": [{
+                "name": "Undispatched pure subscription draft",
+                "entry": {
+                    "mode": "new",
+                    "server_id": entry_server,
+                    "public_host": "draft.example.net",
+                    "sni": "www.example.com",
+                },
+                "hops": [{
+                    "kind": "subscription",
+                    "source_id": fixture.source,
+                    "external_node_id": fixture.external["id"],
+                    "node_version_id": fixture.external["version_id"],
+                    "update_mode": "pinned",
+                }],
+            }],
+        })),
+        StatusCode::CREATED,
+    )
+    .await?;
+    let draft = chain(&draft_receipt)?;
+    apsp_traffic::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
+    assert_eq!(phase(&fixture, draft).await?, "preparing_entry");
+    let placeholders: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM singbox_path_probes WHERE chain_id=$1 AND request_id IS NULL",
+    )
+    .bind(draft)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(placeholders, 1);
+
+    api(
+        &fixture.panel,
+        &fixture.cookie,
+        Method::DELETE,
+        &format!("/ordered-proxy-resources/chain/{draft}"),
+        None,
+        StatusCode::NO_CONTENT,
+    )
+    .await?;
+    apsp_traffic::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
+    assert_eq!(phase(&fixture, draft).await?, "retired");
+    let preserved_probes: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM singbox_path_probes WHERE chain_id=$1")
+            .bind(draft)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(preserved_probes, 1);
+    let after_draft = api(
+        &fixture.panel,
+        &fixture.cookie,
+        Method::GET,
+        &format!("/servers/{entry_server}"),
+        None,
+        StatusCode::OK,
+    )
+    .await?;
+    assert_eq!(after_draft["configured"], false);
+
+    // 2. Once a chain has been published/dispatched, retirement must wait for a live verified
+    // retiring checkpoint and never accept NULL key, applied_rev = 0, missing applied module or
+    // offline_unconfirmed server soft-deletion as a shortcut.
+    mark_verified_self_contained_agent(
+        &pool,
+        entry_server,
+        &fixture.agent_sha,
+        &fixture.singbox_sha,
+    )
+    .await?;
+    let active_receipt = api(
+        &fixture.panel,
+        &fixture.cookie,
+        Method::POST,
+        "/chains/ordered-batch",
+        Some(json!({
+            "request_id": Uuid::new_v4(),
+            "items": [{
+                "name": "Dispatched chain",
+                "entry": {
+                    "mode": "new",
+                    "server_id": entry_server,
+                    "public_host": "live.example.net",
+                    "sni": "www.example.com",
+                },
+                "hops": [{
+                    "kind": "subscription",
+                    "source_id": fixture.source,
+                    "external_node_id": fixture.external["id"],
+                    "node_version_id": fixture.external["version_id"],
+                    "update_mode": "pinned",
+                }],
+            }],
+        })),
+        StatusCode::CREATED,
+    )
+    .await?;
+    let live_chain = chain(&active_receipt)?;
+    advance(&fixture, live_chain, "applied").await?;
+
+    api(
+        &fixture.panel,
+        &fixture.cookie,
+        Method::DELETE,
+        &format!("/ordered-proxy-resources/chain/{live_chain}"),
+        None,
+        StatusCode::NO_CONTENT,
+    )
+    .await?;
+    let during_retiring = api(
+        &fixture.panel,
+        &fixture.cookie,
+        Method::GET,
+        &format!("/servers/{entry_server}"),
+        None,
+        StatusCode::OK,
+    )
+    .await?;
+    assert_eq!(during_retiring["configured"], true);
+    fixture.panel.publish_now().await?;
+
+    // Shortcut attempts: NULL device key, isolated applied_rev=0, and unconfirmed soft-delete.
+    sqlx::query("UPDATE servers SET device_public_key=NULL WHERE id=$1")
+        .bind(entry_server)
+        .execute(&pool)
+        .await?;
+    apsp_traffic::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
+    assert_eq!(phase(&fixture, live_chain).await?, "retiring");
+
+    mark_verified_self_contained_agent(
+        &pool,
+        entry_server,
+        &fixture.agent_sha,
+        &fixture.singbox_sha,
+    )
+    .await?;
+    sqlx::query("UPDATE server_module_status SET applied_rev=0,healthy=FALSE WHERE server_id=$1")
+        .bind(entry_server)
+        .execute(&pool)
+        .await?;
+    apsp_traffic::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
+    assert_eq!(phase(&fixture, live_chain).await?, "retiring");
+
+    sqlx::query("UPDATE servers SET deleted_at=1 WHERE id=$1")
+        .bind(entry_server)
+        .execute(&pool)
+        .await?;
+    apsp_traffic::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
+    assert_eq!(phase(&fixture, live_chain).await?, "retiring");
+
+    // Restore live authenticated session and certify the retiring deployment checkpoint.
+    sqlx::query("UPDATE servers SET deleted_at=NULL WHERE id=$1")
+        .bind(entry_server)
+        .execute(&pool)
+        .await?;
+    mark_verified_self_contained_agent(
+        &pool,
+        entry_server,
+        &fixture.agent_sha,
+        &fixture.singbox_sha,
+    )
+    .await?;
+    confirm_devices(&fixture.panel.state).await?;
+    apsp_traffic::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
+    assert_eq!(phase(&fixture, live_chain).await?, "retired");
+    fixture.panel.publish_now().await?;
+    let settled = api(
+        &fixture.panel,
+        &fixture.cookie,
+        Method::GET,
+        &format!("/servers/{entry_server}"),
+        None,
+        StatusCode::OK,
+    )
+    .await?;
+    assert_eq!(settled["configured"], false);
+    assert_eq!(settled["status"]["state"], "unconfigured");
+    let info: Value = sqlx::query_scalar("SELECT static_info FROM servers WHERE id=$1")
+        .bind(entry_server)
+        .fetch_one(&pool)
+        .await?;
+    assert!(
+        apsp_traffic::agent::manifest_module(&fixture.panel.state, entry_server, &info)
+            .await?
+            .is_none()
+    );
+    Ok(())
+}

@@ -18,6 +18,82 @@ pub fn held_host_sql(server: &str) -> String {
 pub fn runtime_line_sql(node: &str) -> String {
     format!("EXISTS(SELECT 1 FROM singbox_nexus_runtime_nodes r WHERE r.node_id={node})")
 }
+
+/// Old lines in an original group that cannot yet be replaced by native delivery.
+/// This inventory check belongs with runtime ownership, not with user accounts.
+pub async fn unmanaged_group_lines(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    group: Option<i64>,
+) -> sqlx::Result<Vec<i64>> {
+    sqlx::query_scalar("SELECT i.legacy_node_id FROM singbox_nexus_nodes i LEFT JOIN singbox_nexus_runtime_nodes r ON r.inventory_id=i.id LEFT JOIN singbox_nexus_runtime_hosts h ON h.server_id=r.server_id LEFT JOIN server_module_status m ON m.server_id=r.server_id AND m.module='singbox' LEFT JOIN servers s ON s.id=r.server_id WHERE i.display->'groups' @> jsonb_build_array(jsonb_build_object('id',$1::bigint)) AND (h.state IS DISTINCT FROM 'active' OR s.deleted_at IS NOT NULL OR s.last_seen IS NULL OR s.last_seen<$2 OR m.healthy IS DISTINCT FROM TRUE OR m.applied_rev IS DISTINCT FROM m.target_rev OR COALESCE(m.applied_rev,0)<=0) ORDER BY i.legacy_node_id")
+        .bind(group).bind(apsp_protocol::now_timestamp()-60).fetch_all(&mut **tx).await
+}
+
+/// Original credentials for migrated nodes, also when a blocked user's listener
+/// is intentionally absent from the applied configuration. They are stored only
+/// as ordinary grants; eligibility still controls publication and subscription.
+pub async fn adoption_nodes(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    ids: &[i64],
+    user: i64,
+    identity: uuid::Uuid,
+) -> anyhow::Result<Vec<apsp_compiler::Node>> {
+    let query = format!(
+        "SELECT {} FROM nodes n WHERE n.id=ANY($1) AND n.deleted_at IS NULL AND {} ORDER BY n.id",
+        crate::business::NODE_COLUMNS,
+        runtime_line_sql("n.id")
+    );
+    let rows: Vec<crate::business::NodeRow> = sqlx::query_as(&query)
+        .bind(ids)
+        .fetch_all(&mut **tx)
+        .await?;
+    rows.iter()
+        .map(|row| {
+            let mut node = row.model(Vec::new())?;
+            node.users.push(apsp_compiler::preserved::nexus_access(
+                user,
+                identity,
+                &node.protocol_config,
+            ));
+            Ok(node)
+        })
+        .collect()
+}
+/// Preserved lines on the requested hosts, as `(server_id, node_id)` pairs.
+pub async fn host_runtime_nodes(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    servers: &[i64],
+) -> sqlx::Result<Vec<(i64, i64)>> {
+    sqlx::query_as(
+        "SELECT server_id,node_id FROM singbox_nexus_runtime_nodes WHERE server_id=ANY($1) ORDER BY server_id,node_id",
+    )
+    .bind(servers)
+    .fetch_all(&mut **tx)
+    .await
+}
+
+/// Preserved line IDs on one active migrated host; empty when the host is not active.
+pub async fn active_runtime_nodes(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    server: i64,
+) -> sqlx::Result<Vec<i64>> {
+    sqlx::query_scalar(
+        "SELECT r.node_id FROM singbox_nexus_runtime_nodes r JOIN singbox_nexus_runtime_hosts h ON h.server_id=r.server_id WHERE r.server_id=$1 AND h.state='active'",
+    )
+    .bind(server)
+    .fetch_all(&mut **tx)
+    .await
+}
+
+/// Active migrated hosts whose Agent advertises `capability`.
+pub async fn active_capable_hosts(pool: &sqlx::PgPool, capability: &str) -> sqlx::Result<Vec<i64>> {
+    sqlx::query_scalar(
+        "SELECT h.server_id FROM singbox_nexus_runtime_hosts h JOIN servers s ON s.id=h.server_id WHERE h.state='active' AND s.deleted_at IS NULL AND s.capabilities @> jsonb_build_array($1::text) ORDER BY h.server_id",
+    )
+    .bind(capability)
+    .fetch_all(pool)
+    .await
+}
 pub mod topology;
 
 use crate::{

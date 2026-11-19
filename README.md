@@ -25,7 +25,7 @@ apsp 用一个面板管理分散在各家的服务器：每台服务器安装一
 | 用户、策略组与套餐 | 策略组决定能用哪些节点，套餐决定流量额度、有效期和重置周期 | [策略与套餐](docs/singbox-groups.md) |
 | 订阅与流量账本 | 订阅预览、复制、下载与重置；逐用户、逐节点的精确流量 | [安装与控制流程](docs/singbox-installation.md) |
 | 用户自助门户 | 用户用 Passkey 登录自己的页面，查看订阅与用量 | [Passkey](docs/passkeys.md) |
-| 部署与运行时运维 | 配置预检、发布、运行时状态与日志、重启与部署重试 | [运维流程](docs/singbox-operations-workflows.md) |
+| 部署与运行时运维 | 自动发布、按需环境与偏差检查、运行时状态与日志、受控恢复与部署重试 | [运维流程](docs/singbox-operations-workflows.md) |
 
 ### 服务器运营（支撑）
 
@@ -52,14 +52,14 @@ apsp 用一个面板管理分散在各家的服务器：每台服务器安装一
    ```
 
    面板默认监听 `http://127.0.0.1:8080`，远端 Agent 接入和 Passkey 需要可达的 HTTPS 地址。`scripts/panel.py` 还提供状态、日志、自检和私有备份；升级前会先备份，保留凭据与数据卷。
-2. **接入服务器。** 登录后在「服务器列表」添加服务器，复制一次性安装命令到服务器上执行：Linux、macOS、FreeBSD 使用 Shell 入口，Windows 使用 PowerShell 入口。安装前，维护者需按[制品导入流程](docs/deploy.md#导入签名-release)准备对应架构的已签 Release。
-3. **配置服务。** 登录后的「概览」会列出需要处理的事项和开始使用步骤：按步骤为服务器安装 sing-box，创建节点和链路，再创建用户、分配策略组与套餐，把门户开通链接发给对方。
+2. **接入服务器。** 登录后在「服务器列表」添加服务器，复制一次性安装命令到服务器上执行：Linux、macOS、FreeBSD 使用 Shell 入口，Windows 使用 PowerShell 入口。（部署所有者首次搭建或发布新版 Agent 时，先按[收录签名 Release](docs/deploy.md#导入签名-release)登记可选的已签 Agent 版本；日常接入无需逐台准备制品。）
+3. **配置服务。** 登录后的「概览」会列出需要处理的事项和开始使用步骤：创建节点和链路，再创建用户、分配策略组与套餐，把门户开通链接发给对方。在线的一体化 Agent 收到有效服务配置后自动拉起并管理内置 sing-box，无需手工安装运行时；未配置服务的服务器保持监控模式。
 
 ## 平台与安全边界
 
 - Agent 支持 Linux systemd/OpenRC、macOS launchd、FreeBSD rc.d 和 Windows 计划任务，各平台制品与升级范围见[设备平台与能力](docs/platforms.md)。
-- Agent 二进制只从 GitHub Release 或配置的独立 HTTPS 镜像下载，面板不提供 Agent 二进制。安装和自动更新独立验签，设备只应用内嵌公钥认可的制品；运行时和配置仍经面板分发。
-- 运行时为上游 sing-box 1.14.2 加 `tools/singbox-runtime/` 的补丁（ADR 0104），保留官方默认构建标签并启用统计 API。
+- Agent 二进制只从 GitHub Release 或配置的独立 HTTPS 镜像下载，安装和自动更新独立验签，设备只执行内嵌公钥认可的签名发布。对应平台的 sing-box 运行时与受控诊断能力随一体化 Agent 整包内置（Linux 正式发布强制内嵌 `sing-box`、`-r22` `nodequality`、`ipquality`、`network-workbench` 四组件闭环及原生 `tcp-probe`；一体化新版本正式签名发布与实机切换待按流程执行），面板不分发 Agent、运行时或诊断工具二进制，只下发服务配置与任务指令。
+- 运行时为上游 sing-box 1.14.4（当前 `1.14.4-apsp.2`）加 `tools/singbox-runtime/` 的补丁（ADR 0104），保留官方默认构建标签并启用统计 API。
 - 管理员登录支持限速、TOTP 二步验证和 Passkey；用户与管理员使用独立会话。
 - 删除在线服务器时先停止服务、清除设备凭据；离线服务器只删除面板记录，本地服务需手动停用。
 - NodeQuality 完整验机暂停新任务，限制见[安全门禁](docs/acceptance/nodequality-full-start-gate.md)。生产迁移、正式发布与实机验收按各功能文档的边界单独执行。
@@ -69,7 +69,7 @@ apsp 用一个面板管理分散在各家的服务器：每台服务器安装一
 - [功能地图](docs/product-map.md)：定位、功能分级、归类规则和界面用语；新功能先确认所属功能区。
 - [代码目录与维护约定](docs/repository.md)、[开发指南](docs/dev.md)、[发布流程](docs/release.md)。
 - [HTTP API](docs/api.md)、[设备协议](docs/protocol.md)、[架构决策索引](docs/adr/README.md)。
-- [PROGRESS](PROGRESS.md) 记录历史进度，[验收索引](docs/acceptance/README.md)记录实机门禁与证据。仓库与部署命名统一为 `apsp`，既有安装的迁移见[改名说明](docs/apsp-renaming.md)。
+- [PROGRESS](PROGRESS.md) 记录近期交付、验证与当前阻塞，[验收索引](docs/acceptance/README.md)记录实机门禁与证据。仓库与部署命名统一为 `apsp`，既有安装的迁移见[改名说明](docs/apsp-renaming.md)。
 
 GitHub Actions 当前按协作安排暂停，只做本地验证。未运行或取消的 CI 不代表通过，恢复条件见 [AGENTS.md](AGENTS.md#临时-ci-暂停2026-10-01-用户要求)。
 

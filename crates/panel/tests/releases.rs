@@ -194,7 +194,18 @@ async fn interrupted_and_tampered_imports_keep_previous_release_unchanged() -> R
     )
     .await?;
     let before = snapshot(&fixture.release_root())?;
-    let candidate = bundle("0.4.0", (1, 1), b"next agent", Some(b"runtime"))?;
+    // 0.4.0+ releases are strictly self-contained raw Agent binaries and reject separate archives.
+    assert!(matches!(
+        import(
+            &fixture.state,
+            bundle("0.4.0", (1, 1), b"next agent", Some(b"legacy runtime"))?,
+        )
+        .await,
+        Err(ApiError::Conflict(_))
+    ));
+    assert_eq!(snapshot(&fixture.release_root())?, before);
+
+    let candidate = bundle("0.4.0", (1, 1), b"next agent", None)?;
     let assets = candidate.assets.clone();
     let result = releases::import_bundle_for_targets(
         &fixture.state,
@@ -204,8 +215,8 @@ async fn interrupted_and_tampered_imports_keep_previous_release_unchanged() -> R
         move |name, _| {
             let bytes = assets.get(&name).cloned();
             async move {
-                if name.starts_with("sing-box-") {
-                    bail!("fixture download interrupted after Agent staging");
+                if name.starts_with("agent-") {
+                    bail!("fixture download interrupted during Agent staging");
                 }
                 bytes.context("fixture asset missing")
             }
@@ -245,7 +256,7 @@ async fn interrupted_and_tampered_imports_keep_previous_release_unchanged() -> R
 async fn idempotence_reuses_valid_bytes_and_repairs_damaged_signed_payloads() -> Result<()> {
     let fixture = Fixture::new()?;
     let bundle = bundle("0.3.0", (1, 1), b"agent", Some(b"runtime"))?;
-    assert_eq!(import(&fixture.state, bundle.clone()).await?, 2);
+    assert_eq!(import(&fixture.state, bundle.clone()).await?, 1);
     let before = snapshot(&fixture.release_root())?;
     let count = releases::import_bundle_for_targets(
         &fixture.state,
@@ -255,50 +266,58 @@ async fn idempotence_reuses_valid_bytes_and_repairs_damaged_signed_payloads() ->
         |_, _| async { bail!("idempotent import must use verified existing bytes") },
     )
     .await?;
-    assert_eq!(count, 2);
+    assert_eq!(count, 1);
     assert_eq!(snapshot(&fixture.release_root())?, before);
-    assert_eq!(releases::entries(&fixture.state).await?.len(), 2);
+    let agents = releases::signed_agents(&fixture.state).await?;
+    assert_eq!(agents.len(), 1);
+    assert_eq!(agents[0].sha256, signing::hash(b"agent"));
     let path = fixture
         .release_root()
         .join(&bundle.tag)
         .join("agent/0.3.0")
         .join(native_arch()?);
     std::fs::write(&path, b"changed bytes")?;
-    assert_eq!(import(&fixture.state, bundle).await?, 2);
+    assert_eq!(import(&fixture.state, bundle).await?, 1);
     assert_eq!(std::fs::read(&path)?, b"agent");
-    assert_eq!(
-        releases::artifact(&fixture.state, "agent", "0.3.0", native_arch()?)
-            .await?
-            .0,
-        b"agent"
-    );
+    let repaired = releases::signed_agents(&fixture.state).await?;
+    assert_eq!(repaired[0].sha256, signing::hash(b"agent"));
     Ok(())
 }
 
 #[tokio::test]
-async fn immutable_component_hash_conflicts_reject_new_tags() -> Result<()> {
+async fn immutable_agent_hash_conflicts_reject_new_tags() -> Result<()> {
     let fixture = Fixture::new()?;
-    import(
-        &fixture.state,
-        bundle("0.3.0", (1, 1), b"agent first", Some(b"runtime first"))?,
-    )
-    .await?;
+    let original = bundle("0.3.0", (1, 1), b"agent first", None)?;
+    import(&fixture.state, original).await?;
     let before = snapshot(&fixture.release_root())?;
-    let conflicting = bundle("0.4.0", (1, 1), b"agent next", Some(b"runtime different"))?;
+
+    let mut conflicting = bundle("0.3.0", (1, 1), b"agent different", None)?;
+    let mut metadata: ReleaseMetadata = serde_json::from_str(&conflicting.proof.metadata_json)?;
+    metadata.tag = "agent-v0.3.1".into();
+    conflicting.tag = metadata.tag.clone();
+    conflicting.proof.metadata_json = format!("{}\n", serde_json::to_string(&metadata)?);
+    conflicting.proof.checksums = conflicting
+        .proof
+        .checksums
+        .lines()
+        .map(|line| {
+            if line.ends_with("  release.json") {
+                format!(
+                    "{}  release.json\n",
+                    signing::hash(conflicting.proof.metadata_json.as_bytes())
+                )
+            } else {
+                format!("{line}\n")
+            }
+        })
+        .collect();
+    conflicting.proof.signature = signing::sign(conflicting.proof.checksums.as_bytes());
+
     assert!(matches!(
         import(&fixture.state, conflicting).await,
         Err(ApiError::Conflict(_))
     ));
     assert_eq!(snapshot(&fixture.release_root())?, before);
-    import(
-        &fixture.state,
-        bundle("0.4.0", (1, 1), b"agent next", Some(b"runtime first"))?,
-    )
-    .await?;
-    assert_eq!(releases::entries(&fixture.state).await?.len(), 3);
-    let (runtime, _, _) =
-        releases::artifact(&fixture.state, "sing-box", "1.14.4-apsp.2", native_arch()?).await?;
-    assert!(!runtime.is_empty());
     Ok(())
 }
 
@@ -359,7 +378,7 @@ async fn symlink_ancestors_and_component_paths_are_rejected_without_external_wri
         )])
     );
     assert!(matches!(
-        releases::entries(&fixture.state).await,
+        releases::signed_agents(&fixture.state).await,
         Err(ApiError::Conflict(_))
     ));
     std::fs::remove_file(fixture.state.config.data_dir.join("artifacts"))?;
@@ -373,7 +392,7 @@ async fn symlink_ancestors_and_component_paths_are_rejected_without_external_wri
     symlink(&moved, &component)?;
     let before = snapshot(&moved)?;
     assert!(matches!(
-        releases::artifact(&fixture.state, "agent", "0.3.0", native_arch()?).await,
+        releases::signed_agents(&fixture.state).await,
         Err(ApiError::Conflict(_))
     ));
     assert!(matches!(
@@ -394,11 +413,7 @@ async fn missing_trust_root_and_custom_source_fields_are_rejected() -> Result<()
     ));
     assert!(!fixture.release_root().exists());
     assert!(matches!(
-        releases::entries(&fixture.state).await,
-        Err(ApiError::Conflict(_))
-    ));
-    assert!(matches!(
-        releases::artifact(&fixture.state, "agent", "0.3.0", native_arch()?).await,
+        releases::signed_agents(&fixture.state).await,
         Err(ApiError::Conflict(_))
     ));
     assert!(matches!(
@@ -415,101 +430,184 @@ async fn missing_trust_root_and_custom_source_fields_are_rejected() -> Result<()
 }
 
 #[test]
-fn native_runtime_archives_require_the_exact_signed_auxiliary_files() -> Result<()> {
-    let binary = b"runtime-fixture";
-    let dll = b"dll-fixture";
-    for (files, accepted) in [
-        (
-            vec![
-                ("sing-box.exe", binary.as_slice()),
-                ("wintun.dll", dll.as_slice()),
-            ],
-            true,
-        ),
-        (vec![("sing-box.exe", binary.as_slice())], false),
-        (
-            vec![
-                ("sing-box.exe", binary.as_slice()),
-                ("wintun.dll", b"changed".as_slice()),
-            ],
-            false,
-        ),
-        (
-            vec![
-                ("sing-box.exe", binary.as_slice()),
-                ("wintun.dll", dll.as_slice()),
-                ("extra.dll", dll.as_slice()),
-            ],
-            false,
-        ),
-        (
-            vec![
-                ("sing-box.exe", binary.as_slice()),
-                ("wintun.dll", dll.as_slice()),
-                ("wintun.dll", dll.as_slice()),
-            ],
-            false,
-        ),
-    ] {
-        let mut archive = tar::Builder::new(flate2::write::GzEncoder::new(
-            Vec::new(),
-            flate2::Compression::default(),
-        ));
-        for (name, bytes) in files {
-            let mut header = tar::Header::new_gnu();
-            header.set_size(bytes.len() as u64);
-            header.set_mode(0o755);
-            header.set_cksum();
-            archive.append_data(&mut header, name, bytes)?;
-        }
-        let bytes = archive.into_inner()?.finish()?;
-        let mut entry = signing::entry(
-            "sing-box",
-            "1.14.4-apsp.2",
-            "sing-box.exe",
-            "tar.gz",
-            &bytes,
-            binary,
-        );
-        entry.arch = "windows-amd64".into();
-        entry.asset_name = apsp_protocol::release::canonical_asset_name(&entry)?;
-        entry.auxiliary_files.insert(
-            "wintun.dll".into(),
-            apsp_protocol::release::ReleaseFile {
-                sha256: signing::hash(dll),
-                size: dll.len() as u64,
-            },
-        );
-        let proof = signing::signed_release(vec![(entry, bytes.clone())]);
-        let release = apsp_protocol::release::verify_release(&proof, &signing::trusted_keys())?;
-        let artifact = release.artifact("sing-box", "1.14.4-apsp.2", "windows-amd64")?;
-        assert_eq!(
-            releases::verify_payload(&artifact, &bytes).is_ok(),
-            accepted
-        );
-    }
-    Ok(())
-}
-
-#[test]
-fn concatenated_gzip_cannot_hide_nonzero_archive_tail() -> Result<()> {
-    use std::io::Write;
+fn verify_payload_accepts_only_raw_agent_entries() -> Result<()> {
     let binary = b"runtime fixture";
-    let mut bytes = release_fixture::archive("sing-box", binary)?;
-    let mut tail = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-    tail.write_all(b"unlisted trailing payload")?;
-    bytes.extend(tail.finish()?);
-    let entry = signing::entry(
+    let archive = release_fixture::archive("sing-box", binary)?;
+    let plugin_entry = signing::entry(
         "sing-box",
         "1.14.4-apsp.2",
         "sing-box",
         "tar.gz",
-        &bytes,
+        &archive,
         binary,
     );
-    let proof = signing::signed_release(vec![(entry, bytes.clone())]);
+    let agent_bytes = b"raw agent binary";
+    let agent_entry = signing::entry(
+        "agent",
+        "0.3.0",
+        "apsp-agent",
+        "raw",
+        agent_bytes,
+        agent_bytes,
+    );
+    let proof = signing::signed_release(vec![
+        (agent_entry, agent_bytes.to_vec()),
+        (plugin_entry, archive.clone()),
+    ]);
     let release = apsp_protocol::release::verify_release(&proof, &signing::trusted_keys())?;
-    let artifact = release.artifact("sing-box", "1.14.4-apsp.2", native_arch()?)?;
-    assert!(releases::verify_payload(&artifact, &bytes).is_err());
+    let plugin_artifact = release.artifact("sing-box", "1.14.4-apsp.2", native_arch()?)?;
+    assert!(releases::verify_payload(&plugin_artifact, &archive).is_err());
+    let agent_artifact = release.artifact("agent", "0.3.0", native_arch()?)?;
+    releases::verify_payload(&agent_artifact, agent_bytes)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn verify_running_component_binds_structured_manifest_cross_abi_sha_and_rejects_spoofing()
+-> Result<()> {
+    use apsp_protocol::release::canonical_asset_name;
+    use release_fixture::{build_signed_agent_entry, pinned_components, write_entries_tagged};
+    use serde_json::json;
+
+    let fixture = Fixture::new()?;
+    let components = pinned_components(&["sing-box", "ipquality", "tcpquality"])?;
+    let ipquality_version = apsp_observability::diagnostic_tools::ipquality::TOOL_VERSION;
+    let tcp_version = apsp_observability::diagnostic_tools::tcpquality::TOOL_VERSION;
+    let stray_rodata_hex = "e".repeat(64);
+
+    let mut artifacts = Vec::new();
+    let mut musl_agent = None;
+    for target in ["linux-gnu-amd64", "linux-musl-amd64"] {
+        let (_, mut agent) = build_signed_agent_entry("0.4.0", target, components.clone())?;
+        agent
+            .raw_binary
+            .extend_from_slice(stray_rodata_hex.as_bytes());
+        let mut entry = signing::entry(
+            "agent",
+            "0.4.0",
+            "apsp-agent",
+            "raw",
+            &agent.raw_binary,
+            &agent.raw_binary,
+        );
+        entry.arch = target.into();
+        entry.asset_name = canonical_asset_name(&entry)?;
+        let agent_sha = entry.binary_sha256.clone();
+        agent.agent_bytes = entry.archive_size;
+        agent
+            .component_digests
+            .insert("agent".into(), agent_sha.clone());
+        agent
+            .component_digests
+            .insert("tcpquality".into(), agent_sha.clone());
+        agent.agent_sha256 = agent_sha;
+        artifacts.push((entry, agent.raw_binary.clone()));
+        if target == "linux-musl-amd64" {
+            musl_agent = Some(agent);
+        }
+    }
+    write_entries_tagged(&fixture.state.config.data_dir, "agent-v0.4.0", artifacts)?;
+    let musl = musl_agent.context("linux-musl-amd64 signed test Agent")?;
+    let musl_sha = musl.agent_sha256.clone();
+    let singbox_sha = musl.component_digests["sing-box"].clone();
+    let ipquality_sha = musl.component_digests["ipquality"].clone();
+
+    let now = apsp_protocol::now_timestamp();
+    // Host reports libc="gnu", so linux-gnu-amd64 is the first target candidate,
+    // while the running static Agent binary is linux-musl-amd64 (musl_sha).
+    let mut valid_info = musl.merge_static_info(&json!({}));
+    valid_info["libc"] = json!("gnu");
+
+    let ipq = releases::verify_running_component(
+        &fixture.state,
+        &valid_info,
+        Some(now),
+        Some(now),
+        now,
+        "ipquality",
+        ipquality_version,
+    )
+    .await?;
+    assert_eq!(ipq.target, "linux-musl-amd64");
+    assert_eq!(ipq.agent_sha256, musl_sha);
+    assert_eq!(ipq.component_sha256, ipquality_sha);
+
+    let tcp = releases::verify_running_component(
+        &fixture.state,
+        &valid_info,
+        Some(now),
+        Some(now),
+        now,
+        "tcpquality",
+        tcp_version,
+    )
+    .await?;
+    assert_eq!(tcp.component_sha256, musl_sha);
+
+    // Cross-component spoofing: claiming sing-box's signed digest for ipquality must fail!
+    let mut swapped = valid_info.clone();
+    swapped["component_digests"]["ipquality"] = json!(singbox_sha);
+    assert!(matches!(
+        releases::verify_running_component(
+            &fixture.state,
+            &swapped,
+            Some(now),
+            Some(now),
+            now,
+            "ipquality",
+            ipquality_version,
+        )
+        .await,
+        Err(ApiError::Conflict(_))
+    ));
+
+    // Unrelated 64-char hex present in .rodata must never validate as a component digest.
+    let mut rodata_spoof = valid_info.clone();
+    rodata_spoof["component_digests"]["ipquality"] = json!(stray_rodata_hex);
+    assert!(matches!(
+        releases::verify_running_component(
+            &fixture.state,
+            &rodata_spoof,
+            Some(now),
+            Some(now),
+            now,
+            "ipquality",
+            ipquality_version,
+        )
+        .await,
+        Err(ApiError::Conflict(_))
+    ));
+
+    // Legacy 0.3.0 Agent without embedded manifest frame must never pass verify_running_component.
+    let legacy_bytes = format!("legacy-agent-{stray_rodata_hex}").into_bytes();
+    let legacy_sha = signing::hash(&legacy_bytes);
+    import(
+        &fixture.state,
+        bundle("0.3.0", (1, 1), &legacy_bytes, None)?,
+    )
+    .await?;
+    let legacy_info = json!({
+        "os": "linux",
+        "arch": native_arch()?,
+        "agent_version": "0.3.0",
+        "components": { "ipquality": ipquality_version },
+        "component_digests": {
+            "agent": legacy_sha,
+            "ipquality": stray_rodata_hex,
+        }
+    });
+    assert!(matches!(
+        releases::verify_running_component(
+            &fixture.state,
+            &legacy_info,
+            Some(now),
+            Some(now),
+            now,
+            "ipquality",
+            ipquality_version,
+        )
+        .await,
+        Err(ApiError::Conflict(_))
+    ));
     Ok(())
 }

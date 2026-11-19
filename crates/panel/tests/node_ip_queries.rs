@@ -196,7 +196,13 @@ async fn deferred_cache_writes_cannot_regress_same_second_revisions_or_jobs(
         .await?;
     prepare(&panel, server).await?;
     let record = create(&panel, server, &cookie).await?;
+    assert_eq!(record["job"]["tool"], "nodequality");
+    assert!(record["job"].get("plugin").is_none());
     let id = record["id"].as_str().unwrap();
+    let stored_job: Value = sqlx::query_scalar("SELECT job FROM diagnostic_jobs WHERE id=$1::uuid")
+        .bind(id)
+        .fetch_one(&panel.state.pool)
+        .await?;
     let at = record["created_at"].as_i64().unwrap();
     let first = section(id, at, 1, false, None);
     assert_eq!(
@@ -204,7 +210,7 @@ async fn deferred_cache_writes_cannot_regress_same_second_revisions_or_jobs(
         StatusCode::NO_CONTENT
     );
     let deferred = parse_section(
-        &record["job"],
+        &stored_job,
         &serde_json::from_value(first.clone())?,
         at,
         at + 390,
@@ -220,7 +226,7 @@ async fn deferred_cache_writes_cannot_regress_same_second_revisions_or_jobs(
     assert_history_false_zero(&view(&panel, server, &cookie).await?, at, "http_429");
     let conflicting_text = section(id, at, 2, true, Some(("http_403", Some(403))));
     let conflicting = parse_section(
-        &record["job"],
+        &stored_job,
         &serde_json::from_value(conflicting_text)?,
         at,
         at + 390,
@@ -228,12 +234,8 @@ async fn deferred_cache_writes_cannot_regress_same_second_revisions_or_jobs(
     persist_section(&panel.state, server, conflicting).await?;
     assert_history_false_zero(&view(&panel, server, &cookie).await?, at, "http_429");
 
-    let latest_deferred = parse_section(
-        &record["job"],
-        &serde_json::from_value(failure)?,
-        at,
-        at + 390,
-    )?;
+    let latest_deferred =
+        parse_section(&stored_job, &serde_json::from_value(failure)?, at, at + 390)?;
     let final_response = panel.client.post(format!("{}/api/agent/v1/diagnostics/{id}", panel.base))
         .bearer_auth(&ack.session_token)
         .json(&json!({"id":id,"status":"succeeded","report":{"text":"TEST_ONLY completed node query"}}))

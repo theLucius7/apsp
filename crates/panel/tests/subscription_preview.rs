@@ -30,7 +30,6 @@ async fn previews_and_downloads_use_the_same_applied_seven_protocol_snapshot(
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let server = panel.create_server(&cookie, "Subscriptions").await?;
-    panel.enable_runtime(&cookie, server).await?;
     let user = panel.create_user(&cookie, "First").await?;
     let uid = id(&user)?;
     let other = panel.create_user(&cookie, "Second").await?;

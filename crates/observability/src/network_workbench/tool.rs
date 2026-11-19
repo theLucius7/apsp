@@ -1,13 +1,20 @@
 use super::{engine::Snapshot, models::Execution};
 use crate::{
-    diagnostics::service::{DiagnosticTool, JobPlan, PlanFuture, SectionContext, SectionFuture},
+    diagnostics::service::{
+        DiagnosticTool, FrozenComponentIdentity, JobPlan, PlanFuture, SectionContext, SectionFuture,
+    },
     error::{ApiError, ApiResult},
 };
+use apsp_governance::releases::VerifiedRunningComponent;
 use apsp_protocol::{DiagnosticResourceBudget, DiagnosticSectionUpdate};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use uuid::Uuid;
+
+const LEGACY_WORKBENCH_DENIAL: &str =
+    "历史旧证明格式的工作台任务已停用，请使用当前一体化 Agent 重新运行方案";
+
 pub struct NetworkWorkbenchTool;
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -29,6 +36,44 @@ impl DiagnosticTool for NetworkWorkbenchTool {
     fn required_capabilities(&self) -> &'static [&'static str] {
         &["diagnostic:network-workbench-v1"]
     }
+    fn start_denial(&self, job: &Value) -> Option<&'static str> {
+        let valid_v2 = FrozenComponentIdentity::from_job(job)
+            .ok()
+            .flatten()
+            .is_some_and(|frozen| {
+                frozen.component == "network-workbench" && frozen.component_version == "1.0.0"
+            });
+        (!valid_v2).then_some(LEGACY_WORKBENCH_DENIAL)
+    }
+    fn can_dispatch(&self, job: &Value, capabilities: &Value) -> bool {
+        self.start_denial(job).is_none()
+            && capabilities.as_array().is_some_and(|items| {
+                items
+                    .iter()
+                    .any(|item| item.as_str() == Some("diagnostic:network-workbench-v1"))
+            })
+    }
+    fn freeze_dispatch(
+        &self,
+        verified: &VerifiedRunningComponent,
+        plan: &mut JobPlan,
+    ) -> ApiResult<()> {
+        if let Some(meta) = plan
+            .metadata
+            .get_mut("workbench")
+            .and_then(Value::as_object_mut)
+        {
+            meta.insert(
+                "agent_sha256".into(),
+                Value::String(verified.agent_sha256.clone()),
+            );
+            meta.insert(
+                "component_sha256".into(),
+                Value::String(verified.component_sha256.clone()),
+            );
+        }
+        Ok(())
+    }
     fn record_section<'a>(
         &'a self,
         context: SectionContext<'a>,
@@ -38,6 +83,21 @@ impl DiagnosticTool for NetworkWorkbenchTool {
         Box::pin(async move {
             if update.name != "workbench_result" || !update.complete {
                 return Ok(());
+            }
+            let frozen = FrozenComponentIdentity::from_job(context.job)?;
+            if let Some(frozen) = &frozen {
+                if !context.live_verified
+                    || frozen.component != "network-workbench"
+                    || frozen.component_version != "1.0.0"
+                {
+                    return Err(ApiError::Conflict(
+                        "工作台观测收据缺少新鲜设备与签名组件实时核验".into(),
+                    ));
+                }
+            } else if context.live_verified {
+                return Err(ApiError::Conflict(
+                    "历史工作台任务缺少派单冻结的签名组件身份".into(),
+                ));
             }
             let Some(encoded) = context.job["options"]["execution"].as_str() else {
                 return Err(ApiError::Conflict("任务执行来源快照缺失".into()));
@@ -67,8 +127,10 @@ impl DiagnosticTool for NetworkWorkbenchTool {
                 ) {
                     return Err(ApiError::BadRequest("出口观测地址族不匹配".into()));
                 }
-                let source = format!("agent_exit:{}:{route_kind}", context.server_id);
-                sqlx::query("INSERT INTO network_workbench_ip_evidence(id,server_id,address,family,source,status,evidence,observed_at,expires_at) SELECT $1,$2,$3,$4,$5,'observed',$6,$7,$8 WHERE NOT EXISTS(SELECT 1 FROM network_workbench_ip_evidence WHERE server_id=$2 AND address=$3 AND source=$5 AND observed_at=$7)").bind(Uuid::new_v4()).bind(context.server_id).bind(address).bind(if *family==super::models::Family::Ipv4{"ipv4"}else{"ipv6"}).bind(source).bind(serde_json::to_value(&report).map_err(anyhow::Error::from)?).bind(report.collected_at).bind(report.collected_at+3600).execute(&mut *connection).await?;
+                if frozen.is_some() && context.live_verified {
+                    let source = format!("agent_exit:{}:{route_kind}", context.server_id);
+                    sqlx::query("INSERT INTO network_workbench_ip_evidence(id,server_id,address,family,source,status,evidence,observed_at,expires_at) SELECT $1,$2,$3,$4,$5,'observed',$6,$7,$8 WHERE NOT EXISTS(SELECT 1 FROM network_workbench_ip_evidence WHERE server_id=$2 AND address=$3 AND source=$5 AND observed_at=$7)").bind(Uuid::new_v4()).bind(context.server_id).bind(address).bind(if *family==super::models::Family::Ipv4{"ipv4"}else{"ipv6"}).bind(source).bind(serde_json::to_value(&report).map_err(anyhow::Error::from)?).bind(report.collected_at).bind(report.collected_at+3600).execute(&mut *connection).await?;
+                }
             }
             Ok(())
         })

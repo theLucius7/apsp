@@ -38,9 +38,9 @@ REQUIREMENTS = {
 }
 SOURCES = {
     'NodeQuality.sh': {'source_sha256': 'f7355a4ca5f4042a535e7a73ac337dc427e8f6ca5bdd7e9fb96181fc3162d91b', 'patched_sha256': '4ead63717f9860999017197e5b4e7e4a066d4f8b54f34d15895690e22c7ec15a'},
-    'hardware.sh': {'source_sha256': 'e1f90cb9eaf80098a48beb008187b422cb664fc32cf2a4ee306b398ee473567c', 'patched_sha256': '82b18e8eef943a4acfcfb3724fb6b0526ac1b769d8c3591839e89d50f82f562c'},
-    'ip.sh': {'source_sha256': '176295d6bc9803d19c1794b73f5c801fe8325f076c60f2114cc943a4b62e68dc', 'patched_sha256': 'f7d7bb8ebce65795f0d54848d9897b5c887cb5eda61a65f5a1df2bf3c43deff9'},
-    'net.sh': {'source_sha256': 'f35836caa8e598f443c7b718daa71211cee393534b03f2f3b3d3062a6a3a90b2', 'patched_sha256': 'b0596e02786b1ae6d1dbedd4af10df6b120135715481dec2a9e75d4eca55cfda'},
+    'hardware.sh': {'source_sha256': 'bcb5570ad3efdd33d134acb2fc095327328887976bf35a4009fcd9d911459349', 'patched_sha256': 'eb81ac33d47422290e1df815ef049ef9ac26a213c0bb8353087c4b37e7bd7a6b'},
+    'ip.sh': {'source_sha256': 'a063a1563280d2d0ad25b2921d6003c53c69163c1e015d2a82c98ab721927141', 'patched_sha256': '1cd4dda181abdf129a1d9a6910f68276307327f5837ffc823031283bdbf15523'},
+    'net.sh': {'source_sha256': 'd1d9995233601480c94c88aec6a87e0c35e8a2621ddf52487d2303382b1457e9', 'patched_sha256': '82e9e766be14938cadcb764ac6b904dc389c18cef1c5cb39e2a687cb2fafe333'},
 }
 
 

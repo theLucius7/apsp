@@ -64,8 +64,8 @@ SOURCES = {
         'patched_sha256': 'f7355a4ca5f4042a535e7a73ac337dc427e8f6ca5bdd7e9fb96181fc3162d91b',
     },
     'hardware.sh': {
-        'source_sha256': 'f7413e8a19eaacce2df70b1ae6c63bab89334bca0d07846badacde5ef6afcb0c',
-        'patched_sha256': 'e1f90cb9eaf80098a48beb008187b422cb664fc32cf2a4ee306b398ee473567c',
+        'source_sha256': '0729052a2f9f11787ab71b34b0d8c0dbeaf4928d28de68178555a8aaee281847',
+        'patched_sha256': 'bcb5570ad3efdd33d134acb2fc095327328887976bf35a4009fcd9d911459349',
     },
 }
 

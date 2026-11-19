@@ -276,7 +276,7 @@ async fn admin_sessions_are_scoped_expiring_and_not_reset_on_restart(pool: PgPoo
     for path in [
         "/api/me",
         "/api/servers",
-        "/api/artifacts",
+        "/api/system/agent-releases",
         "/api/agent/v1/manifest",
     ] {
         assert_eq!(
@@ -311,6 +311,19 @@ async fn admin_sessions_are_scoped_expiring_and_not_reset_on_restart(pool: PgPoo
             .status()
             .is_success()
     );
+    for retired in ["/api/artifacts", "/api/artifacts/agent-versions"] {
+        assert_eq!(
+            panel
+                .client
+                .get(format!("{}{retired}", panel.base))
+                .header(header::COOKIE, &cookie)
+                .send()
+                .await?
+                .status(),
+            StatusCode::NOT_FOUND,
+            "{retired}"
+        );
+    }
     assert_eq!(
         panel
             .client
@@ -512,6 +525,57 @@ async fn bundle_download_preserves_bytes_and_cannot_cross_server_identity(
         panel.client.get(&own_url).send().await?.status(),
         StatusCode::UNAUTHORIZED
     );
+    assert_eq!(
+        panel
+            .client
+            .post(format!(
+                "{}/api/traffic/servers/{server_id}/enable",
+                panel.base
+            ))
+            .header(header::COOKIE, &cookie)
+            .send()
+            .await?
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        panel
+            .client
+            .get(&own_url)
+            .bearer_auth(&ack.session_token)
+            .send()
+            .await?
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    let created = panel
+        .client
+        .post(format!("{}/api/traffic/nodes", panel.base))
+        .header(header::COOKIE, &cookie)
+        .json(&json!({
+            "name": "Bundle owner node",
+            "server_id": server_id,
+            "public_host": "proxy.example.com",
+            "sni": "www.example.com"
+        }))
+        .send()
+        .await?;
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let node: Value = created.json().await?;
+    let node_id = node["id"].as_i64().context("node id")?;
+    let other_created = panel
+        .client
+        .post(format!("{}/api/traffic/nodes", panel.base))
+        .header(header::COOKIE, &cookie)
+        .json(&json!({
+            "name": "Other bundle node",
+            "server_id": other_id,
+            "public_host": "other.example.com",
+            "sni": "www.example.com"
+        }))
+        .send()
+        .await?;
+    assert_eq!(other_created.status(), StatusCode::CREATED);
     let response = panel
         .client
         .get(&own_url)
@@ -527,6 +591,24 @@ async fn bundle_download_preserves_bytes_and_cannot_cross_server_identity(
         panel
             .client
             .get(format!("{}/api/agent/v1/bundles/99", panel.base))
+            .bearer_auth(&ack.session_token)
+            .send()
+            .await?
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    panel
+        .client
+        .patch(format!("{}/api/traffic/nodes/{node_id}", panel.base))
+        .header(header::COOKIE, &cookie)
+        .json(&json!({"enabled": false}))
+        .send()
+        .await?
+        .error_for_status()?;
+    assert_eq!(
+        panel
+            .client
+            .get(&own_url)
             .bearer_auth(&ack.session_token)
             .send()
             .await?
@@ -899,7 +981,7 @@ async fn panel_never_serves_agent_binaries_even_with_a_live_token(pool: PgPool) 
             .send()
             .await?
             .status(),
-        StatusCode::UNAUTHORIZED
+        StatusCode::NOT_FOUND
     );
 
     std::fs::write(artifact_dir.join("amd64"), b"corrupted-test-artifact")?;
@@ -913,7 +995,7 @@ async fn panel_never_serves_agent_binaries_even_with_a_live_token(pool: PgPool) 
         .json()
         .await?;
     assert_eq!(catalogue["versions"][0]["targets"], json!(["amd64"]));
-    assert_eq!(catalogue["versions"][0]["cached_targets"], json!([]));
+    assert!(catalogue["versions"][0].get("cached_targets").is_none());
     // The catalogue must still reject tampering with its complete signed proof.
     let metadata = artifact_dir
         .parent()
@@ -973,7 +1055,7 @@ async fn panel_never_serves_agent_binaries_even_with_a_live_token(pool: PgPool) 
         .bearer_auth(&ack.session_token)
         .send()
         .await?;
-    assert_eq!(response.status(), StatusCode::CONFLICT);
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
     Ok(())
 }
 
@@ -1014,8 +1096,18 @@ async fn signed_agent_versions_require_admin_or_live_enrollment_and_match_platfo
         directory.join("inventory.json"),
         serde_json::to_vec(&json!({"paths":["agent/0.3.0/arm64"]}))?,
     )?;
-    let admin_url = format!("{}/api/artifacts/agent-versions", panel.base);
+    let admin_url = format!("{}/api/system/agent-releases", panel.base);
     let bootstrap_url = format!("{}/api/bootstrap/versions", panel.base);
+    assert_eq!(
+        panel
+            .client
+            .get(format!("{}/api/artifacts/agent-versions", panel.base))
+            .header(header::COOKIE, &cookie)
+            .send()
+            .await?
+            .status(),
+        StatusCode::NOT_FOUND
+    );
     assert_eq!(
         panel.client.get(&admin_url).send().await?.status(),
         StatusCode::UNAUTHORIZED
@@ -1083,7 +1175,7 @@ async fn signed_agent_versions_require_admin_or_live_enrollment_and_match_platfo
         catalogue["versions"][0]["targets"],
         json!(["amd64", "arm64", "freebsd-arm64", "macos-arm64"])
     );
-    assert_eq!(catalogue["versions"][0]["cached_targets"], json!(["arm64"]));
+    assert!(catalogue["versions"][0].get("cached_targets").is_none());
     for (target, platform, expected) in [
         ("linux-gnu-amd64", "unix", json!(["amd64"])),
         ("linux-musl-arm64", "unix", json!(["arm64"])),

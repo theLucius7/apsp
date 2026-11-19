@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Check the tagged CI commit and recheck a complete signed draft before publication."""
+"""Check the tagged CI commit and recheck a complete signed self-contained Agent draft before publication."""
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -13,14 +14,39 @@ import tempfile
 import time
 import urllib.parse
 
-from release import (REPOSITORY, VERSION, ensure, load_roots,
-                     regular_file_proof, source_offer_asset_limit,
-                     source_offer_url, verify_bundle)
+from release import (AGENT_TARGETS, EMBEDDED_FRAME_PREFIX, EMBEDDED_FRAME_SUFFIX,
+                     EXPECTED_EMBEDDED_ABI, LINUX_ARCHIVE_COMPONENTS, MAX_AGENT_RAW,
+                     REPOSITORY, SEGMENT, VERSION, bundle_source_offers, ensure,
+                     load_roots, regular_file_proof, source_offer_asset_limit,
+                     source_offer_url, verify_bundle, verify_embedded_agent_manifest)
 
-REQUIRED_JOBS = frozenset(("check", "compose-smoke", "Agent Linux musl (amd64)",
-                          "Agent Linux musl (arm64)", "Reality installation and accounting"))
+REQUIRED_JOBS = frozenset((
+    "check",
+    "compose-smoke",
+    "Agent Linux musl (amd64)",
+    "Agent Linux musl (arm64)",
+    "Agent Linux gnu (amd64)",
+    "Agent Linux gnu (arm64)",
+    "Reality installation and accounting",
+))
+PLATFORM_REQUIRED_JOBS = {
+    "macos-arm64": ("Agent macos (arm64)",),
+    "windows-amd64": ("Agent windows (amd64)",),
+    "windows-arm64": ("Agent windows (arm64)",),
+    "freebsd-amd64": (
+        "Agent FreeBSD 13.5 (amd64)",
+        "Agent FreeBSD 14 (amd64)",
+        "Agent FreeBSD 15 (amd64)",
+    ),
+    "freebsd-arm64": (
+        "Agent FreeBSD 13.5 (arm64)",
+        "Agent FreeBSD 14 (arm64)",
+        "Agent FreeBSD 15 (arm64)",
+    ),
+}
 RELEASES_PER_PAGE = 100
 MAX_RELEASE_PAGES = 10
+MAX_RELEASE_ASSETS = 32
 
 
 class Github:
@@ -108,7 +134,15 @@ def tag_identity(github, tag):
     raise ValueError("tag object nesting is too deep")
 
 
-def required_checks(github, commit):
+def extra_required_jobs(metadata):
+    jobs = set()
+    for entry in metadata.get("artifacts", ()):
+        jobs.update(PLATFORM_REQUIRED_JOBS.get(entry.get("arch"), ()))
+    return frozenset(jobs)
+
+
+def required_checks(github, commit, extra_jobs=frozenset()):
+    expected_jobs = REQUIRED_JOBS | frozenset(extra_jobs)
     query = urllib.parse.urlencode({"head_sha": commit, "branch": "main", "event": "push",
                                     "per_page": 100})
     runs = github.api(f"repos/{REPOSITORY}/actions/workflows/ci.yml/runs?{query}")
@@ -126,12 +160,12 @@ def required_checks(github, commit):
            "excessive CI jobs")
     jobs = {}
     for job in result["jobs"]:
-        if job["name"] in REQUIRED_JOBS:
+        if job["name"] in expected_jobs:
             ensure(job["name"] not in jobs, "duplicate required CI job")
             ensure(job.get("head_sha") == commit and job["status"] == "completed"
                    and job["conclusion"] == "success", "required CI job has not passed")
             jobs[job["name"]] = job["id"]
-    ensure(set(jobs) == REQUIRED_JOBS, "a required CI job is missing")
+    ensure(set(jobs) == expected_jobs, "a required CI job is missing")
     return {"run_id": run["id"], "run_attempt": run["run_attempt"], "jobs": jobs}
 
 
@@ -165,7 +199,8 @@ def release_snapshot(github, tag):
            and value.get("target_commitish") == selected["target_commitish"],
            "release identity changed after listing")
     assets = github.api(f"repos/{REPOSITORY}/releases/{value['id']}/assets?per_page=100")
-    ensure(isinstance(assets, list) and 0 < len(assets) <= 20, "invalid release asset count")
+    ensure(isinstance(assets, list) and 0 < len(assets) <= MAX_RELEASE_ASSETS,
+           "invalid release asset count")
     normalized, names, identifiers = [], set(), set()
     for asset in assets:
         ensure(type(asset["id"]) is int and asset["id"] > 0
@@ -187,20 +222,88 @@ def release_snapshot(github, tag):
 
 
 def require_components(metadata):
-    identities = {(entry["name"], entry["arch"]) for entry in metadata["artifacts"]}
-    required = {(name, arch) for name in ("agent", "sing-box", "nodequality")
-                for arch in ("amd64", "arm64")}
-    version = re.fullmatch(r"agent-v(\d+)\.(\d+)\.(\d+)(?:[-+][0-9A-Za-z.-]+)?",
-                           metadata.get("tag", ""))
-    musl_required = version is not None and tuple(map(int, version.groups())) >= (0, 3, 3)
-    if musl_required or any(name == "sing-box" and arch.startswith("linux-musl-")
-                            for name, arch in identities):
-        required |= {("sing-box", "linux-musl-" + arch) for arch in ("amd64", "arm64")}
-    for optional in ("tcpquality", "ipquality"):
-        if any(name == optional for name, _ in identities):
-            required |= {(optional, arch) for arch in ("amd64", "arm64")}
-    ensure(len(metadata["artifacts"]) == len(required) and identities == required,
-           "release must contain every selected module on both architectures")
+    artifacts = metadata.get("artifacts")
+    ensure(isinstance(artifacts, list) and len(artifacts) > 0,
+           "release must contain signed Agent artifacts")
+    targets = []
+    for entry in artifacts:
+        ensure(isinstance(entry, dict) and entry.get("name") == "agent",
+               "publication must contain only self-contained raw Agent artifacts; standalone components are prohibited")
+        arch = entry.get("arch")
+        ensure(isinstance(arch, str) and arch in AGENT_TARGETS, "unsupported Agent target")
+        expected_binary = "apsp-agent.exe" if arch.startswith("windows-") else "apsp-agent"
+        ensure(entry.get("format") == "raw"
+               and entry.get("binary_name") == expected_binary
+               and not entry.get("auxiliary_files")
+               and type(entry.get("archive_size")) is int
+               and 0 < entry["archive_size"] <= MAX_AGENT_RAW
+               and entry.get("binary_size") == entry["archive_size"],
+               "publication Agent entry must be a bounded raw binary without auxiliary files")
+        targets.append(arch)
+    target_set = set(targets)
+    ensure(len(targets) == len(target_set), "duplicate Agent target in release metadata")
+    for arch in ("amd64", "arm64"):
+        ensure(not (arch in target_set and f"linux-musl-{arch}" in target_set),
+               "cannot publish duplicate Linux musl target aliases in one release")
+    has_legacy_musl = {"amd64", "arm64"} <= target_set
+    has_explicit_musl = {"linux-musl-amd64", "linux-musl-arm64"} <= target_set
+    ensure(has_legacy_musl or has_explicit_musl,
+           "release must contain Linux static musl raw Agents on both architectures")
+    ensure(not any(t in target_set for t in ("amd64", "arm64")) or has_legacy_musl,
+           "release must contain both amd64 and arm64 Linux static musl raw Agents")
+    ensure(not any(t in target_set for t in ("linux-musl-amd64", "linux-musl-arm64")) or has_explicit_musl,
+           "release must contain both linux-musl-amd64 and linux-musl-arm64 raw Agents")
+    ensure({"linux-gnu-amd64", "linux-gnu-arm64"} <= target_set,
+           "release must contain Linux GNU raw Agents on both architectures")
+    for prefix in ("freebsd", "windows"):
+        pair = {f"{prefix}-amd64", f"{prefix}-arm64"}
+        if target_set & pair:
+            ensure(pair <= target_set,
+                   f"release with {prefix} Agent must contain both amd64 and arm64")
+
+
+def verify_embedded_closure(bundle, metadata, build_commit):
+    bundle = Path(bundle)
+    embedded_by_target = {}
+    linux_versions = {name: set() for name in LINUX_ARCHIVE_COMPONENTS}
+    singbox_digests = {}
+
+    for entry in metadata["artifacts"]:
+        arch = entry["arch"]
+        payload = (bundle / entry["asset_name"]).read_bytes()
+        manifest = verify_embedded_agent_manifest(
+            payload, entry["version"], arch, require_release_closure=True, expected_versions={}
+        )
+        expected_abi = EXPECTED_EMBEDDED_ABI[arch]
+        components = manifest["components"]
+        if expected_abi[0] == "linux":
+            for name in LINUX_ARCHIVE_COMPONENTS:
+                linux_versions[name].add(components[name]["version"])
+            ensure(re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+-" + re.escape(build_commit) + r"-r1",
+                                components["tcpquality"]["version"]),
+                   f"Linux Agent '{arch}' lacks build-commit-pinned built-in tcp-probe")
+            cpu_arch = "arm64" if expected_abi[1] == "aarch64" else "amd64"
+            singbox_digests[(expected_abi[2], cpu_arch)] = components["sing-box"]["sha256"]
+        embedded_by_target[arch] = components
+
+    for name, versions in linux_versions.items():
+        ensure(len(versions) == 1,
+               f"all Linux Agent targets in one release must embed the same '{name}' version")
+    for cpu_arch in ("amd64", "arm64"):
+        ensure(singbox_digests.get(("gnu", cpu_arch)) != singbox_digests.get(("musl", cpu_arch)),
+               f"Linux GNU and musl {cpu_arch} Agents cannot share the same runtime/Cronet archive")
+
+    offers = bundle_source_offers(bundle, metadata)
+    offer_names = {offer["asset"] for offer in offers}
+    singbox_ver = next(iter(linux_versions["sing-box"]))
+    expected_offers = {f"sing-box-{singbox_ver}-sources.tar.gz"}
+    for cpu_arch in ("amd64", "arm64"):
+        for name in ("nodequality", "network-workbench", "ipquality"):
+            ver = next(iter(linux_versions[name]))
+            expected_offers.add(f"{name}-{ver}-linux-{cpu_arch}-sources.tar.gz")
+    ensure(offer_names == expected_offers,
+           "release must include exact corresponding source archives for every embedded Linux component")
+    return offers, embedded_by_target
 
 
 def checked_publication(github, tag, roots, minisign, publish=False):
@@ -221,22 +324,36 @@ def checked_publication(github, tag, roots, minisign, publish=False):
                    "download differs from selected GitHub asset ID and digest")
         metadata = verify_bundle(bundle, roots, minisign, tag)
         require_components(metadata)
+        offers, embedded_components = verify_embedded_closure(bundle, metadata, identity["commit"])
+    extra_jobs = extra_required_jobs(metadata)
+    if extra_jobs:
+        checks = required_checks(github, identity["commit"], extra_jobs)
     # Re-fetch every identity and check immediately before the only mutation.
     ensure(tag_identity(github, tag) == identity, "tag changed during release verification")
-    ensure(required_checks(github, identity["commit"]) == checks,
+    ensure(required_checks(github, identity["commit"], extra_jobs) == checks,
            "CI evidence changed during release verification")
     ensure(release_snapshot(github, tag) == before, "release assets changed during verification")
-    evidence = {"tag": tag, "tag_identity": identity, "checks": checks, "release": before,
-                "published": False}
     paired = {asset["name"]: asset for asset in before["assets"]}
-    evidence["source_offers"] = []
-    for entry in metadata["artifacts"]:
-        if entry["name"] == "ipquality":
-            name = f"ipquality-{entry['version']}-linux-{entry['arch']}-sources.tar.gz"
-            asset = paired[name]
-            evidence["source_offers"].append({"asset": name, "size": asset["size"],
-                                               "sha256": asset["digest"][7:],
-                                               "url": source_offer_url(tag, name)})
+    source_offers = []
+    for offer in offers:
+        asset = paired[offer["asset"]]
+        ensure(asset["size"] == offer["size"] and asset["digest"] == "sha256:" + offer["sha256"],
+               "GitHub source-offer asset differs from the signed installer declaration")
+        source_offers.append({
+            "asset": offer["asset"],
+            "size": offer["size"],
+            "sha256": offer["sha256"],
+            "url": source_offer_url(tag, offer["asset"]),
+        })
+    evidence = {
+        "tag": tag,
+        "tag_identity": identity,
+        "checks": checks,
+        "release": before,
+        "embedded_components": embedded_components,
+        "source_offers": source_offers,
+        "published": False,
+    }
     if publish:
         result = github.api(f"repos/{REPOSITORY}/releases/{before['id']}", "PATCH",
                             ("draft=false", f"tag_name={before['tag']}",

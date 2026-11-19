@@ -57,6 +57,11 @@ fn known_messages() -> Vec<Message> {
             hostname: Some("example-host".into()),
             agent_version: Some("0.1.0".into()),
             runtime_version: Some("1.14.2".into()),
+            components: BTreeMap::from([
+                ("sing-box".into(), "1.14.4-apsp.2".into()),
+                ("tcpquality".into(), "0.3.0".into()),
+            ]),
+            component_digests: BTreeMap::from([("sing-box".into(), "c".repeat(64))]),
             extra: BTreeMap::new(),
         }),
         Message::TelemetryMetrics(Metrics {
@@ -146,7 +151,7 @@ fn all_http_payloads_roundtrip() {
     };
     let module = ModuleManifest {
         kernel_version: "1.14.2".into(),
-        artifact: artifact.clone(),
+        artifact: Some(artifact.clone()),
         config_rev: 7,
         bundle_url: "https://panel.example.invalid/api/agent/v1/bundles/7".into(),
         bundle_sha256: "b".repeat(64),
@@ -154,6 +159,14 @@ fn all_http_payloads_roundtrip() {
     };
     roundtrip(artifact);
     roundtrip(module.clone());
+    let mut self_contained = module.clone();
+    self_contained.artifact = None;
+    let self_contained_wire = serde_json::to_value(&self_contained).unwrap();
+    assert!(self_contained_wire.get("artifact").is_none());
+    assert_eq!(
+        serde_json::from_value::<ModuleManifest>(self_contained_wire).unwrap(),
+        self_contained
+    );
     roundtrip(Manifest {
         rev: 12,
         modules: BTreeMap::from([("runtime".into(), module)]),
@@ -326,15 +339,15 @@ fn http_payloads_accept_unknown_fields() {
 fn diagnostic_http_payloads_roundtrip_and_accept_additive_fields() {
     let job = DiagnosticJob {
         id: Uuid::from_u128(99),
-        plugin: "nodequality".into(),
+        tool: "nodequality".into(),
         version: "upstream-commit".into(),
-        artifact: Artifact {
+        artifact: Some(Artifact {
             proof: None,
             url: "https://panel.example.invalid/api/agent/v1/artifacts/nodequality/upstream-commit/amd64".into(),
             sha256: "a".repeat(64),
-        },
+        }),
         timeout_secs: 1800,
-        resource_budget:None,
+        resource_budget: None,
         expires_at: Some(1_790_003_600),
         options: BTreeMap::from([
             ("ip_version".into(), "both".into()),
@@ -342,6 +355,22 @@ fn diagnostic_http_payloads_roundtrip_and_accept_additive_fields() {
         ]),
     };
     roundtrip(job.clone());
+    let mut self_contained_job = job.clone();
+    self_contained_job.artifact = None;
+    let self_contained_job_wire = serde_json::to_value(&self_contained_job).unwrap();
+    assert!(self_contained_job_wire.get("artifact").is_none());
+    assert_eq!(
+        serde_json::from_value::<DiagnosticJob>(self_contained_job_wire).unwrap(),
+        self_contained_job
+    );
+    assert_eq!(SELF_CONTAINED_AGENT_CAPABILITY, "agent:self-contained:v1");
+    let published_wire = serde_json::to_value(&job).unwrap();
+    assert_eq!(published_wire["plugin"], "nodequality");
+    assert!(published_wire.get("tool").is_none());
+    assert_eq!(
+        serde_json::from_value::<DiagnosticJob>(published_wire).unwrap(),
+        job
+    );
     assert!(
         serde_json::to_value(&job)
             .unwrap()
@@ -399,12 +428,10 @@ fn diagnostic_http_payloads_roundtrip_and_accept_additive_fields() {
     }
     let old_info: StaticInfo = serde_json::from_value(json!({"arch":"amd64"})).unwrap();
     assert!(old_info.ip_addresses.is_empty());
-    assert!(
-        serde_json::to_value(old_info)
-            .unwrap()
-            .get("ip_addresses")
-            .is_none()
-    );
+    assert!(old_info.components.is_empty());
+    let old_info_wire = serde_json::to_value(old_info).unwrap();
+    assert!(old_info_wire.get("ip_addresses").is_none());
+    assert!(old_info_wire.get("components").is_none());
     assert!(serde_json::from_value::<DiagnosticJob>(json!({"plugin":"nodequality"})).is_err());
     assert!(
         serde_json::from_value::<DiagnosticUpdate>(json!({"id":job.id,"status":"queued"})).is_err()
@@ -477,13 +504,13 @@ fn cancellation_messages_bind_known_tasks_and_require_explicit_confirmation() {
     let job = DiagnosticJob {
         resource_budget: None,
         id: Uuid::from_u128(19),
-        plugin: "nodequality".into(),
+        tool: "nodequality".into(),
         version: "fixed-version".into(),
-        artifact: Artifact {
+        artifact: Some(Artifact {
             url: "https://panel.example.invalid/fixed-artifact".into(),
             sha256: "a".repeat(64),
             proof: None,
-        },
+        }),
         timeout_secs: 1800,
         expires_at: Some(1_790_003_600),
         options: BTreeMap::new(),
@@ -495,11 +522,21 @@ fn cancellation_messages_bind_known_tasks_and_require_explicit_confirmation() {
     let result = DiagnosticCancelResult {
         server_id: 3,
         id: job.id,
-        plugin: job.plugin,
+        tool: job.tool,
         confirmed: true,
         report: None,
         error: None,
     };
+    let request_wire = serde_json::to_value(&request).unwrap();
+    assert_eq!(request_wire["job"]["plugin"], "nodequality");
+    assert!(request_wire["job"].get("tool").is_none());
+    let result_wire = serde_json::to_value(&result).unwrap();
+    assert_eq!(result_wire["plugin"], "nodequality");
+    assert!(result_wire.get("tool").is_none());
+    assert_eq!(
+        serde_json::from_value::<DiagnosticCancelResult>(result_wire).unwrap(),
+        result
+    );
     for message in [
         Message::DiagnosticCancelRequest(request.clone()),
         Message::DiagnosticCancelResult(result.clone()),

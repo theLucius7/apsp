@@ -3,16 +3,17 @@
 @source "../index.html";
 
 /*
- * Design parameters for every entry point: the administrator console, the public
+ * Design tokens for every entry point: the administrator console, the public
  * dashboard and the proxy-user portal. Components read these tokens through the
  * Tailwind theme below; no stylesheet declares its own colours, radii or sizes.
- * Cool neutral grey carries the surfaces, teal-green is the single accent, and
- * success / warning / destructive / info keep fixed meanings in both themes.
+ * Calm, low-chroma slate surfaces keep dense tables and charts effortless to scan,
+ * composed indigo-blue marks primary actions and focus, and semantic status tokens
+ * (success / warning / destructive / info) keep fixed meanings across both themes.
  */
 
 @custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
 
-/* State variants used by the shadcn/ui Nova components (from shadcn/tailwind.css). */
+/* State variants used by the UI primitives. */
 @custom-variant data-open {
   &:where([data-state="open"]),
   &:where([data-open]:not([data-open="false"])) {
@@ -69,115 +70,119 @@
   color-scheme: light;
   --radius: 0.75rem;
 
-  /* 极光 · Aurora: lavender-white surfaces over an aurora backdrop, indigo ink,
-     one violet accent; cyan, rose and emerald only in charts and states. */
-  --background: oklch(0.976 0.008 285);
-  --foreground: oklch(0.21 0.035 278);
-  --card: oklch(0.997 0.003 285 / 88%);
-  --card-foreground: oklch(0.21 0.035 278);
-  --popover: oklch(0.997 0.003 285);
-  --popover-foreground: oklch(0.21 0.035 278);
-  --primary: oklch(0.52 0.21 279);
-  --primary-foreground: oklch(0.99 0.006 285);
-  --secondary: oklch(0.952 0.012 285);
-  --secondary-foreground: oklch(0.25 0.04 278);
-  --muted: oklch(0.955 0.011 285);
-  --muted-foreground: oklch(0.455 0.035 278);
-  --accent: oklch(0.948 0.03 288);
-  --accent-foreground: oklch(0.36 0.13 280);
-  --destructive: oklch(0.49 0.19 22);
-  --destructive-foreground: oklch(0.985 0 0);
-  --success: oklch(0.49 0.12 158);
-  --success-foreground: oklch(0.985 0 0);
-  --warning: oklch(0.52 0.12 62);
-  --warning-foreground: oklch(0.985 0 0);
-  --info: oklch(0.5 0.13 232);
-  --info-foreground: oklch(0.985 0 0);
-  --border: oklch(0.905 0.016 285);
-  --input: oklch(0.86 0.022 285);
-  --ring: oklch(0.62 0.17 280);
+  /* Clear Slate & Indigo-Teal: restful cool-paper surfaces, crisp ink, one composed
+     indigo-blue accent, and balanced analytical tones for charts and status badges. */
+  --background: oklch(0.978 0.004 252);
+  --foreground: oklch(0.205 0.02 254);
+  --card: oklch(0.998 0.002 252 / 96%);
+  --card-foreground: oklch(0.205 0.02 254);
+  --popover: oklch(0.999 0.002 252);
+  --popover-foreground: oklch(0.205 0.02 254);
+  --primary: oklch(0.485 0.155 256);
+  --primary-foreground: oklch(0.992 0.003 252);
+  --secondary: oklch(0.952 0.007 252);
+  --secondary-foreground: oklch(0.24 0.024 254);
+  --muted: oklch(0.955 0.006 252);
+  --muted-foreground: oklch(0.44 0.02 254);
+  --accent: oklch(0.946 0.016 254);
+  --accent-foreground: oklch(0.31 0.085 256);
+  --destructive: oklch(0.485 0.175 24);
+  --destructive-foreground: oklch(0.99 0 0);
+  --success: oklch(0.48 0.12 162);
+  --success-foreground: oklch(0.99 0 0);
+  --warning: oklch(0.505 0.12 66);
+  --warning-foreground: oklch(0.99 0 0);
+  --info: oklch(0.49 0.12 232);
+  --info-foreground: oklch(0.99 0 0);
+  --border: oklch(0.9 0.008 252);
+  --input: oklch(0.845 0.012 252);
+  --ring: oklch(0.56 0.145 256);
+  --overlay: oklch(0.16 0.02 254 / 34%);
 
-  --chart-1: oklch(0.58 0.19 280);
-  --chart-2: oklch(0.62 0.12 215);
-  --chart-3: oklch(0.72 0.14 70);
-  --chart-4: oklch(0.62 0.19 352);
-  --chart-5: oklch(0.6 0.11 172);
+  /* Perceptually balanced analytical series: indigo, sea-cyan, amber, coral, sage-jade. */
+  --chart-1: oklch(0.54 0.15 256);
+  --chart-2: oklch(0.6 0.115 202);
+  --chart-3: oklch(0.69 0.13 74);
+  --chart-4: oklch(0.6 0.145 30);
+  --chart-5: oklch(0.58 0.115 164);
 
-  --sidebar: oklch(0.985 0.006 285 / 72%);
-  --sidebar-foreground: oklch(0.27 0.035 278);
-  --sidebar-primary: oklch(0.52 0.21 279);
-  --sidebar-primary-foreground: oklch(0.99 0.006 285);
-  --sidebar-accent: oklch(0.999 0.002 285 / 92%);
-  --sidebar-accent-foreground: oklch(0.2 0.035 278);
-  --sidebar-border: oklch(0.9 0.018 285 / 80%);
-  --sidebar-ring: oklch(0.62 0.17 280);
+  --sidebar: oklch(0.985 0.004 252 / 90%);
+  --sidebar-foreground: oklch(0.265 0.02 254);
+  --sidebar-primary: oklch(0.485 0.155 256);
+  --sidebar-primary-foreground: oklch(0.992 0.003 252);
+  --sidebar-accent: oklch(0.999 0.002 252 / 96%);
+  --sidebar-accent-foreground: oklch(0.195 0.02 254);
+  --sidebar-border: oklch(0.898 0.009 252 / 88%);
+  --sidebar-ring: oklch(0.56 0.145 256);
 
-  /* The logo's two colours; the same in both themes. */
-  --brand-from: oklch(0.6 0.22 285);
-  --brand-to: oklch(0.72 0.14 215);
+  /* Brand mark gradient: indigo-blue to calm sea-cyan. */
+  --brand-from: oklch(0.53 0.165 256);
+  --brand-to: oklch(0.66 0.125 204);
 
-  /* Depth: a hairline lift and a soft, wide shadow, tinted with indigo. */
-  --elevation-1: 0 1px 1px oklch(0.3 0.08 280 / 0.04), 0 2px 10px -3px oklch(0.3 0.1 280 / 0.09);
-  --elevation-2: 0 1px 2px oklch(0.3 0.08 280 / 0.06), 0 16px 36px -10px oklch(0.3 0.12 280 / 0.2);
-  /* Primary buttons: a sheen from above, an inner highlight and a coloured shadow. */
-  --button-sheen: linear-gradient(180deg, oklch(1 0 0 / 0.13), oklch(1 0 0 / 0) 60%);
-  --button-shadow: inset 0 1px 0 oklch(1 0 0 / 0.16), 0 1px 2px oklch(0.35 0.16 280 / 0.22), 0 4px 14px -5px oklch(0.52 0.21 279 / 0.5);
-  --button-shadow-hover: inset 0 1px 0 oklch(1 0 0 / 0.2), 0 2px 4px oklch(0.35 0.16 280 / 0.22), 0 10px 22px -8px oklch(0.52 0.21 279 / 0.6);
-  --focus-glow: 0 0 0 3px oklch(0.62 0.17 280 / 0.2);
+  /* Architectural depth: subtle hairline lift and neutral-slate ambient shadows. */
+  --elevation-1: 0 1px 2px oklch(0.22 0.03 254 / 0.04), 0 3px 10px -3px oklch(0.22 0.04 254 / 0.07);
+  --elevation-2: 0 2px 4px oklch(0.22 0.03 254 / 0.05), 0 16px 36px -10px oklch(0.22 0.05 254 / 0.16);
+  --field-shadow: inset 0 1px 2px oklch(0.2 0.02 254 / 0.035);
+  --button-sheen: linear-gradient(180deg, oklch(1 0 0 / 0.09), oklch(1 0 0 / 0) 55%);
+  --button-shadow: inset 0 1px 0 oklch(1 0 0 / 0.14), 0 1px 2px oklch(0.25 0.08 256 / 0.18), 0 3px 10px -4px oklch(0.485 0.155 256 / 0.35);
+  --button-shadow-hover: inset 0 1px 0 oklch(1 0 0 / 0.18), 0 2px 4px oklch(0.25 0.08 256 / 0.2), 0 8px 18px -6px oklch(0.485 0.155 256 / 0.44);
+  --focus-glow: 0 0 0 3px oklch(0.56 0.145 256 / 0.22);
 }
 
 [data-theme="dark"] {
   color-scheme: dark;
-  --background: oklch(0.155 0.03 278);
-  --foreground: oklch(0.955 0.01 285);
-  --card: oklch(0.2 0.035 278 / 84%);
-  --card-foreground: oklch(0.955 0.01 285);
-  --popover: oklch(0.225 0.038 278);
-  --popover-foreground: oklch(0.955 0.01 285);
-  --primary: oklch(0.75 0.14 282);
-  --primary-foreground: oklch(0.18 0.05 280);
-  --secondary: oklch(0.26 0.035 278);
-  --secondary-foreground: oklch(0.955 0.01 285);
-  --muted: oklch(0.25 0.032 278);
-  --muted-foreground: oklch(0.75 0.03 280);
-  --accent: oklch(0.3 0.06 282);
-  --accent-foreground: oklch(0.92 0.06 285);
-  --destructive: oklch(0.75 0.15 20);
-  --destructive-foreground: oklch(0.2 0.05 20);
-  --success: oklch(0.79 0.14 160);
-  --success-foreground: oklch(0.2 0.05 160);
-  --warning: oklch(0.83 0.13 78);
-  --warning-foreground: oklch(0.22 0.05 75);
-  --info: oklch(0.78 0.11 228);
-  --info-foreground: oklch(0.2 0.05 230);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.66 0.15 282);
+  --background: oklch(0.155 0.016 254);
+  --foreground: oklch(0.952 0.006 252);
+  --card: oklch(0.198 0.018 254 / 94%);
+  --card-foreground: oklch(0.952 0.006 252);
+  --popover: oklch(0.222 0.02 254);
+  --popover-foreground: oklch(0.952 0.006 252);
+  --primary: oklch(0.755 0.125 252);
+  --primary-foreground: oklch(0.175 0.028 254);
+  --secondary: oklch(0.258 0.02 254);
+  --secondary-foreground: oklch(0.952 0.006 252);
+  --muted: oklch(0.246 0.018 254);
+  --muted-foreground: oklch(0.75 0.016 252);
+  --accent: oklch(0.285 0.032 254);
+  --accent-foreground: oklch(0.935 0.025 252);
+  --destructive: oklch(0.755 0.145 22);
+  --destructive-foreground: oklch(0.19 0.04 22);
+  --success: oklch(0.79 0.13 162);
+  --success-foreground: oklch(0.19 0.04 162);
+  --warning: oklch(0.83 0.125 78);
+  --warning-foreground: oklch(0.21 0.045 76);
+  --info: oklch(0.785 0.105 228);
+  --info-foreground: oklch(0.19 0.04 230);
+  --border: oklch(1 0 0 / 11%);
+  --input: oklch(1 0 0 / 16%);
+  --ring: oklch(0.68 0.125 252);
+  --overlay: oklch(0.08 0.015 254 / 62%);
 
-  --chart-1: oklch(0.74 0.15 282);
-  --chart-2: oklch(0.77 0.11 215);
-  --chart-3: oklch(0.82 0.13 75);
-  --chart-4: oklch(0.74 0.16 352);
-  --chart-5: oklch(0.76 0.11 172);
+  --chart-1: oklch(0.74 0.125 252);
+  --chart-2: oklch(0.76 0.105 202);
+  --chart-3: oklch(0.81 0.12 76);
+  --chart-4: oklch(0.74 0.13 30);
+  --chart-5: oklch(0.76 0.11 164);
 
-  --sidebar: oklch(0.17 0.032 278 / 74%);
-  --sidebar-foreground: oklch(0.88 0.015 285);
-  --sidebar-primary: oklch(0.75 0.14 282);
-  --sidebar-primary-foreground: oklch(0.18 0.05 280);
-  --sidebar-accent: oklch(0.27 0.045 280 / 90%);
-  --sidebar-accent-foreground: oklch(0.97 0.006 285);
-  --sidebar-border: oklch(1 0 0 / 9%);
-  --sidebar-ring: oklch(0.66 0.15 282);
+  --sidebar: oklch(0.17 0.017 254 / 90%);
+  --sidebar-foreground: oklch(0.885 0.01 252);
+  --sidebar-primary: oklch(0.755 0.125 252);
+  --sidebar-primary-foreground: oklch(0.175 0.028 254);
+  --sidebar-accent: oklch(0.265 0.025 254 / 94%);
+  --sidebar-accent-foreground: oklch(0.965 0.005 252);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.68 0.125 252);
 
-  --brand-from: oklch(0.62 0.21 285);
-  --brand-to: oklch(0.74 0.13 215);
+  --brand-from: oklch(0.58 0.155 256);
+  --brand-to: oklch(0.71 0.115 204);
 
-  --elevation-1: inset 0 1px 0 oklch(1 0 0 / 0.04), 0 2px 12px -2px oklch(0 0 0 / 0.4);
-  --elevation-2: inset 0 1px 0 oklch(1 0 0 / 0.05), 0 18px 44px -10px oklch(0 0 0 / 0.6);
-  --button-sheen: linear-gradient(180deg, oklch(1 0 0 / 0.16), oklch(1 0 0 / 0) 60%);
-  --button-shadow: inset 0 1px 0 oklch(1 0 0 / 0.25), 0 1px 2px oklch(0 0 0 / 0.4), 0 6px 18px -6px oklch(0.75 0.14 282 / 0.45);
-  --button-shadow-hover: inset 0 1px 0 oklch(1 0 0 / 0.3), 0 2px 4px oklch(0 0 0 / 0.4), 0 10px 26px -8px oklch(0.75 0.14 282 / 0.55);
-  --focus-glow: 0 0 0 3px oklch(0.66 0.15 282 / 0.28);
+  --elevation-1: inset 0 1px 0 oklch(1 0 0 / 0.04), 0 2px 10px -2px oklch(0 0 0 / 0.36);
+  --elevation-2: inset 0 1px 0 oklch(1 0 0 / 0.05), 0 18px 42px -10px oklch(0 0 0 / 0.56);
+  --field-shadow: inset 0 1px 2px oklch(0 0 0 / 0.22);
+  --button-sheen: linear-gradient(180deg, oklch(1 0 0 / 0.12), oklch(1 0 0 / 0) 55%);
+  --button-shadow: inset 0 1px 0 oklch(1 0 0 / 0.2), 0 1px 2px oklch(0 0 0 / 0.36), 0 5px 14px -5px oklch(0.755 0.125 252 / 0.32);
+  --button-shadow-hover: inset 0 1px 0 oklch(1 0 0 / 0.24), 0 2px 4px oklch(0 0 0 / 0.38), 0 8px 20px -6px oklch(0.755 0.125 252 / 0.42);
+  --focus-glow: 0 0 0 3px oklch(0.68 0.125 252 / 0.28);
 }
 
 /* Compact density tightens content: table rows, panel padding and the gaps
@@ -195,6 +200,7 @@
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", "PingFang SC", "HarmonyOS Sans SC", "MiSans", "Hiragino Sans GB", "Noto Sans SC", "Noto Sans CJK SC", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
   --shadow-soft: var(--elevation-1);
   --shadow-lifted: var(--elevation-2);
+  --shadow-field: var(--field-shadow);
   --shadow-button: var(--button-shadow);
   --shadow-button-hover: var(--button-shadow-hover);
   --shadow-focus: var(--focus-glow);
@@ -227,6 +233,7 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-overlay: var(--overlay);
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
@@ -259,14 +266,13 @@
     background: var(--background);
   }
   body {
-    @apply text-foreground min-w-[320px] font-sans text-sm antialiased;
+    @apply text-foreground min-w-[320px] font-sans text-sm leading-normal antialiased;
     font-synthesis: none;
     text-rendering: optimizeLegibility;
   }
-  /* The aurora backdrop behind every page: console, sign-in, portals and the public
-     board. A fixed layer under the body is composited once and never repainted
-     while pages scroll; translucent cards and the sidebar let it through without
-     any blur. */
+  /* Quiet ambient backdrop shared across console, sign-in, portals and the public
+     board. Composited once on a fixed layer beneath high-opacity cards, so scrolling
+     never repaints and tables or charts never compete with background noise. */
   body::before {
     content: "";
     position: fixed;
@@ -279,7 +285,7 @@
     background-image: url("./assets/backdrop-dark.svg");
   }
   h1, h2 {
-    letter-spacing: -0.01em;
+    letter-spacing: -0.015em;
   }
   code, kbd, pre, samp {
     @apply font-mono text-xs;
@@ -299,7 +305,7 @@
     @apply text-muted-foreground mt-0.5 block text-xs font-normal;
   }
   ::selection {
-    @apply bg-primary/20;
+    @apply bg-primary/18 text-foreground;
   }
   button:not(:disabled), [role="button"]:not(:disabled), summary {
     cursor: pointer;
@@ -344,14 +350,58 @@
       transition-duration: 0s !important;
       scroll-behavior: auto !important;
     }
+    /* Turn off decorative loops and entrance flourishes while preserving static
+       loading placeholders and status indicators. */
+    :where(:not([data-slot="loading"]):not([data-slot="spinner"]):not([data-slot="skeleton"])) {
+      animation-duration: 0s !important;
+      animation-iteration-count: 1 !important;
+    }
+    [data-slot="loading"] {
+      animation-duration: 0s !important;
+    }
+  }
+}
+
+/* Shared form-control mechanism for Input, NativeSelect and Textarea. Placed in
+   @layer components so caller utilities in @layer utilities always override it. */
+@layer components {
+  .field-control {
+    @apply border-input shadow-field w-full min-w-0 rounded-[10px] border outline-none;
+    background-color: color-mix(in oklab, var(--background) 85%, transparent);
+    transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+  }
+  [data-theme="dark"] .field-control {
+    background-color: color-mix(in oklab, var(--background) 55%, transparent);
+  }
+  .field-control:hover:where(:not(:disabled):not(:focus-visible):not([aria-invalid="true"])) {
+    border-color: color-mix(in oklab, var(--primary) 35%, var(--input));
+  }
+  .field-control:focus-visible {
+    border-color: var(--ring);
+    box-shadow: var(--focus-glow);
+  }
+  .field-control[aria-invalid="true"] {
+    border-color: var(--destructive);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--destructive) 20%, transparent);
+  }
+  [data-theme="dark"] .field-control[aria-invalid="true"] {
+    border-color: color-mix(in oklab, var(--destructive) 50%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--destructive) 40%, transparent);
+  }
+  .field-control:disabled {
+    cursor: not-allowed;
+    background-color: color-mix(in oklab, var(--muted) 65%, transparent);
+  }
+  [data-theme="dark"] .field-control:disabled {
+    background-color: color-mix(in oklab, var(--muted) 40%, transparent);
   }
 }
 
 /* Only scale and opacity change, so the compositor runs it without repainting; the
    element's own translate (Tailwind's centring) stays untouched. */
 @keyframes check-pop {
-  0% { scale: 0.4; opacity: 0; }
-  70% { scale: 1.12; opacity: 1; }
+  0% { scale: 0.65; opacity: 0; }
+  75% { scale: 1.06; opacity: 1; }
   100% { scale: 1; }
 }
 
@@ -369,8 +419,8 @@
 }
 
 @keyframes network-pulse {
-  0%, 100% { scale: 0.85; opacity: 0.9; }
-  50% { scale: 1.45; opacity: 0.15; }
+  0%, 100% { scale: 0.88; opacity: 0.7; }
+  50% { scale: 1.35; opacity: 0.12; }
 }
 
 @utility no-scrollbar {

@@ -55,7 +55,7 @@ impl Reconciler {
         let root = self
             .config
             .runtime_root
-            .join(format!("{}@main", descriptor.plugin_name));
+            .join(format!("{}@main", descriptor.artifact_name));
         let expected = root
             .join("revisions")
             .join(runtime.spec.revision.to_string());
@@ -68,7 +68,7 @@ impl Reconciler {
             tokio::fs::read_link(root.join("current")).await? == expected,
             "current configuration link does not select the applied revision"
         );
-        let install = self.config.install_root.join(&descriptor.plugin_name);
+        let install = self.config.install_root.join(&descriptor.artifact_name);
         let binary_directory = runtime
             .spec
             .binary_path

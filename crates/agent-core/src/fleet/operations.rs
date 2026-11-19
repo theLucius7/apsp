@@ -187,7 +187,7 @@ pub(super) async fn execute(
             let matches: Vec<_> = descriptors
                 .iter()
                 .filter(|descriptor| {
-                    descriptor.plugin_name == *module || descriptor.module == *module
+                    descriptor.artifact_name == *module || descriptor.module == *module
                 })
                 .collect();
             ensure!(

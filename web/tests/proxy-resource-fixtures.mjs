@@ -13,6 +13,32 @@ export function orderedResourceFixture({ id, name, entry, hops, path_state, ...c
   return { kind: 'chain', id, name, entry, exit: frozen[frozen.length - 1].kind === 'managed' ? structuredClone(frozen[frozen.length - 1].endpoint) : null, available: true, unavailable_reasons: [], policy_group_ids: [], user_count: 0, chain_refs: [], settings_revision: 1, path_kind: 'ordered', hops: frozen,
     path_state: path_state ?? { desired_generation: 1, candidate_generation: 1, applied_generation: null, recovery_generation: null, minimum_generation: 0, phase: 'preparing_dependencies', capabilities: { tcp: true, udp: false }, last_error: null, dependencies: [], probe: null, generations: [{ generation: 1, state: 'desired', hops: frozen }, { generation: 1, state: 'candidate', hops: frozen }] }, ...changes }
 }
+export function runtimeServerFixture(id, overrides = {}) {
+  const configured = overrides.configured ?? true
+  const online = overrides.online ?? true
+  const read_only = overrides.read_only ?? false
+  const defaultState = !configured ? 'unconfigured' : !online ? 'offline' : 'ready'
+  const status = {
+    state: defaultState,
+    reason: '',
+    target_rev: configured ? 1 : 0,
+    applied_rev: configured && defaultState === 'ready' ? 1 : 0,
+    current_healthy: configured && defaultState === 'ready',
+    ...overrides.status,
+  }
+  return {
+    id,
+    name: `服务器 ${id}`,
+    configured,
+    online,
+    agent_supported: true,
+    read_only,
+    source: read_only ? 'nexus' : configured ? 'configured' : null,
+    runtime_version: configured ? '1.14.4-apsp.2' : null,
+    ...overrides,
+    status,
+  }
+}
 export function proxyResourceFixtures(nodes, servers, chains = []) {
   const endpoint = id => {
     const node = nodes.find(node => node.id === id)
@@ -22,11 +48,11 @@ export function proxyResourceFixtures(nodes, servers, chains = []) {
     return { id: node.id, name: node.name, server_id: node.server_id, server_name: server.name, protocol: node.protocol,
       port: node.port, public_port: node.settings?.public_port ?? node.port, public_host: node.public_host, sni: node.sni,
       enabled: node.enabled !== false, node_deleted: node.node_deleted === true, server_deleted: server.server_deleted === true,
-      plugin_enabled: server.enabled, online: server.online, desired_revision: server.installation?.target_rev ?? null,
-      applied_revision: server.installation?.applied_rev ?? null, applied_observed_at: server.installation ? 1000 : null }
+      online: server.online, desired_revision: server.status?.target_rev ?? null,
+      applied_revision: server.status?.applied_rev ?? null, applied_observed_at: server.status ? 1000 : null }
   }
   const common = (kind, item, entry, exit) => ({ kind, id: item.id, name: item.name, entry, exit, ...publicResourceFields(kind, exit),
-    available: item.available !== false && [entry, ...(exit ? [exit] : [])].every(endpoint => endpoint.enabled && endpoint.plugin_enabled && !endpoint.node_deleted && !endpoint.server_deleted),
+    available: item.available !== false && [entry, ...(exit ? [exit] : [])].every(endpoint => endpoint.enabled && !endpoint.node_deleted && !endpoint.server_deleted),
     unavailable_reasons: item.unavailable_reasons ?? [], policy_group_ids: item.policy_group_ids ?? [], user_count: item.user_count ?? 0,
     chain_refs: kind === 'direct' ? chains.filter(chain => chain.exit_node_id === item.id).map(chain => ({ id: chain.id, name: chain.name, role: 'exit', generation: 1, hop_position: 1, state: 'applied' })) : [] })
   return [

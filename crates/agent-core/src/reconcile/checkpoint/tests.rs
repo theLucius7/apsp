@@ -668,16 +668,16 @@ async fn legacy_database_checkpoint_refuses_adoption_until_explicit_new_deployme
 }
 
 #[tokio::test]
-async fn stale_activation_requires_a_higher_deployment_to_restart_and_recertify() {
+async fn stale_activation_automatically_restarts_and_recertifies_on_managed_reconcile() {
     let fixture = Fixture::new();
     let first = fixture.target(1, "{}");
     fixture.apply(first.clone()).await;
     let binding = Fixture::binding(&first);
     let original = fixture.checkpoint(binding.clone()).await.observed.unwrap();
-    let actions = fixture.services.inner.actions.lock().unwrap().clone();
 
     // Model a service-manager restart outside managed application: the bytes and
     // command paths remain identical, but this process never received an activation.
+    // Read-only checkpoint observation still refuses to blindly adopt it.
     fixture.services.generation.fetch_add(1, Ordering::SeqCst);
     let restarted_instance = fixture
         .services
@@ -685,20 +685,18 @@ async fn stale_activation_requires_a_higher_deployment_to_restart_and_recertify(
         .await
         .unwrap();
     assert_ne!(restarted_instance.instance_id, original.instance_id);
-    assert!(!fixture.checkpoint(binding).await.success);
+    assert!(!fixture.checkpoint(binding.clone()).await.success);
+
+    // Managed reconciliation on the same revision automatically restarts and recertifies.
     let same_revision = fixture.reconciler.apply_prepared(first).await.unwrap();
-    assert_eq!(same_revision.status, ApplyStatus::Failed);
-    assert!(!same_revision.healthy);
-    assert_eq!(*fixture.services.inner.actions.lock().unwrap(), actions);
-    assert!(
-        fixture
-            .state
-            .lock()
-            .unwrap()
-            .pending_intents()
-            .unwrap()
-            .is_empty()
-    );
+    assert_eq!(same_revision.status, ApplyStatus::Applied);
+    assert!(same_revision.healthy);
+    let recovered = fixture.checkpoint(binding).await.observed.unwrap();
+    assert_ne!(recovered.activation_id, original.activation_id);
+    assert_ne!(recovered.instance_id, original.instance_id);
+    assert_ne!(recovered.instance_id, restarted_instance.instance_id);
+    assert_eq!(recovered.binding.revision, 1);
+    assert!(recovered.healthy);
 
     let higher = fixture.target(2, "{}");
     fixture.apply(higher.clone()).await;
@@ -707,9 +705,8 @@ async fn stale_activation_requires_a_higher_deployment_to_restart_and_recertify(
         .await
         .observed
         .unwrap();
-    assert_ne!(certified.activation_id, original.activation_id);
-    assert_ne!(certified.instance_id, original.instance_id);
-    assert_ne!(certified.instance_id, restarted_instance.instance_id);
+    assert_eq!(certified.activation_id, recovered.activation_id);
+    assert_eq!(certified.instance_id, recovered.instance_id);
     assert_eq!(certified.binding.revision, 2);
     assert_eq!(
         certified.binding.bundle_sha256,

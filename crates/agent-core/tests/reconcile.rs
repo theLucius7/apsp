@@ -722,3 +722,168 @@ async fn dependency_barrier_survives_reopen_and_blocks_apply_restart_and_recover
     assert!(restarted.restart_applied(1).await.is_err());
     assert_eq!(*test.services.actions.lock().unwrap(), actions);
 }
+
+#[tokio::test]
+async fn startup_desired_runtime_respects_three_state_panel_intent_and_bundled_identity() {
+    use apsp_agent_core::bundled::{BundledItem, BundledPayload};
+    use flate2::{Compression, write::GzEncoder};
+    use sha2::{Digest, Sha256};
+    use std::{borrow::Cow, io::Write};
+
+    let test = Fixture::new();
+    let legacy = test.target(1, "1.0.0", &"a".repeat(64));
+    test.state
+        .lock()
+        .unwrap()
+        .set_json("applied:demo", &legacy)
+        .unwrap();
+
+    let mut raw_tar = Vec::new();
+    let body = b"bundled-demo-v2";
+    let mut header = tar::Header::new_gnu();
+    header.set_mode(0o755);
+    header.set_entry_type(tar::EntryType::Regular);
+    header.set_size(body.len() as u64);
+    header.set_path("demo").unwrap();
+    header.set_cksum();
+    raw_tar.extend_from_slice(header.as_bytes());
+    raw_tar.extend_from_slice(body);
+    raw_tar.resize(raw_tar.len().div_ceil(512) * 512, 0);
+    raw_tar.extend_from_slice(&[0; 1024]);
+    let mut gz = GzEncoder::new(Vec::new(), Compression::fast());
+    gz.write_all(&raw_tar).unwrap();
+    let archive_bytes = gz.finish().unwrap();
+    let archive_sha256 = format!("{:x}", Sha256::digest(&archive_bytes));
+
+    let bundled = Reconciler::new(
+        test.config.clone(),
+        test.state.clone(),
+        test.adapter.clone(),
+        Arc::new(SystemOps),
+        test.services.clone(),
+    )
+    .with_bundled_runtime(BundledItem {
+        component_name: "demo".into(),
+        binary_name: "demo".into(),
+        version: "2.0.0".into(),
+        payload: BundledPayload::TarGz {
+            inventory_sha256: None,
+            archive_sha256,
+            bytes: Cow::Owned(archive_bytes),
+        },
+    });
+
+    // 1) `desired == None` (legacy DB without panel intent): never wakes a stopped runtime.
+    bundled.ensure_startup_desired_runtime().await.unwrap();
+    assert!(test.services.actions.lock().unwrap().is_empty());
+    assert!(!test.config.install_root.join("demo/2.0.0").exists());
+
+    // 2) `desired == Some(false)` (explicit panel disable): never revives.
+    test.state
+        .lock()
+        .unwrap()
+        .set_json("desired:demo", &false)
+        .unwrap();
+    bundled.ensure_startup_desired_runtime().await.unwrap();
+    assert!(test.services.actions.lock().unwrap().is_empty());
+
+    // 3) `desired == Some(true)`: materializes built-in runtime, switches links, restarts & verifies health.
+    test.state
+        .lock()
+        .unwrap()
+        .set_json("desired:demo", &true)
+        .unwrap();
+    bundled.ensure_startup_desired_runtime().await.unwrap();
+    let switched = test.applied().unwrap();
+    assert_eq!(switched.spec.kernel_version, "2.0.0");
+    assert_eq!(
+        switched.spec.binary_path,
+        test.config.install_root.join("demo/2.0.0/demo")
+    );
+    assert_eq!(
+        test.state
+            .lock()
+            .unwrap()
+            .get_json::<bool>("health:demo")
+            .unwrap(),
+        Some(true)
+    );
+    assert!(!test.services.actions.lock().unwrap().is_empty());
+
+    // 4) Empty panel manifest (`deactivate_if_active`) stops service, clears `applied`, and persists `desired = false`.
+    let actions_before_stop = test.services.actions.lock().unwrap().len();
+    assert!(bundled.deactivate_if_active().await.unwrap());
+    assert!(test.applied().is_none());
+    assert_eq!(
+        test.state
+            .lock()
+            .unwrap()
+            .get_json::<bool>("desired:demo")
+            .unwrap(),
+        Some(false)
+    );
+    assert!(!test.config.runtime_root.join("demo@main/current").exists());
+    let actions_after_stop = test.services.actions.lock().unwrap().len();
+    assert!(actions_after_stop > actions_before_stop);
+    bundled.ensure_startup_desired_runtime().await.unwrap();
+    assert_eq!(
+        test.services.actions.lock().unwrap().len(),
+        actions_after_stop
+    );
+}
+
+#[tokio::test]
+async fn legacy_supervisor_keeps_original_intent_until_promotion_or_rollback() {
+    for promoted in [false, true] {
+        let test = Fixture::new();
+        let previous = test.target(1, "1", "a");
+        let candidate = test.target(2, "2", "b");
+        test.reconciler
+            .apply_prepared(previous.clone())
+            .await
+            .unwrap();
+        let root = &test.config.agent_root;
+        fs::create_dir_all(root.join("0.4.0")).unwrap();
+        std::os::unix::fs::symlink(
+            std::env::current_exe().unwrap(),
+            root.join("0.4.0/apsp-agent"),
+        )
+        .unwrap();
+        let mut upgrade = serde_json::json!({
+            "current": "0.3.9", "previous": "0.3.9", "failed_versions": [],
+            "last_error": null, "trial": {"version": "0.4.0", "sha256": "a".repeat(64)}
+        });
+        let path = root.join("update-state.json");
+        fs::write(&path, upgrade.to_string()).unwrap();
+        let applied = test
+            .reconciler
+            .apply_prepared(candidate.clone())
+            .await
+            .unwrap();
+        assert_eq!(applied.status, ApplyStatus::Applied);
+        test.reconciler.recover().await.unwrap();
+        assert_eq!(test.applied(), Some(candidate.clone()));
+        let pending = test.state.lock().unwrap().pending_intents().unwrap();
+        assert_eq!(pending.len(), 1);
+        let legacy: ApplyIntent = serde_json::from_value(pending[0].payload.clone()).unwrap();
+        assert_eq!(legacy.previous.as_ref(), Some(&previous));
+        upgrade["trial"] = serde_json::Value::Null;
+        if promoted {
+            upgrade["current"] = "0.4.0".into();
+        }
+        fs::write(path, upgrade.to_string()).unwrap();
+        test.reconciler.recover().await.unwrap();
+        assert_eq!(
+            test.applied(),
+            Some(if promoted { candidate } else { previous })
+        );
+        assert!(
+            test.state
+                .lock()
+                .unwrap()
+                .pending_intents()
+                .unwrap()
+                .is_empty()
+        );
+    }
+}

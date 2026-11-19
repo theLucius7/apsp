@@ -1,6 +1,6 @@
 # ADR 0133：每种底层机制只有一套实现（第一部分：咨询锁与后台任务）
 
-状态：已接受（2026-11-13）。延续 [ADR 0131](0131-one-model-per-object.md)（一类对象一套模型）与 [ADR 0132](0132-platform-only-host-and-domain-addresses.md)（宿主只剩平台机制），处理 [architecture.md §12](../architecture.md#12-扫描结论与余下工作2026-11-13) 里“后台循环”“咨询锁的键”两项与任务心跳的归属。
+状态：已接受（2026-11-13）。延续 [ADR 0131](0131-one-model-per-object.md)（一类对象一套模型）与 [ADR 0132](0132-platform-only-host-and-domain-addresses.md)（宿主只剩平台机制），处理 [architecture.md §12](../architecture.md#12-当前优化项) 里“后台循环”“咨询锁的键”两项与任务心跳的归属。
 
 2026-11-13 用户：“扫描 apsp 和查看仓库记录，优化”，随后说明“目前是底层原理深度统一”。
 

@@ -25,7 +25,7 @@ export function AgentSettings({ serverId, liveSupported = false }: { serverId: n
       <label className="flex items-center gap-2 text-sm"><Checkbox checked={form.discover_public_ips} onCheckedChange={checked => { setSaved(false); setForm({ ...form, discover_public_ips: checked === true }) }} /> 自动识别公网 IPv4 / IPv6</label>
       <p className="text-muted-foreground mt-3 text-xs leading-relaxed">公网识别使用固定的 icanhazip 接口；设备本地关闭该功能时，面板设置不会覆盖本地限制。</p>
       <label className="flex items-center gap-2 text-sm"><Checkbox checked={form.auto_update} onCheckedChange={checked => { setSaved(false); setForm({ ...form, auto_update: checked === true }) }} /> 自动更新 Agent</label>
-      <p className="text-muted-foreground mt-3 text-xs leading-relaxed">从 GitHub 下载面板选定的签名 Agent，保留身份与账本；旧版 Agent 需先手工迁移一次。下载加速在编辑服务器中设置。</p>
+      <p className="text-muted-foreground mt-3 text-xs leading-relaxed">从外部可信发布源或已配置的下载加速地址拉取面板选定的签名一体化 Agent（内置 sing-box 与诊断能力），独立验证签名并保留设备身份与本地账本；旧版 Agent 需先通过「接入 / 升级」手工迁移一次。下载加速在编辑服务器中设置。</p>
       <Button disabled={action.busy} type="submit">{action.busy ? '保存中…' : '保存设置'}</Button>{saved && <span className="text-muted-foreground text-xs"> 已保存，设备会在一分钟内同步。</span>}
     </form>}
   </div></Panel><TelemetrySettings serverId={serverId} liveSupported={liveSupported} /></>

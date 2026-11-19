@@ -16,7 +16,7 @@ const descriptors = [
 ]
 function view(problem = null, history = false, ready = true, configured = true) {
   return { ip_addresses:[ip], public_ip_addresses:[ip], private_ip_addresses:[],
-    node_query_ready:ready, node_query_reason:ready ? null : 'TEST_ONLY 正式节点查询 r21 制品尚未上传',
+    node_query_ready:ready, node_query_reason:ready ? null : 'TEST_ONLY 请升级至自带诊断能力的当前 Agent 版本',
     providers:descriptors.map(([provider,label,database]) => ({provider,label,kind:'node_self',execution:'node',enabled:configured,
       reason:configured ? null : '节点尚未配置正式私有凭证，信息未知', databases:[{database,label}]})),
     quality:descriptors.map(([provider,,database,label,source]) => {
@@ -48,7 +48,7 @@ const server = createServer(async (request,response) => {
       posts.push(JSON.parse(body))
       if (state.postStatus !== 201) { response.writeHead(state.postStatus,{'Content-Type':'application/json'}).end(JSON.stringify({error:'TEST_ONLY 设备已有诊断任务，请等待或取消'})); return }
       state.view = state.next
-      answer = {id,status:'queued',job:{plugin:'nodequality',version:'a92fca6c0067df29ddd03fdc2fee6f3000f64545-r21',options:{mode:'ip',ip_version:'both'}}}
+      answer = {id,status:'queued',job:{tool:'nodequality',version:'a92fca6c0067df29ddd03fdc2fee6f3000f64545-r21',options:{mode:'ip',ip_version:'both'}}}
     } else { unexpected.push(`${request.method} ${path}`); response.writeHead(404).end(); return }
     response.writeHead(request.method === 'POST' ? 201 : 200,{'Content-Type':'application/json','Cache-Control':'no-store'}).end(JSON.stringify(answer)); return
   }
@@ -131,8 +131,8 @@ try {
     cases.push('removed-credential-keeps-history')
     await load(view(null,false,false))
     assert(await page.getByRole('button',{name:'节点正式 IP 查询',exact:true}).isDisabled())
-    assert(await page.getByText('TEST_ONLY 正式节点查询 r21 制品尚未上传',{exact:true}).isVisible())
-    cases.push('missing-artifact-readiness-gate')
+    assert(await page.getByText('TEST_ONLY 请升级至自带诊断能力的当前 Agent 版本',{exact:true}).isVisible())
+    cases.push('agent-capability-readiness-gate')
     await load(view()); state.postStatus = 409
     await page.getByRole('button',{name:'节点正式 IP 查询',exact:true}).click()
     await page.getByText('TEST_ONLY 设备已有诊断任务，请等待或取消',{exact:true}).waitFor()

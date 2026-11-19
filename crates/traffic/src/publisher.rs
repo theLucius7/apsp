@@ -61,11 +61,8 @@ async fn snapshot(
 }
 
 /// Publishes the current configuration of one server as a new revision even when its bundle
-/// is unchanged. An Agent replaces a certified activation only for a higher revision, so this
-/// is the administrator's recovery after the service manager restarted the runtime outside
-/// the Agent (a host reboot, for example); a still-valid activation applies it without a
-/// restart. `None` means nothing was published: the server is being published right now,
-/// awaits a deployment preflight, or is not eligible.
+/// is unchanged. `None` means nothing was published: the server is being published right now
+/// or currently has no active service configuration.
 pub(crate) async fn redeploy(state: &AppState, server_id: i64) -> anyhow::Result<Option<u64>> {
     publish_server(state, server_id, true).await
 }
@@ -166,9 +163,36 @@ async fn publish_server_transaction(
     let Some(manifest_rev) = crate::publications::claim_tx(&mut tx, server_id, force).await? else {
         return Ok(None);
     };
-    // Device declarations may have changed since the due-work scan. Recheck
-    // under the claim before creating legacy deployment evidence.
-    if !super::settings::is_enabled(&mut tx, server_id).await? {
+    let current_target: Option<i64> = sqlx::query_scalar(
+        "SELECT target_rev FROM server_module_status WHERE server_id=$1 AND module=$2",
+    )
+    .bind(server_id)
+    .bind(MODULE)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if !super::settings::is_configured(&mut tx, server_id).await? {
+        if force {
+            return Ok(None);
+        }
+        let had_active_target = current_target.is_some_and(|rev| rev > 0);
+        if had_active_target {
+            let rev = manifest_rev
+                .checked_add(1)
+                .ok_or_else(|| anyhow::anyhow!("revision overflow"))?;
+            sqlx::query(
+                "UPDATE server_module_status SET target_rev=0,healthy=false,last_error=NULL,updated_at=$3 WHERE server_id=$1 AND module=$2",
+            )
+            .bind(server_id)
+            .bind(MODULE)
+            .bind(at)
+            .execute(&mut *tx)
+            .await?;
+            crate::publications::record_tx(&mut tx, server_id, rev).await?;
+            let revision = rev.try_into()?;
+            tx.commit().await?;
+            return Ok(Some(revision));
+        }
+        crate::publications::settle_tx(&mut tx, server_id).await?;
         tx.commit().await?;
         return Ok(None);
     }
@@ -185,12 +209,19 @@ async fn publish_server_transaction(
         bundle,
         hash,
     } = compile(state, &mut tx, server_id, at).await?;
-    let previous = sqlx::query("SELECT rev,bundle_sha256 FROM deployments WHERE server_id=$1 AND module=$2 ORDER BY rev DESC LIMIT 1")
-        .bind(server_id).bind(MODULE).fetch_optional(&mut *tx).await?;
-    let previous_revision = previous.as_ref().map(|row| row.get::<i64, _>("rev"));
-    let force_runtime_candidate:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_runtime_rollout_members m JOIN singbox_runtime_rollouts r ON r.id=m.rollout_id WHERE m.server_id=$1 AND m.baseline_revision>=$2 AND r.completed_at IS NULL)").bind(server_id).bind(previous_revision).fetch_one(&mut *tx).await?;
+    let previous = sqlx::query(
+        "SELECT rev,bundle_sha256 FROM deployments WHERE server_id=$1 AND module=$2 ORDER BY rev DESC LIMIT 1",
+    )
+    .bind(server_id)
+    .bind(MODULE)
+    .fetch_optional(&mut *tx)
+    .await?;
     if let Some(previous) = previous.filter(|row| {
-        row.get::<String, _>("bundle_sha256") == hash && !force_runtime_candidate && !force
+        let rev: i64 = row.get("rev");
+        row.get::<String, _>("bundle_sha256") == hash
+            && current_target == Some(rev)
+            && rev == manifest_rev
+            && !force
     }) {
         // Public display metadata is separate from immutable accounting/path evidence.
         super::ordered_paths::publication::record(
@@ -214,30 +245,14 @@ async fn publish_server_transaction(
         tx.commit().await?;
         return Ok(None);
     }
-    let changed =
-        crate::runtime_workflows::ordinary_shape_changes_tx(&mut tx, server_id, &plan.nodes)
-            .await?;
-    if !changed.is_empty()
-        && !crate::runtime_workflows::publisher_ready_tx(state, server_id, &mut tx).await?
-    {
-        // Roll back plan bookkeeping as well as deployment writes. The dirty
-        // desired state remains visible until a current preflight is confirmed.
-        tx.rollback().await?;
-        tracing::debug!(
-            server_id,
-            changed_node_count = changed.len(),
-            "configuration awaits confirmed deployment preflight"
-        );
-        return Ok(None);
-    }
     let rev = manifest_rev
         .checked_add(1)
         .ok_or_else(|| anyhow::anyhow!("revision overflow"))?;
     sqlx::query("INSERT INTO deployments(server_id,module,rev,bundle,bundle_sha256,source_json,created_at) VALUES($1,$2,$3,$4,$5,$6,$7)")
-        .bind(server_id).bind(MODULE).bind(rev).bind(bundle).bind(&hash).bind(source).bind(now_timestamp()).execute(&mut *tx).await?;
+        .bind(server_id).bind(MODULE).bind(rev).bind(bundle).bind(&hash).bind(source).bind(at).execute(&mut *tx).await?;
     super::ordered_paths::publication::record(&mut tx, server_id, rev, &hash, &plan).await?;
     sqlx::query("INSERT INTO server_module_status(server_id,module,target_rev,updated_at) VALUES($1,$2,$3,$4) ON CONFLICT(server_id,module) DO UPDATE SET target_rev=EXCLUDED.target_rev,updated_at=EXCLUDED.updated_at")
-        .bind(server_id).bind(MODULE).bind(rev).bind(now_timestamp()).execute(&mut *tx).await?;
+        .bind(server_id).bind(MODULE).bind(rev).bind(at).execute(&mut *tx).await?;
     crate::publications::record_tx(&mut tx, server_id, rev).await?;
     let revision = rev.try_into()?;
     tx.commit().await?;

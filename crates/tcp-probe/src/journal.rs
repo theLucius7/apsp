@@ -80,10 +80,10 @@ fn private_metadata(metadata: &std::fs::Metadata, directory: bool) -> Result<()>
         if !directory {
             ensure!(metadata.nlink() == 1, "input hard links are not permitted");
         }
+        Ok(())
     }
     #[cfg(not(unix))]
-    anyhow::bail!("private workspace verification requires Unix");
-    Ok(())
+    anyhow::bail!("private workspace verification requires Unix")
 }
 
 async fn regular_private(path: &Path, directory: bool) -> Result<std::fs::Metadata> {

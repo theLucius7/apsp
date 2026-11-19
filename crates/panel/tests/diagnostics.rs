@@ -15,8 +15,7 @@ mod release_support;
 
 use anyhow::Result;
 use apsp_observability::{diagnostics, ip_quality};
-use apsp_protocol::{Hello, HelloAck, Message, PROTOCOL_VERSION};
-use apsp_resources::device_channel;
+use apsp_protocol::{HelloAck, Message};
 use business_support::TestPanel;
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
@@ -25,44 +24,33 @@ use std::collections::BTreeMap;
 use uuid::Uuid;
 
 async fn capable(panel: &TestPanel, server_id: i64) -> Result<()> {
-    sqlx::query(
-        "UPDATE servers SET static_info=static_info || '{\"os\":\"linux\"}'::jsonb WHERE id=$1",
-    )
-    .bind(server_id)
-    .execute(&panel.state.pool)
-    .await?;
-    device_channel::process_message(
-        &panel.state,
-        server_id,
-        Message::Hello(Hello {
-            agent_version: "diagnostic-test".into(),
-            protocol_version: PROTOCOL_VERSION,
-            capabilities: vec![
-                "diagnostic:nodequality".into(),
-                "diagnostic:nodequality-modes".into(),
-                apsp_protocol::DIAGNOSTIC_SECTIONS_CAPABILITY.into(),
-                apsp_protocol::DIAGNOSTIC_SERVICE_CAPABILITY.into(),
-                apsp_protocol::DIAGNOSTIC_CPU_CEILING_CAPABILITY.into(),
-                apsp_protocol::DIAGNOSTIC_COMPLETION_CAPABILITY.into(),
-                apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY.into(),
+    let components = release_fixture::pinned_components(&["nodequality"])?;
+    let (_, signed) =
+        release_fixture::build_signed_agent_entry("0.4.0", "linux-musl-amd64", components)?;
+    panel
+        .observe_signed_agent(
+            server_id,
+            &signed,
+            &[
+                "diagnostic:nodequality",
+                "diagnostic:nodequality-modes",
+                apsp_protocol::DIAGNOSTIC_SECTIONS_CAPABILITY,
+                apsp_protocol::DIAGNOSTIC_SERVICE_CAPABILITY,
+                apsp_protocol::DIAGNOSTIC_CPU_CEILING_CAPABILITY,
+                apsp_protocol::DIAGNOSTIC_COMPLETION_CAPABILITY,
+                apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY,
             ],
-            applied: BTreeMap::new(),
-        }),
-    )
-    .await
+        )
+        .await
 }
 
 async fn fixture(panel: &TestPanel) -> Result<()> {
-    let binary = b"fixed diagnostic fixture";
-    let archive = release_fixture::archive("nodequality", binary)?;
-    release_fixture::write(
+    let components = release_fixture::pinned_components(&["nodequality"])?;
+    release_fixture::write_signed_agents(
         &panel.state.config.data_dir,
-        "nodequality",
-        diagnostics::TOOL_VERSION,
-        "nodequality",
-        &archive,
-        binary,
-        "tar.gz",
+        "0.4.0",
+        &["linux-musl-amd64", "linux-musl-arm64"],
+        &components,
     )?;
     Ok(())
 }
@@ -187,7 +175,7 @@ async fn diagnostic_queue_is_durable_deduplicated_and_device_scoped(pool: PgPool
         .await?;
     assert_eq!(view["reports"][0]["status"], "succeeded");
     assert_eq!(view["reports"][0]["report"]["text"], "完整本地报告");
-    assert!(view["plugin_ready"].as_bool().unwrap());
+    assert!(view["tool_ready"].as_bool().unwrap());
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM diagnostic_jobs WHERE server_id=$1")
         .bind(server_id)
         .fetch_one(&panel.state.pool)
@@ -362,8 +350,13 @@ async fn report_readiness_and_quality_refresh_require_auth_and_preserve_unknown(
         .await?
         .json()
         .await?;
-    assert!(!missing["plugin_ready"].as_bool().unwrap());
-    assert!(missing["plugin_reason"].as_str().unwrap().contains("制品"));
+    assert!(!missing["tool_ready"].as_bool().unwrap());
+    assert!(
+        missing["tool_reason"]
+            .as_str()
+            .unwrap()
+            .contains("尚未导入")
+    );
     fixture(&panel).await?;
     sqlx::query("UPDATE servers SET static_info=static_info || $2 WHERE id=$1")
         .bind(server_id)
@@ -557,14 +550,14 @@ async fn ip_and_nodequality_views_are_independent_and_legacy_routes_preserve_sha
     assert_eq!(ip["public_ip_addresses"], json!([]));
     assert_eq!(ip["private_ip_addresses"], ip["ip_addresses"]);
     assert_eq!(ip["quality"], refreshed);
-    assert!(ip.get("reports").is_none() && ip.get("plugin_ready").is_none());
+    assert!(ip.get("reports").is_none() && ip.get("tool_ready").is_none());
     let node: Value = panel
         .admin(Method::GET, &report_path, &cookie, None)
         .await?
         .error_for_status()?
         .json()
         .await?;
-    assert_eq!(node["plugin_ready"], false);
+    assert_eq!(node["tool_ready"], false);
     assert_eq!(node["cancel_supported"], false);
     assert!(node.get("quality").is_none() && node.get("ip_addresses").is_none());
     assert_eq!(node["reports"][0]["id"], report_id.to_string());

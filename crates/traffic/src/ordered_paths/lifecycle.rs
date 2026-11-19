@@ -5,13 +5,23 @@ use crate::{
     runtime_control,
 };
 use apsp_protocol::{
-    RuntimeCheckpoint, RuntimePathProbeRequest, RuntimePathProbeResult,
-    RuntimeRecoveryBarrierRequest, now_timestamp,
+    RUNTIME_CHECKPOINT_CAPABILITY, RUNTIME_PATH_PROBE_CAPABILITY,
+    RUNTIME_RECOVERY_BARRIER_CAPABILITY, RuntimeCheckpoint, RuntimePathProbeRequest,
+    RuntimePathProbeResult, RuntimeRecoveryBarrierRequest, SELF_CONTAINED_AGENT_CAPABILITY,
+    now_timestamp,
 };
 use serde_json::{Value, json};
 use sqlx::{PgConnection, Postgres, Transaction};
 use std::collections::{BTreeSet, HashSet};
 use uuid::Uuid;
+
+const REQUIRED_PATH_CAPABILITIES: [&str; 5] = [
+    "singbox",
+    SELF_CONTAINED_AGENT_CAPABILITY,
+    RUNTIME_CHECKPOINT_CAPABILITY,
+    RUNTIME_RECOVERY_BARRIER_CAPABILITY,
+    RUNTIME_PATH_PROBE_CAPABILITY,
+];
 
 type FollowNodeFact = (
     i64,
@@ -59,12 +69,14 @@ async fn prepare_candidate(
             *relay_uuid = Uuid::new_v4();
         }
     }
-    storage::require_capabilities(tx, &servers).await?;
     super::super::proxy_resources::lock_cleanup_servers(
         tx,
         &servers.iter().copied().collect::<Vec<_>>(),
     )
     .await?;
+    for server in &servers {
+        super::super::settings::require_writable(tx, *server).await?;
+    }
     let path = storage::compiler_path(chain.id, generation, &frozen, false);
     apsp_compiler::validate_path(&path)
         .map_err(|error| ApiError::BadRequest(format!("完整路径无法编译：{error}")))?;
@@ -86,7 +98,6 @@ async fn prepare_candidate(
         },
     )
     .await?;
-    storage::pin_runtimes(state, tx, chain.id, generation, &frozen).await?;
     sqlx::query("UPDATE singbox_chains SET desired_generation=$2,candidate_generation=$2,recovery_generation=applied_generation,phase='preparing_dependencies',restore_step=NULL,last_error=NULL WHERE id=$1").bind(chain.id).bind(generation).execute(&mut **tx).await?;
     storage::reserve_probe_capacity(state, tx, frozen.entry.server_id).await?;
     super::publication::validate_candidate(tx, &path, &frozen).await?;
@@ -130,34 +141,174 @@ async fn probe_row(
     sqlx::query("INSERT INTO singbox_path_probes(probe_id,chain_id,generation,stage,server_id,created_at) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(chain_id,generation,stage) DO NOTHING").bind(Uuid::new_v4()).bind(chain_id).bind(generation).bind(stage).bind(server).bind(now_timestamp()).execute(&mut **tx).await?;
     Ok(())
 }
+type ServerRuntimeRow = (Option<String>, Option<i64>, Value, Option<i64>, Value);
+
+async fn verify_server_runtime(
+    state: &AppState,
+    connection: &mut PgConnection,
+    server: i64,
+    now: i64,
+) -> Result<(), String> {
+    let row: Option<ServerRuntimeRow> = sqlx::query_as(
+        "SELECT device_public_key,last_seen,static_info,static_info_received_at,capabilities FROM servers WHERE id=$1 AND deleted_at IS NULL",
+    )
+    .bind(server)
+    .fetch_optional(&mut *connection)
+    .await
+    .map_err(|error| format!("读取服务器 #{server} 运行状态失败：{error}"))?;
+    let Some((device_key, last_seen, static_info, received_at, capabilities)) = row else {
+        return Err(format!("服务器 #{server} 不存在或已退役"));
+    };
+    if device_key.is_none() {
+        return Err(format!("等待服务器 #{server} 接入一体化 Agent"));
+    }
+    if !last_seen.is_some_and(|seen| seen <= now + 60 && now.saturating_sub(seen) <= 60) {
+        return Err(format!("服务器 #{server} 当前离线，重连后自动继续同步确认"));
+    }
+    let has_cap = |cap: &str| {
+        capabilities
+            .as_array()
+            .is_some_and(|items| items.iter().any(|item| item.as_str() == Some(cap)))
+    };
+    if has_cap(SELF_CONTAINED_AGENT_CAPABILITY) && !has_cap("singbox") {
+        return Err(format!(
+            "服务器 #{server} 当前为纯监控模式（--monitor-only），已阻断链路运行时激活"
+        ));
+    }
+    if !REQUIRED_PATH_CAPABILITIES.into_iter().all(has_cap) {
+        return Err(format!(
+            "服务器 #{server} 需升级至自带 sing-box 且支持检查点、探测与恢复屏障的一体化 Agent（upgrade_required）"
+        ));
+    }
+    crate::releases::verify_running_component(
+        state,
+        &static_info,
+        received_at,
+        last_seen,
+        now,
+        "sing-box",
+        crate::RUNTIME_VERSION,
+    )
+    .await
+    .map(|_| ())
+    .map_err(|error| format!("服务器 #{server} 运行身份未通过核验：{error}"))
+}
+
+async fn blocking_reason(
+    state: &AppState,
+    connection: &mut PgConnection,
+    servers: &[i64],
+    now: i64,
+) -> Option<String> {
+    for server in servers {
+        if let Err(reason) = verify_server_runtime(state, connection, *server, now).await {
+            return Some(reason);
+        }
+    }
+    None
+}
+
+async fn set_chain_error(
+    tx: &mut Transaction<'_, Postgres>,
+    chain: &ChainRow,
+    error: Option<&str>,
+) -> ApiResult<()> {
+    if chain.last_error.as_deref() != error {
+        sqlx::query("UPDATE singbox_chains SET last_error=$2 WHERE id=$1")
+            .bind(chain.id)
+            .bind(error)
+            .execute(&mut **tx)
+            .await?;
+    }
+    Ok(())
+}
+
+async fn never_dispatched(connection: &mut PgConnection, chain: &ChainRow) -> ApiResult<bool> {
+    if chain.applied_generation.is_some()
+        || chain.recovery_generation.is_some()
+        || chain.minimum_generation > 0
+        || chain.route_enabled
+    {
+        return Ok(false);
+    }
+    let dispatched: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM singbox_path_deployment_dependencies WHERE chain_id=$1)
+             OR EXISTS(SELECT 1 FROM singbox_path_stage_deployments WHERE chain_id=$1)
+             OR EXISTS(SELECT 1 FROM singbox_path_probes WHERE chain_id=$1 AND request_id IS NOT NULL)
+             OR EXISTS(SELECT 1 FROM singbox_deployment_public_projection WHERE module='singbox' AND node_id=$2)",
+    )
+    .bind(chain.id)
+    .bind(chain.entry_node_id)
+    .fetch_one(connection)
+    .await?;
+    Ok(!dispatched)
+}
+
+async fn server_dispatched(
+    connection: &mut PgConnection,
+    chain: &ChainRow,
+    server: i64,
+) -> ApiResult<bool> {
+    Ok(sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM singbox_path_deployment_dependencies WHERE server_id=$1 AND module='singbox' AND chain_id=$2)
+             OR EXISTS(SELECT 1 FROM singbox_path_stage_deployments WHERE server_id=$1 AND chain_id=$2)
+             OR EXISTS(SELECT 1 FROM singbox_path_probes WHERE server_id=$1 AND chain_id=$2 AND request_id IS NOT NULL)
+             OR EXISTS(SELECT 1 FROM singbox_deployment_public_projection WHERE server_id=$1 AND module='singbox' AND node_id=$3)",
+    )
+    .bind(server)
+    .bind(chain.id)
+    .bind(chain.entry_node_id)
+    .fetch_one(connection)
+    .await?)
+}
+
+#[derive(Clone, Copy)]
+struct DependencyExpectation {
+    required: Option<i64>,
+    absent: Option<i64>,
+}
+
 async fn checkpoint_for_stage(
+    state: &AppState,
     connection: &mut PgConnection,
     chain_id: i64,
     generation: i64,
     stage: &str,
     server: i64,
-    required_generation: Option<i64>,
-    absence: Option<i64>,
+    dependencies: DependencyExpectation,
 ) -> ApiResult<Option<RuntimeCheckpoint>> {
     let expected:Option<(i64,String,Uuid,String)>=sqlx::query_as("SELECT revision,bundle_sha256,deployment_id,binding_digest FROM singbox_path_stage_deployments WHERE chain_id=$1 AND generation=$2 AND stage=$3 AND server_id=$4").bind(chain_id).bind(generation).bind(stage).bind(server).fetch_optional(&mut *connection).await?;
     let Some((revision, hash, deployment_id, digest)) = expected else {
         return Ok(None);
     };
-    let valid:bool=sqlx::query_scalar(&format!("SELECT EXISTS(SELECT 1 FROM server_module_status m JOIN servers s ON s.id=m.server_id JOIN runtime_module_checkpoints r ON r.server_id=m.server_id AND r.module=m.module WHERE m.server_id=$1 AND m.module='singbox' AND m.target_rev=$2 AND m.applied_rev=$2 AND m.healthy AND s.deleted_at IS NULL AND NOT {} AND r.checkpoint_json->'binding'->>'bundle_sha256'=$3 AND r.checkpoint_json->'binding'->>'deployment_id'=$4 AND r.checkpoint_json->'binding'->>'binding_digest'=$5 AND (r.checkpoint_json->'binding'->>'revision')::bigint=$2 AND r.checkpoint_json->>'healthy'='true')", crate::publications::pending_sql("s.id"))).bind(server).bind(revision).bind(&hash).bind(deployment_id.to_string()).bind(&digest).fetch_one(&mut *connection).await?;
+    let valid: bool = sqlx::query_scalar(&format!(
+        "SELECT EXISTS(SELECT 1 FROM server_module_status m JOIN servers s ON s.id=m.server_id JOIN runtime_module_checkpoints r ON r.server_id=m.server_id AND r.module=m.module WHERE m.server_id=$1 AND m.module='singbox' AND m.target_rev=$2 AND m.applied_rev=$2 AND m.healthy AND s.deleted_at IS NULL AND NOT {} AND NOT {} AND r.checkpoint_json->'binding'->>'bundle_sha256'=$3 AND r.checkpoint_json->'binding'->>'deployment_id'=$4 AND r.checkpoint_json->'binding'->>'binding_digest'=$5 AND (r.checkpoint_json->'binding'->>'revision')::bigint=$2 AND r.checkpoint_json->>'healthy'='true')",
+        crate::publications::pending_sql("s.id"),
+        crate::nexus_nodes::held_host_sql("s.id"),
+    ))
+    .bind(server)
+    .bind(revision)
+    .bind(&hash)
+    .bind(deployment_id.to_string())
+    .bind(&digest)
+    .fetch_one(&mut *connection)
+    .await?;
     if !valid {
         return Ok(None);
     }
-    if let Some(required) = required_generation {
+    if verify_server_runtime(state, connection, server, now_timestamp())
+        .await
+        .is_err()
+    {
+        return Ok(None);
+    }
+    if let Some(required) = dependencies.required {
         let contains:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_path_deployment_dependencies d WHERE d.server_id=$1 AND d.module='singbox' AND d.revision=$2 AND d.chain_id=$3 AND d.generation=$4)").bind(server).bind(revision).bind(chain_id).bind(required).fetch_one(&mut *connection).await?;
         if !contains {
             return Ok(None);
         }
-        let runtime:bool=sqlx::query_scalar("SELECT NOT EXISTS(SELECT 1 FROM singbox_chain_runtime_requirements p WHERE p.chain_id=$1 AND p.generation=$2 AND p.server_id=$3 AND NOT EXISTS(SELECT 1 FROM singbox_runtime_manifest_facts f WHERE f.server_id=$3 AND f.module='singbox' AND f.revision=$4 AND f.runtime_version=p.runtime_version AND f.artifact_sha256=p.artifact_sha256))").bind(chain_id).bind(required).bind(server).bind(revision).fetch_one(&mut *connection).await?;
-        if !runtime {
-            return Ok(None);
-        }
     }
-    if let Some(absent) = absence {
+    if let Some(absent) = dependencies.absent {
         let present:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_path_deployment_dependencies WHERE server_id=$1 AND module='singbox' AND revision=$2 AND chain_id=$3 AND generation=$4)").bind(server).bind(revision).bind(chain_id).bind(absent).fetch_one(&mut *connection).await?;
         if present {
             return Ok(None);
@@ -318,7 +469,11 @@ async fn follow_updates(
         changed = true;
     }
     if changed {
-        start_candidate(state, tx, chain, frozen).await?;
+        match start_candidate(state, tx, chain, frozen).await {
+            Ok(_) => {}
+            Err(ApiError::Conflict(_)) => {}
+            Err(error) => return Err(error),
+        }
     }
     Ok(())
 }
@@ -381,6 +536,11 @@ async fn advance(
             _ => None,
         })
         .collect();
+    let active_servers: Vec<i64> =
+        BTreeSet::from_iter(std::iter::once(entry).chain(managed.iter().copied()))
+            .into_iter()
+            .collect();
+    let now = now_timestamp();
     let mut action = None;
     match chain.phase.as_str() {
         "preparing_dependencies" => {
@@ -388,15 +548,18 @@ async fn advance(
                 fail_candidate(&mut tx, &chain, "受管依赖应用失败，未切换用户路径").await?;
             } else {
                 let mut ready = true;
-                for server in managed {
+                for server in &managed {
                     if checkpoint_for_stage(
+                        state,
                         &mut tx,
                         id,
                         generation,
                         "preparing_dependencies",
-                        server,
-                        Some(generation),
-                        None,
+                        *server,
+                        DependencyExpectation {
+                            required: Some(generation),
+                            absent: None,
+                        },
                     )
                     .await?
                     .is_none()
@@ -405,8 +568,15 @@ async fn advance(
                     }
                 }
                 if ready {
+                    if chain.applied_generation.is_none() {
+                        set_chain_error(&mut tx, &chain, None).await?;
+                    }
                     probe_row(&mut tx, id, generation, "candidate", entry).await?;
                     phase(&mut tx, &chain, "preparing_entry").await?;
+                } else if let Some(reason) = blocking_reason(state, &mut tx, &managed, now).await {
+                    set_chain_error(&mut tx, &chain, Some(&reason)).await?;
+                } else if chain.applied_generation.is_none() {
+                    set_chain_error(&mut tx, &chain, None).await?;
                 }
             }
         }
@@ -414,17 +584,23 @@ async fn advance(
             if stage_failed(&mut tx, id, generation, &chain.phase).await? {
                 fail_candidate(&mut tx, &chain, "入口配置应用失败，保留可恢复的已应用代数").await?;
             } else if checkpoint_for_stage(
+                state,
                 &mut tx,
                 id,
                 generation,
                 &chain.phase,
                 entry,
-                Some(generation),
-                None,
+                DependencyExpectation {
+                    required: Some(generation),
+                    absent: None,
+                },
             )
             .await?
             .is_some()
             {
+                if chain.applied_generation.is_none() {
+                    set_chain_error(&mut tx, &chain, None).await?;
+                }
                 phase(
                     &mut tx,
                     &chain,
@@ -435,6 +611,10 @@ async fn advance(
                     },
                 )
                 .await?;
+            } else if let Some(reason) = blocking_reason(state, &mut tx, &[entry], now).await {
+                set_chain_error(&mut tx, &chain, Some(&reason)).await?;
+            } else if chain.applied_generation.is_none() {
+                set_chain_error(&mut tx, &chain, None).await?;
             }
         }
         "probing_candidate" | "probing_switched" => {
@@ -449,13 +629,16 @@ async fn advance(
                 "switching_entry"
             };
             if let Some(expected) = checkpoint_for_stage(
+                state,
                 &mut tx,
                 id,
                 generation,
                 deployment_stage,
                 entry,
-                Some(generation),
-                None,
+                DependencyExpectation {
+                    required: Some(generation),
+                    absent: None,
+                },
             )
             .await?
             {
@@ -469,17 +652,23 @@ async fn advance(
                     expected,
                     vector: vec![],
                 });
+            } else if let Some(reason) = blocking_reason(state, &mut tx, &active_servers, now).await
+            {
+                set_chain_error(&mut tx, &chain, Some(&reason)).await?;
             }
         }
         "fixing_barrier" => {
             if let Some(expected) = checkpoint_for_stage(
+                state,
                 &mut tx,
                 id,
                 generation,
                 "switching_entry",
                 entry,
-                Some(generation),
-                None,
+                DependencyExpectation {
+                    required: Some(generation),
+                    absent: None,
+                },
             )
             .await?
             {
@@ -502,15 +691,18 @@ async fn advance(
                         .bind(server)
                         .fetch_one(&mut *tx)
                         .await?;
-                if alive
+                if (alive || server_dispatched(&mut tx, &chain, *server).await?)
                     && checkpoint_for_stage(
+                        state,
                         &mut tx,
                         id,
                         generation,
                         "retiring_old",
                         *server,
-                        Some(generation),
-                        chain.recovery_generation,
+                        DependencyExpectation {
+                            required: Some(generation),
+                            absent: chain.recovery_generation,
+                        },
                     )
                     .await?
                     .is_none()
@@ -518,7 +710,7 @@ async fn advance(
                     ready = false;
                 }
             }
-            if ready && let Some(vector) = current_vector(&mut tx, id, generation).await? {
+            if ready && let Some(vector) = current_vector(state, &mut tx, id, generation).await? {
                 if probe_matches_vector(&mut tx, id, generation, &vector).await? {
                     finish_applied(
                         &mut tx,
@@ -530,13 +722,16 @@ async fn advance(
                     )
                     .await?;
                 } else if let Some(expected) = checkpoint_for_stage(
+                    state,
                     &mut tx,
                     id,
                     generation,
                     "retiring_old",
                     entry,
-                    Some(generation),
-                    chain.recovery_generation,
+                    DependencyExpectation {
+                        required: Some(generation),
+                        absent: chain.recovery_generation,
+                    },
                 )
                 .await?
                 {
@@ -562,13 +757,16 @@ async fn advance(
             match chain.restore_step.as_deref().unwrap_or("entry") {
                 "entry" => {
                     if checkpoint_for_stage(
+                        state,
                         &mut tx,
                         id,
                         generation,
                         "restoring",
                         entry,
-                        Some(old),
-                        Some(generation),
+                        DependencyExpectation {
+                            required: Some(old),
+                            absent: Some(generation),
+                        },
                     )
                     .await?
                     .is_some()
@@ -581,13 +779,16 @@ async fn advance(
                 }
                 "probe" => {
                     if let Some(expected) = checkpoint_for_stage(
+                        state,
                         &mut tx,
                         id,
                         generation,
                         "restoring",
                         entry,
-                        Some(old),
-                        Some(generation),
+                        DependencyExpectation {
+                            required: Some(old),
+                            absent: Some(generation),
+                        },
                     )
                     .await?
                     {
@@ -605,13 +806,16 @@ async fn advance(
                 }
                 "barrier" => {
                     if let Some(expected) = checkpoint_for_stage(
+                        state,
                         &mut tx,
                         id,
                         generation,
                         "restoring",
                         entry,
-                        Some(old),
-                        Some(generation),
+                        DependencyExpectation {
+                            required: Some(old),
+                            absent: Some(generation),
+                        },
                     )
                     .await?
                     {
@@ -635,15 +839,18 @@ async fn advance(
                         .bind(server)
                         .fetch_one(&mut *tx)
                         .await?;
-                        if alive
+                        if (alive || server_dispatched(&mut tx, &chain, *server).await?)
                             && checkpoint_for_stage(
+                                state,
                                 &mut tx,
                                 id,
                                 generation,
                                 "restoring_cleanup",
                                 *server,
-                                Some(old),
-                                Some(generation),
+                                DependencyExpectation {
+                                    required: Some(old),
+                                    absent: Some(generation),
+                                },
                             )
                             .await?
                             .is_none()
@@ -651,7 +858,7 @@ async fn advance(
                             ready = false;
                         }
                     }
-                    if ready && let Some(vector) = current_vector(&mut tx, id, old).await? {
+                    if ready && let Some(vector) = current_vector(state, &mut tx, id, old).await? {
                         if probe_matches_vector(&mut tx, id, old, &vector).await? {
                             finish_applied(
                                 &mut tx,
@@ -663,13 +870,16 @@ async fn advance(
                             )
                             .await?;
                         } else if let Some(expected) = checkpoint_for_stage(
+                            state,
                             &mut tx,
                             id,
                             generation,
                             "restoring_cleanup",
                             entry,
-                            Some(old),
-                            Some(generation),
+                            DependencyExpectation {
+                                required: Some(old),
+                                absent: Some(generation),
+                            },
                         )
                         .await?
                         {
@@ -690,41 +900,67 @@ async fn advance(
             }
         }
         "retiring" => {
+            // `servers.deleted_at` can be set by `offline_unconfirmed` deletion without a
+            // verified device teardown receipt (`crates/resources/src/retirement.rs`), so any
+            // server where this chain was dispatched must still produce a verified retiring
+            // checkpoint in a live authenticated session before releasing ownership.
             let mut ready = true;
-            for server in servers {
-                let alive: bool =
-                    sqlx::query_scalar("SELECT deleted_at IS NULL FROM servers WHERE id=$1")
-                        .bind(server)
-                        .fetch_one(&mut *tx)
-                        .await?;
-                if alive {
-                    for absent in [
-                        chain.applied_generation,
-                        chain.candidate_generation,
-                        chain.recovery_generation,
-                    ]
-                    .into_iter()
-                    .flatten()
-                    {
-                        if checkpoint_for_stage(
-                            &mut tx,
-                            id,
-                            chain.desired_generation,
-                            "retiring",
-                            server,
-                            None,
-                            Some(absent),
-                        )
-                        .await?
-                        .is_none()
-                        {
-                            ready = false;
+            if !never_dispatched(&mut tx, &chain).await? {
+                for server in &servers {
+                    if server_dispatched(&mut tx, &chain, *server).await? {
+                        let absent_generations: Vec<i64> = [
+                            chain.applied_generation,
+                            chain.candidate_generation,
+                            chain.recovery_generation,
+                        ]
+                        .into_iter()
+                        .flatten()
+                        .collect();
+                        if absent_generations.is_empty() {
+                            if checkpoint_for_stage(
+                                state,
+                                &mut tx,
+                                id,
+                                chain.desired_generation,
+                                "retiring",
+                                *server,
+                                DependencyExpectation {
+                                    required: None,
+                                    absent: None,
+                                },
+                            )
+                            .await?
+                            .is_none()
+                            {
+                                ready = false;
+                            }
+                        } else {
+                            for absent in absent_generations {
+                                if checkpoint_for_stage(
+                                    state,
+                                    &mut tx,
+                                    id,
+                                    chain.desired_generation,
+                                    "retiring",
+                                    *server,
+                                    DependencyExpectation {
+                                        required: None,
+                                        absent: Some(absent),
+                                    },
+                                )
+                                .await?
+                                .is_none()
+                                {
+                                    ready = false;
+                                }
+                            }
                         }
                     }
                 }
             }
             if ready {
                 sqlx::query("UPDATE singbox_chains SET phase=$2,candidate_generation=NULL,recovery_generation=NULL,restore_step=NULL,applied_generation=CASE WHEN deleted_at IS NULL THEN applied_generation ELSE NULL END WHERE id=$1").bind(id).bind(if chain.deleted_at.is_some(){"retired"}else{"applied"}).execute(&mut *tx).await?;
+                super::super::business::mark_dirty(&mut tx, &servers).await?;
             }
         }
         "applied" => {
@@ -735,16 +971,18 @@ async fn advance(
                 let fresh = storage::chain(&mut tx, id, false).await?;
                 if fresh.candidate_generation.is_none() && fresh.route_enabled {
                     let mut vector_ready = true;
-                    let active_servers = BTreeSet::from_iter(std::iter::once(entry).chain(managed));
-                    for server in active_servers {
+                    for server in &active_servers {
                         if checkpoint_for_stage(
+                            state,
                             &mut tx,
                             id,
                             generation,
                             "applied",
-                            server,
-                            Some(generation),
-                            None,
+                            *server,
+                            DependencyExpectation {
+                                required: Some(generation),
+                                absent: None,
+                            },
                         )
                         .await?
                         .is_none()
@@ -755,13 +993,16 @@ async fn advance(
                     if vector_ready
                         && !qualified(&mut tx, id).await?
                         && let Some(expected) = checkpoint_for_stage(
+                            state,
                             &mut tx,
                             id,
                             generation,
                             "applied",
                             entry,
-                            Some(generation),
-                            None,
+                            DependencyExpectation {
+                                required: Some(generation),
+                                absent: None,
+                            },
                         )
                         .await?
                     {
@@ -788,13 +1029,18 @@ async fn advance(
         } else {
             generation
         };
-        if let Some(observations) = current_vector(&mut tx, id, semantic_generation).await? {
+        if let Some(observations) = current_vector(state, &mut tx, id, semantic_generation).await? {
             match action {
                 Action::Probe { vector, .. } | Action::Barrier { vector, .. } => {
                     *vector = observations;
                 }
             }
         } else {
+            if !matches!(chain.phase.as_str(), "fixing_barrier" | "restoring")
+                && let Some(reason) = blocking_reason(state, &mut tx, &active_servers, now).await
+            {
+                set_chain_error(&mut tx, &chain, Some(&reason)).await?;
+            }
             tx.commit().await?;
             return Ok(None);
         }
@@ -819,6 +1065,7 @@ async fn probe_identifier(
 }
 
 async fn current_vector(
+    state: &AppState,
     connection: &mut PgConnection,
     id: i64,
     generation: i64,
@@ -830,6 +1077,7 @@ async fn current_vector(
             servers.insert(endpoint.server_id);
         }
     }
+    let now = now_timestamp();
     let mut vector = Vec::new();
     for server in servers {
         let Ok(observed) =
@@ -841,8 +1089,10 @@ async fn current_vector(
         if !contains {
             return Ok(None);
         }
-        let prepared:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_chain_runtime_requirements p JOIN singbox_runtime_manifest_facts f ON f.server_id=p.server_id AND f.module='singbox' AND f.revision=$4 AND f.runtime_version=p.runtime_version AND f.artifact_sha256=p.artifact_sha256 WHERE p.chain_id=$1 AND p.generation=$2 AND p.server_id=$3)").bind(id).bind(generation).bind(server).bind(observed.binding.revision as i64).fetch_one(&mut *connection).await?;
-        if !prepared {
+        if verify_server_runtime(state, connection, server, now)
+            .await
+            .is_err()
+        {
             return Ok(None);
         }
         vector.push((server, observed));
@@ -872,7 +1122,18 @@ pub async fn qualified(connection: &mut PgConnection, id: i64) -> ApiResult<bool
     ));
     let mut observed_vector = Vec::<(i64, Value)>::new();
     for server in servers {
-        let valid:bool=sqlx::query_scalar(&format!("SELECT EXISTS(SELECT 1 FROM singbox_path_deployment_dependencies d JOIN server_module_status m ON m.server_id=d.server_id AND m.module=d.module JOIN servers s ON s.id=m.server_id JOIN runtime_module_checkpoints r ON r.server_id=m.server_id AND r.module=m.module JOIN runtime_deployment_bindings b ON b.server_id=d.server_id AND b.module=d.module AND b.rev=d.revision WHERE d.chain_id=$1 AND d.generation=$2 AND d.server_id=$3 AND d.module='singbox' AND d.revision=m.target_rev AND d.revision=m.applied_rev AND m.healthy AND NOT {} AND s.deleted_at IS NULL AND r.checkpoint_json->>'healthy'='true' AND r.checkpoint_json->'binding'->>'binding_digest'=b.binding_digest AND r.checkpoint_json->'binding'->>'deployment_id'=b.deployment_id::text AND r.checkpoint_json->'binding'->>'bundle_sha256'=b.bundle_sha256 AND (r.checkpoint_json->'binding'->>'revision')::bigint=d.revision AND EXISTS(SELECT 1 FROM singbox_chain_runtime_requirements p JOIN singbox_runtime_manifest_facts f ON f.server_id=p.server_id AND f.module='singbox' AND f.revision=d.revision AND f.artifact_sha256=p.artifact_sha256 AND f.runtime_version=p.runtime_version WHERE p.chain_id=$1 AND p.generation=$2 AND p.server_id=$3))", crate::publications::pending_sql("s.id"))).bind(id).bind(generation).bind(server).fetch_one(&mut *connection).await?;
+        let valid: bool = sqlx::query_scalar(&format!(
+            "SELECT EXISTS(SELECT 1 FROM singbox_path_deployment_dependencies d JOIN server_module_status m ON m.server_id=d.server_id AND m.module=d.module JOIN servers s ON s.id=m.server_id JOIN runtime_module_checkpoints r ON r.server_id=m.server_id AND r.module=m.module JOIN runtime_deployment_bindings b ON b.server_id=d.server_id AND b.module=d.module AND b.rev=d.revision WHERE d.chain_id=$1 AND d.generation=$2 AND d.server_id=$3 AND d.module='singbox' AND d.revision=m.target_rev AND d.revision=m.applied_rev AND m.healthy AND NOT {} AND s.deleted_at IS NULL AND NOT {} AND s.capabilities @> $4::jsonb AND s.static_info->'components'->>'sing-box'=$5 AND r.checkpoint_json->>'healthy'='true' AND r.checkpoint_json->'binding'->>'binding_digest'=b.binding_digest AND r.checkpoint_json->'binding'->>'deployment_id'=b.deployment_id::text AND r.checkpoint_json->'binding'->>'bundle_sha256'=b.bundle_sha256 AND (r.checkpoint_json->'binding'->>'revision')::bigint=d.revision)",
+            crate::publications::pending_sql("s.id"),
+            crate::nexus_nodes::held_host_sql("s.id"),
+        ))
+        .bind(id)
+        .bind(generation)
+        .bind(server)
+        .bind(json!(REQUIRED_PATH_CAPABILITIES))
+        .bind(crate::RUNTIME_VERSION)
+        .fetch_one(&mut *connection)
+        .await?;
         if !valid {
             return Ok(false);
         }
@@ -908,7 +1169,7 @@ async fn act(state: &AppState, action: Action) -> ApiResult<()> {
             }
             let servers = storage::referenced_servers(&mut tx, chain_id).await?;
             super::super::proxy_resources::lock_cleanup_servers(&mut tx, &servers).await?;
-            if current_vector(&mut tx, chain_id, generation)
+            if current_vector(state, &mut tx, chain_id, generation)
                 .await?
                 .as_ref()
                 != Some(&vector)
@@ -1083,7 +1344,7 @@ async fn act(state: &AppState, action: Action) -> ApiResult<()> {
             } else {
                 generation
             };
-            if current_vector(&mut tx, chain_id, semantic_generation)
+            if current_vector(state, &mut tx, chain_id, semantic_generation)
                 .await?
                 .as_ref()
                 != Some(&vector)

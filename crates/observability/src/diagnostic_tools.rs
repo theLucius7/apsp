@@ -19,16 +19,20 @@ pub fn all() -> &'static [&'static dyn DiagnosticTool] {
     &REGISTERED
 }
 pub fn find(id: &str) -> Option<&'static dyn DiagnosticTool> {
-    all().iter().copied().find(|plugin| plugin.id() == id)
+    all().iter().copied().find(|tool| tool.id() == id)
 }
 
-/// Jobs created before plugin registration belong to the original diagnostic plugin.
+/// Jobs created before tool registration belong to the original diagnostic tool.
 pub fn for_job(job: &serde_json::Value) -> Option<&'static dyn DiagnosticTool> {
-    if job["plugin"].as_str() == Some("nodequality")
+    let tool_id = job["plugin"]
+        .as_str()
+        .or_else(|| job["tool"].as_str())
+        .unwrap_or("nodequality");
+    if tool_id == "nodequality"
         && job["version"].as_str() == Some(nodequality::node_queries::NODE_QUERY_VERSION)
         && job["options"]["mode"].as_str() == Some("ip")
     {
         return Some(&NODE_IPQUALITY);
     }
-    find(job["plugin"].as_str().unwrap_or("nodequality"))
+    find(tool_id)
 }

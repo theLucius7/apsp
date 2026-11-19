@@ -71,21 +71,21 @@ pub(super) fn preparation(node: &Node, compiled: Option<&Value>, now: i64) -> Va
         "lifecycle".to_owned(),
         "policy".to_owned(),
         "configuration".to_owned(),
-        "artifact".to_owned(),
+        "builtin_runtime".to_owned(),
         "snapshot".to_owned(),
         "ports".to_owned(),
         "directories".to_owned(),
         "acme_storage".to_owned(),
         "service_manager".to_owned(),
+        format!(
+            "capability:{}",
+            apsp_protocol::SELF_CONTAINED_AGENT_CAPABILITY
+        ),
         "capability:singbox".to_owned(),
         format!("capability:{}", apsp_protocol::fleet::OPERATIONS_CAPABILITY),
         format!(
             "capability:{}",
             apsp_protocol::fleet::RUNTIME_PREFLIGHT_CAPABILITY
-        ),
-        format!(
-            "capability:{}",
-            apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY
         ),
         format!("dns:{}", node.id),
     ];
@@ -111,7 +111,7 @@ pub(super) fn preparation(node: &Node, compiled: Option<&Value>, now: i64) -> Va
             "secret_values_returned":false,
         }),
         if valid {
-            "固定编译器确实生成目标运行时可用的 ACME 提供方与节点引用；还须同时满足 DNS、签名制品、挑战端口、持久证书目录和系统服务权限。外部 CA 对挑战端口的可达性未实测，签发与部署后握手分别保留状态。"
+            "固定编译器确实生成目标运行时可用的 ACME 提供方与节点引用；还须同时满足 DNS、一体化 Agent 内置 sing-box、挑战端口、持久证书目录和系统服务权限。外部 CA 对挑战端口的可达性未实测，签发与部署后握手分别保留状态。"
         } else {
             "当前配置不能生成受支持的自动签发提供方、域名或节点引用；不会以已有握手绕过当前材料错误。"
         },
@@ -171,9 +171,172 @@ pub(in super::super) fn resolve_dependencies(checks: &mut [Value]) {
         });
         item["blocking"] = json!(!ready);
         item["detail"] = json!(if ready {
-            "固定运行时提供方、当前有效域名解析、签名制品及目标 Agent 的挑战端口／持久证书目录／服务权限证据均满足首次签发准备条件。外部 CA 挑战可达性与签发结果未确认；实际部署必须通过独立 TCP TLS 或 QUIC 信任链及域名握手健康检查。"
+            "固定运行时提供方、当前有效域名解析、一体化 Agent 内置 sing-box 及目标设备的挑战端口／持久证书目录／服务权限证据均满足首次签发准备条件。外部 CA 挑战可达性与签发结果未确认；实际部署必须通过独立 TCP TLS 或 QUIC 信任链及域名握手健康检查。"
         } else {
-            "首次签发准备条件尚有缺失、失败或过期证据；当前材料、DNS、签名制品、挑战端口、持久证书目录和服务权限必须同时满足，不依靠人工声明或既有握手替代。"
+            "首次签发准备条件尚有缺失、失败或过期证据；当前材料、DNS、一体化 Agent 内置 sing-box、挑战端口、持久证书目录和服务权限必须同时满足，不依靠人工声明或既有握手替代。"
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use apsp_compiler::{Access, AcmeChallenge, ProtocolConfig, compile_server};
+    use uuid::Uuid;
+
+    #[test]
+    fn acme_preparation_resolves_with_self_contained_builtin_runtime_keys() {
+        let node = Node {
+            id: 7,
+            name: "ACME node".into(),
+            port: 443,
+            public_host: "proxy.example.com".into(),
+            sni: "proxy.example.com".into(),
+            private_key: String::new(),
+            public_key: String::new(),
+            short_id: String::new(),
+            enabled: true,
+            settings: Default::default(),
+            protocol_config: ProtocolConfig::Hysteria2 {
+                tls: TlsConfig::Acme {
+                    email: "admin@example.com".into(),
+                    challenge: AcmeChallenge::Http01,
+                },
+            },
+            users: vec![Access {
+                user_id: 1,
+                uuid: Uuid::from_u128(1),
+                credential: "TEST_ONLY-secret".into(),
+            }],
+        };
+        let compiled: Value =
+            serde_json::from_str(&compile_server(std::slice::from_ref(&node)).expect("compile"))
+                .expect("compiled json");
+        let mut checks = vec![
+            check(
+                "online",
+                "设备连接",
+                "passed",
+                Some(10),
+                "test",
+                json!({}),
+                "",
+            ),
+            check(
+                "lifecycle",
+                "生命周期",
+                "passed",
+                Some(10),
+                "test",
+                json!({}),
+                "",
+            ),
+            check("policy", "策略", "passed", Some(10), "test", json!({}), ""),
+            check(
+                "configuration",
+                "配置",
+                "passed",
+                Some(10),
+                "test",
+                json!({}),
+                "",
+            ),
+            check(
+                "builtin_runtime",
+                "内置运行时",
+                "passed",
+                Some(10),
+                "test",
+                json!({}),
+                "",
+            ),
+            check(
+                "snapshot",
+                "时效",
+                "passed",
+                Some(10),
+                "test",
+                json!({}),
+                "",
+            ),
+            check("ports", "监听", "passed", Some(10), "test", json!({}), ""),
+            check(
+                "directories",
+                "目录",
+                "passed",
+                Some(10),
+                "test",
+                json!({}),
+                "",
+            ),
+            check(
+                "acme_storage",
+                "证书目录",
+                "passed",
+                Some(10),
+                "test",
+                json!({}),
+                "",
+            ),
+            check(
+                "service_manager",
+                "服务",
+                "passed",
+                Some(10),
+                "test",
+                json!({}),
+                "",
+            ),
+            check(
+                &format!(
+                    "capability:{}",
+                    apsp_protocol::SELF_CONTAINED_AGENT_CAPABILITY
+                ),
+                "能力",
+                "passed",
+                Some(10),
+                "test",
+                json!({}),
+                "",
+            ),
+            check(
+                "capability:singbox",
+                "能力",
+                "passed",
+                Some(10),
+                "test",
+                json!({}),
+                "",
+            ),
+            check(
+                &format!("capability:{}", apsp_protocol::fleet::OPERATIONS_CAPABILITY),
+                "能力",
+                "passed",
+                Some(10),
+                "test",
+                json!({}),
+                "",
+            ),
+            check(
+                &format!(
+                    "capability:{}",
+                    apsp_protocol::fleet::RUNTIME_PREFLIGHT_CAPABILITY
+                ),
+                "能力",
+                "passed",
+                Some(10),
+                "test",
+                json!({}),
+                "",
+            ),
+            check("dns:7", "DNS", "passed", Some(10), "test", json!({}), ""),
+            preparation(&node, Some(&compiled), 10),
+        ];
+        resolve_dependencies(&mut checks);
+        let cert = checks.last().expect("certificate check");
+        assert_eq!(cert["state"], "passed");
+        assert_eq!(cert["blocking"], false);
+        assert_eq!(cert["evidence"]["prerequisites_ready"], true);
+        assert!(!cert["detail"].as_str().unwrap().contains("制品"));
     }
 }

@@ -5,7 +5,7 @@ import { createServer } from 'node:http'
 import { mkdir, readFile } from 'node:fs/promises'
 import { resolve, extname, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { orderedResourceFixture, pathFixtureUuid, catalogNodeFixtures, proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
+import { orderedResourceFixture, pathFixtureUuid, catalogNodeFixtures, proxyResourceFixtures, runtimeServerFixture } from './proxy-resource-fixtures.mjs'
 import { sourceNodeFixture, sourceNodePageFixture, sourceRevisionFixture, sourceUuid, subscriptionSourceFixture } from './subscription-source-fixtures.mjs'
 
 // Serve the real final dist. Owned public fixtures exercise UI contracts, not live proxy delivery.
@@ -28,7 +28,7 @@ try {
     await page.emulateMedia({ reducedMotion: 'reduce' })
     const errors = [], writes = [], receipts = new Map(), mutations = new Map()
     page.on('pageerror', error => errors.push(error.message))
-    const servers = [1, 2, 3].map(id => ({ id, name: `服务器 ${id}`, enabled: true, online: false, read_only: false, source: 'administrator', agent_supported: true }))
+    const servers = [1, 2, 3].map(id => runtimeServerFixture(id, { online: false }))
     let nodes = [1, 2, 3, 10, 11].map(id => ({ id, name: `节点 ${id}`, server_id: id >= 10 ? 1 : id, protocol: 'vless-reality', enabled: true, port: 20000 + id, public_host: `node${id}.example.com`, sni: 'www.example.com', public_key: 'TEST_ONLY', short_id: 'abcd' }))
     const twoHop = [{ id: 1, name: '入口两跳', entry_node_id: 10, exit_node_id: 2, available: true }]
     let source = subscriptionSourceFixture(), sourceNodes = [sourceNodeFixture({ version_id: sourceUuid(405) })], sourceFailure = false, oldNodesFailure = false

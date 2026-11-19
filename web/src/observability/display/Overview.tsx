@@ -8,7 +8,7 @@ import { dashboardCounts, savedSort, savedView, selectServers, snapshotUnavailab
 import type { DashboardFilter, DashboardSort, DashboardView } from './dashboard'
 import { ServerCard } from './ServerCard'
 import ServerTable from './ServerTable'
-import { useDashboardPoll } from './useDashboardPoll'
+import { useResourcePoll } from '@/lib/useResourcePoll'
 import { useDashboardServers } from './useDashboardServers'
 import { useCurrency } from '../../costs/currency/CurrencyContext'
 import { costSummary, quoteState } from '../../costs/currency/currency'
@@ -39,7 +39,7 @@ export default function Overview({ now }: { now: number }) {
   const resource = useDashboardServers(false)
   const { currency, quote, error: currencyError } = useCurrency()
   const { data: servers, error, loading, updatedAt } = resource
-  const probes = useDashboardPoll<ProbeOverview[]>('/api/dashboard/probes/overview', 15_000, false, servers?.some(server => server.public_view) ? 'public' : 'admin')
+  const probes = useResourcePoll<ProbeOverview[]>('/api/dashboard/probes/overview', 15_000, false, servers?.some(server => server.public_view) ? 'public' : 'admin')
   const [view, setView] = useState<DashboardView>(() => savedView(readPreference('view')))
   const [sort, setSort] = useState<DashboardSort>(() => savedSort(readPreference('sort')))
   const [query, setQuery] = useState('')

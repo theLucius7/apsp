@@ -194,8 +194,18 @@ pub(super) fn parse(
     let frozen: Vec<String> =
         serde_json::from_str(job["options"]["node_ips"].as_str().ok_or_else(invalid)?)
             .map_err(|_| invalid())?;
+    let valid_job_identity = match job["version"].as_str() {
+        Some(NODE_QUERY_VERSION) => service::FrozenComponentIdentity::from_job(job)
+            .ok()
+            .flatten()
+            .is_some_and(|frozen| {
+                frozen.component == "nodequality" && frozen.component_version == NODE_QUERY_VERSION
+            }),
+        Some(LEGACY_NODE_QUERY_VERSION) => job.get("agent_bundle").is_none(),
+        _ => false,
+    };
     if job["plugin"].as_str() != Some("nodequality")
-        || job["version"].as_str() != Some(NODE_QUERY_VERSION)
+        || !valid_job_identity
         || job["id"].as_str() != Some(update.id.to_string().as_str())
         || report.job_id != update.id
         || report.schema != SCHEMA

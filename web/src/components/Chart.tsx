@@ -1,8 +1,8 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
-import { clock, shortTime } from '../../format'
-import { segments } from './data'
-import type { Point } from './data'
+import { clock, shortTime } from '../format'
+import { segments } from '../lib/chart-data'
+import type { Point } from '../lib/chart-data'
 import { surface } from '@/components/board'
 import { cn } from '@/lib/utils'
 

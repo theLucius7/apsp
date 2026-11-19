@@ -21,23 +21,6 @@ fn packages() -> Vec<Value> {
     .expect("compiled dependency inventory")
 }
 
-/// Upstream packages behind the signed tool artifacts, by artifact name, so advisories
-/// are looked up for the versions the panel can hand to devices.
-const SIGNED_TOOLS: [(&str, &str, &str); 1] = [("sing-box", "github.com/sagernet/sing-box", "Go")];
-
-fn add_signed_tools(packages: &mut Vec<Value>, entries: &[crate::artifacts::ArtifactEntry]) {
-    for (artifact, name, ecosystem) in SIGNED_TOOLS {
-        let versions: BTreeSet<_> = entries
-            .iter()
-            .filter(|entry| entry.name == artifact)
-            .map(|entry| entry.version.clone())
-            .collect();
-        packages.extend(versions.into_iter().map(|version| {
-            json!({"name":name,"version":version,"ecosystem":ecosystem,
-                "scope":"available-signed-artifact"})
-        }));
-    }
-}
 fn supported(package: &Value) -> bool {
     matches!(package["ecosystem"].as_str(), Some("crates.io" | "Go"))
 }
@@ -54,15 +37,14 @@ pub async fn inventory(
     let mut dependencies = packages();
     let signed = match tokio::time::timeout(
         Duration::from_secs(5),
-        crate::releases::entries(&state),
+        crate::releases::signed_agents(&state),
     )
     .await
     {
         Ok(Ok(entries)) => {
-            add_signed_tools(&mut dependencies, &entries);
-            json!({"status":if entries.is_empty(){"empty"}else{"verified"},"entries":entries,"source":"local-signed-artifact-inventory"})
+            json!({"status":if entries.is_empty(){"empty"}else{"verified"},"entries":entries,"source":"local-signed-agent-releases"})
         }
-        _ => json!({"status":"unknown","reason":"本地签名制品库存不可用或读取超时"}),
+        _ => json!({"status":"unknown","reason":"本地签名 Agent 发布清单不可用或读取超时"}),
     };
     for package in &mut dependencies {
         let cached = rows.iter().find(|row| {
@@ -189,12 +171,7 @@ pub async fn refresh(State(state): State<AppState>, headers: HeaderMap) -> ApiRe
     }
     .build()
     .map_err(anyhow::Error::from)?;
-    let mut all = packages();
-    if let Ok(Ok(entries)) =
-        tokio::time::timeout(Duration::from_secs(5), crate::releases::entries(&state)).await
-    {
-        add_signed_tools(&mut all, &entries);
-    }
+    let all = packages();
     let selected: Vec<_> = all
         .iter()
         .filter(|package| supported(package))

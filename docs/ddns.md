@@ -1,6 +1,6 @@
-# DDNS 动态域名解析插件
+# DDNS 动态域名解析
 
-当前支持 Cloudflare、腾讯云 DNSPod、阿里云云解析 DNS、华为云公网 DNS 的 A（IPv4）和 AAAA（IPv6）记录。DDNS 是面板插件：Agent 沿用已有 IP 上报，面板保存凭据并调用所选提供方。设备上不安装任何程序，所有接入 Agent 的服务器都可以直接使用，不需要按服务器启用（[ADR 0110](adr/0110-ddns-without-server-switch.md)）。
+当前支持 Cloudflare、腾讯云 DNSPod、阿里云云解析 DNS、华为云公网 DNS 的 A（IPv4）和 AAAA（IPv6）记录。DDNS 属于面板的名称与证书领域（`crates/naming`）：Agent 沿用已有 IP 上报，面板保存凭据并调用所选提供方。设备上不安装任何程序，所有接入 Agent 的服务器都可以直接使用，不需要按服务器启用（[ADR 0110](adr/0110-ddns-without-server-switch.md)）。
 
 ## 使用
 

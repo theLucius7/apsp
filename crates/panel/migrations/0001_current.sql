@@ -92,16 +92,18 @@ CREATE FUNCTION public.singbox_entitlements(at_s bigint) RETURNS TABLE(user_id b
         SELECT u.id,a.package_group_id,a.package_name,a.monthly_bytes,a.reset_day,a.reset_hour,a.reset_minute,a.timezone,a.starts_at,a.expires_at,
             b.cycle_start,b.next_reset,GREATEST(COALESCE(t.used,0)-COALESCE(c.credit,0),0) AS used,
             CASE WHEN EXISTS(SELECT 1 FROM singbox_user_controls control WHERE control.user_id=u.id AND control.paused) THEN 'paused' WHEN m.state IS NOT NULL AND (m.state<>'active' OR (m.sponsor_required AND m.first_purchase_at IS NULL)) THEN CASE WHEN m.state='active' THEN 'pending' ELSE m.state END
-                WHEN a.id IS NULL AND bridge.enabled THEN 'no_package' WHEN a.id IS NULL THEN 'unmetered' WHEN at_s<a.starts_at THEN 'not_started' WHEN at_s>=a.expires_at THEN 'expired'
+                WHEN a.id IS NULL AND (bridge.enabled OR adopted.user_id IS NOT NULL) THEN 'no_package' WHEN a.id IS NULL THEN 'unmetered' WHEN at_s<a.starts_at THEN 'not_started' WHEN at_s>=a.expires_at THEN 'expired'
                 WHEN a.monthly_bytes IS NOT NULL AND GREATEST(COALESCE(t.used,0)-COALESCE(c.credit,0),0)>=a.monthly_bytes THEN 'exhausted' ELSE 'active' END AS status
         FROM users u LEFT JOIN singbox_members m ON m.user_id=u.id LEFT JOIN singbox_user_packages p ON p.user_id=u.id
         LEFT JOIN singbox_package_assignments a ON a.id=p.assignment_id
         LEFT JOIN singbox_nexus_identities identity ON identity.user_id=u.id
-        LEFT JOIN singbox_nexus_bridge bridge ON bridge.import_id=identity.import_id AND bridge.enabled
+        LEFT JOIN singbox_native_adoptions adopted ON adopted.user_id=u.id
+        LEFT JOIN singbox_nexus_bridge bridge ON bridge.import_id=identity.import_id AND bridge.enabled AND adopted.user_id IS NULL
         LEFT JOIN singbox_nexus_metering meter ON meter.user_id=u.id AND bridge.singleton
         LEFT JOIN LATERAL singbox_cycle_bounds(at_s,a.reset_day,a.reset_hour,a.reset_minute,a.timezone) native ON TRUE
-        LEFT JOIN LATERAL (SELECT CASE WHEN meter.user_id IS NOT NULL THEN COALESCE(meter.last_reset_at,0) ELSE native.cycle_start END AS cycle_start,CASE WHEN meter.user_id IS NOT NULL THEN COALESCE(meter.next_reset_at,253402300799) ELSE native.next_reset END AS next_reset) b ON TRUE
-        LEFT JOIN LATERAL (SELECT CASE WHEN meter.user_id IS NOT NULL THEN meter.upload+meter.download+GREATEST(COALESCE(singbox_usage_window(u.id,b.cycle_start,b.next_reset),0)-COALESCE((SELECT SUM(d.uplink+d.downlink) FROM singbox_nexus_usage_deliveries d WHERE d.user_id=u.id AND d.period_end>b.cycle_start AND d.period_end<=b.next_reset),0),0) WHEN u.id IN (SELECT served.user_id FROM singbox_legacy_served_users() served) THEN singbox_usage_window(u.id,b.cycle_start,b.next_reset) ELSE singbox_usage_charged(u.id,b.cycle_start,b.next_reset) END AS used) t ON TRUE
+        LEFT JOIN LATERAL (SELECT adopted.user_id IS NOT NULL AND adopted.assignment_id IS NOT DISTINCT FROM a.id AND at_s>=adopted.adopted_at AND (adopted.next_reset IS NULL OR a.id IS NULL OR at_s<adopted.next_reset OR at_s>=a.expires_at) AS anchored) anchor ON TRUE
+        LEFT JOIN LATERAL (SELECT CASE WHEN anchor.anchored THEN adopted.cycle_start WHEN meter.user_id IS NOT NULL THEN COALESCE(meter.last_reset_at,0) ELSE native.cycle_start END AS cycle_start,CASE WHEN anchor.anchored THEN adopted.next_reset WHEN meter.user_id IS NOT NULL THEN COALESCE(meter.next_reset_at,253402300799) ELSE native.next_reset END AS next_reset) b ON TRUE
+        LEFT JOIN LATERAL (SELECT CASE WHEN anchor.anchored THEN adopted.used_bytes+GREATEST(COALESCE(singbox_usage_charged(u.id,b.cycle_start,b.next_reset),0)-adopted.ledger_bytes,0) WHEN meter.user_id IS NOT NULL THEN meter.upload+meter.download+GREATEST(COALESCE(singbox_usage_window(u.id,b.cycle_start,b.next_reset),0)-COALESCE((SELECT SUM(d.uplink+d.downlink) FROM singbox_nexus_usage_deliveries d WHERE d.user_id=u.id AND d.period_end>b.cycle_start AND d.period_end<=b.next_reset),0),0) WHEN u.id IN (SELECT served.user_id FROM singbox_legacy_served_users() served) THEN singbox_usage_window(u.id,b.cycle_start,b.next_reset) ELSE singbox_usage_charged(u.id,b.cycle_start,b.next_reset) END AS used) t ON TRUE
         LEFT JOIN LATERAL (SELECT SUM(q.bytes) AS credit FROM singbox_quota_credits q WHERE q.user_id=u.id AND q.cycle_start=b.cycle_start AND q.next_reset=b.next_reset) c ON TRUE
         WHERE u.deleted_at IS NULL
     )
@@ -148,10 +150,10 @@ CREATE FUNCTION public.singbox_legacy_served_users() RETURNS TABLE(user_id bigin
     -- identity: they have one, or the bridge issues it at its next exchange (the same members
     -- singbox_nexus_bridge_exchange enrols). Everyone else holds ordinary credentials on those
     -- lines (ADR 0138). A set that queries join once, not a test per row.
-    SELECT i.user_id FROM singbox_nexus_identities i
+    SELECT i.user_id FROM singbox_nexus_identities i WHERE NOT EXISTS(SELECT 1 FROM singbox_native_adoptions a WHERE a.user_id=i.user_id)
     UNION
     SELECT m.user_id FROM singbox_members m
-    WHERE m.state<>'staged' AND EXISTS(SELECT 1 FROM singbox_nexus_bridge b WHERE b.enabled)
+    WHERE NOT EXISTS(SELECT 1 FROM singbox_native_adoptions a WHERE a.user_id=m.user_id) AND m.state<>'staged' AND EXISTS(SELECT 1 FROM singbox_nexus_bridge b WHERE b.enabled)
 $$;
 
 CREATE FUNCTION public.singbox_member_legacy_group(member bigint) RETURNS bigint
@@ -166,6 +168,17 @@ CREATE FUNCTION public.singbox_member_legacy_group(member bigint) RETURNS bigint
     ORDER BY g.legacy_group_id IS NOT DISTINCT FROM p.legacy_group_id DESC, g.legacy_group_id
     LIMIT 1
 $$;
+
+CREATE FUNCTION public.singbox_nexus_bridge_begin(expected_import uuid) RETURNS jsonb
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    PERFORM pg_advisory_xact_lock(73201001);
+    UPDATE singbox_nexus_bridge SET pending_generation=COALESCE(pending_generation,gen_random_uuid()),native_control_ready=TRUE
+        WHERE singleton AND enabled AND import_id=expected_import;
+    IF NOT FOUND THEN RAISE EXCEPTION 'Compatibility bridge is not active for this import'; END IF;
+    RETURN jsonb_build_object('started',TRUE);
+END $$;
 
 CREATE FUNCTION public.singbox_nexus_bridge_exchange(sample jsonb) RETURNS jsonb
     LANGUAGE plpgsql
@@ -184,7 +197,7 @@ BEGIN
     IF observed<EXTRACT(EPOCH FROM now())::BIGINT-120 OR observed>EXTRACT(EPOCH FROM now())::BIGINT+30 THEN RAISE EXCEPTION 'Expired compatibility sample'; END IF;
     FOR entry IN SELECT value FROM jsonb_array_elements(sample->'members') LOOP
         IF COALESCE(entry->>'id','')!~'^[1-9][0-9]{0,15}$' OR COALESCE(entry->>'upload','')!~'^[0-9]{1,20}$' OR COALESCE(entry->>'download','')!~'^[0-9]{1,20}$' THEN RAISE EXCEPTION 'Invalid usage counter'; END IF;
-        IF EXISTS(SELECT 1 FROM singbox_nexus_identities WHERE user_id=(entry->>'id')::BIGINT AND import_id=bridge.import_id) THEN
+        IF EXISTS(SELECT 1 FROM singbox_nexus_identities WHERE user_id=(entry->>'id')::BIGINT AND import_id=bridge.import_id) AND NOT EXISTS(SELECT 1 FROM singbox_native_adoptions WHERE user_id=(entry->>'id')::BIGINT) THEN
             INSERT INTO singbox_nexus_metering(user_id,upload,download,last_reset_at,next_reset_at,observed_at)
             VALUES((entry->>'id')::BIGINT,(entry->>'upload')::NUMERIC,(entry->>'download')::NUMERIC,(entry->>'last_reset_at')::BIGINT,(entry->>'next_reset_at')::BIGINT,observed)
             ON CONFLICT(user_id) DO UPDATE SET upload=EXCLUDED.upload,download=EXCLUDED.download,last_reset_at=EXCLUDED.last_reset_at,next_reset_at=EXCLUDED.next_reset_at,observed_at=EXCLUDED.observed_at
@@ -197,10 +210,10 @@ BEGIN
         LEFT JOIN singbox_user_packages up ON up.user_id=m.user_id
         LEFT JOIN singbox_package_assignments a ON a.id=up.assignment_id
         LEFT JOIN singbox_nexus_plan_mappings p ON p.package_group_id=a.package_group_id AND p.import_id=bridge.import_id
-        WHERE m.state<>'staged' AND u.deleted_at IS NULL ON CONFLICT(user_id) DO NOTHING;
+        WHERE m.state<>'staged' AND u.deleted_at IS NULL AND NOT EXISTS(SELECT 1 FROM singbox_native_adoptions adopted WHERE adopted.user_id=m.user_id) ON CONFLICT(user_id) DO NOTHING;
     IF EXISTS(SELECT 1 FROM singbox_members m JOIN singbox_user_packages up ON up.user_id=m.user_id JOIN singbox_package_assignments a ON a.id=up.assignment_id
         JOIN singbox_nexus_identities i ON i.user_id=m.user_id LEFT JOIN singbox_nexus_plan_mappings p ON p.package_group_id=a.package_group_id
-        WHERE i.import_id=bridge.import_id AND m.state='active' AND (p.package_group_id IS NULL OR p.legacy_group_id IS NULL)) THEN
+        WHERE i.import_id=bridge.import_id AND NOT EXISTS(SELECT 1 FROM singbox_native_adoptions adopted WHERE adopted.user_id=i.user_id) AND m.state='active' AND (p.package_group_id IS NULL OR p.legacy_group_id IS NULL)) THEN
         RAISE EXCEPTION 'Active member package has no compatibility mapping';
     END IF;
     SELECT COALESCE(jsonb_agg(jsonb_build_object(
@@ -217,10 +230,12 @@ BEGIN
     LEFT JOIN singbox_nexus_plan_mappings p ON p.package_group_id=a.package_group_id AND p.import_id=bridge.import_id
     LEFT JOIN singbox_nexus_metering meter ON meter.user_id=u.id
     LEFT JOIN LATERAL (SELECT sum(bytes) AS credit FROM singbox_quota_credits WHERE user_id=u.id AND cycle_start=COALESCE(meter.last_reset_at,0) AND next_reset=COALESCE(meter.next_reset_at,253402300799)) q ON TRUE
-    WHERE i.import_id=bridge.import_id AND m.state<>'staged';
-    generation=gen_random_uuid();
-    UPDATE singbox_nexus_bridge SET pending_generation=generation WHERE singleton;
-    RETURN jsonb_build_object('generation',generation,'members',result);
+    WHERE i.import_id=bridge.import_id AND m.state<>'staged' AND NOT EXISTS(SELECT 1 FROM singbox_native_adoptions adopted WHERE adopted.user_id=i.user_id);
+    generation=COALESCE(bridge.pending_generation,gen_random_uuid());
+    UPDATE singbox_native_adoptions a SET legacy_retired_generation=generation
+        FROM singbox_nexus_identities i WHERE i.user_id=a.user_id AND i.import_id=bridge.import_id AND a.legacy_retired_at IS NULL;
+    UPDATE singbox_nexus_bridge SET pending_generation=generation,native_control_ready=(bridge.pending_generation IS NOT NULL AND bridge.native_control_ready) WHERE singleton;
+    RETURN jsonb_build_object('generation',generation,'members',result,'retired_members',(SELECT COALESCE(jsonb_agg(i.user_id ORDER BY i.user_id),'[]'::jsonb) FROM singbox_nexus_identities i JOIN singbox_native_adoptions a ON a.user_id=i.user_id WHERE i.import_id=bridge.import_id));
 END $_$;
 
 CREATE FUNCTION public.singbox_nexus_device_exchange(sample jsonb) RETURNS jsonb
@@ -260,7 +275,7 @@ BEGIN
     INSERT INTO singbox_nexus_device_state(user_id,device_limit,legacy_addresses,observed_at)
         SELECT i.user_id, COALESCE((sample->'limits'->>i.user_id::TEXT)::INTEGER,0),
                COALESCE(sample->'legacy'->(i.user_id::TEXT),'[]'::JSONB), observed
-        FROM singbox_nexus_identities i WHERE i.import_id=bridge.import_id
+        FROM singbox_nexus_identities i WHERE i.import_id=bridge.import_id AND NOT EXISTS(SELECT 1 FROM singbox_native_adoptions adopted WHERE adopted.user_id=i.user_id)
     ON CONFLICT(user_id) DO UPDATE SET device_limit=EXCLUDED.device_limit,
         legacy_addresses=EXCLUDED.legacy_addresses, observed_at=EXCLUDED.observed_at
         WHERE EXCLUDED.observed_at>=singbox_nexus_device_state.observed_at;
@@ -279,7 +294,7 @@ BEGIN
             SELECT jsonb_object_agg(a.user_id::TEXT, a.addresses)
             FROM (SELECT user_id, jsonb_agg(DISTINCT address) AS addresses
                   FROM singbox_runtime_session_addresses
-                  WHERE server_id=r.server_id AND node_id=r.node_id AND observed_at>=now_s-60
+                  WHERE server_id=r.server_id AND node_id=r.node_id AND observed_at>=now_s-60 AND NOT EXISTS(SELECT 1 FROM singbox_native_adoptions adopted WHERE adopted.user_id=singbox_runtime_session_addresses.user_id)
                   GROUP BY user_id) a), '{}'::JSONB) AS users
         FROM singbox_nexus_runtime_nodes r
         JOIN singbox_nexus_runtime_hosts h ON h.server_id=r.server_id
@@ -2081,15 +2096,6 @@ CREATE TABLE public.runtime_deployment_bindings (
     CONSTRAINT runtime_deployment_bindings_rev_check CHECK ((rev > 0))
 );
 
-CREATE TABLE public.runtime_enablements (
-    server_id bigint NOT NULL,
-    module text NOT NULL,
-    enabled boolean DEFAULT true NOT NULL,
-    source text NOT NULL,
-    enabled_at bigint NOT NULL,
-    CONSTRAINT runtime_enablements_source_check CHECK ((source = ANY (ARRAY['administrator'::text, 'agent_capability'::text, 'legacy_nodes'::text, 'legacy_deployments'::text])))
-);
-
 CREATE TABLE public.runtime_module_checkpoints (
     server_id bigint NOT NULL,
     module text NOT NULL,
@@ -2315,17 +2321,6 @@ CREATE TABLE public.singbox_account_limits (
     bucket text NOT NULL,
     starts_at bigint NOT NULL,
     attempts integer NOT NULL
-);
-
-CREATE TABLE public.singbox_chain_runtime_requirements (
-    chain_id bigint NOT NULL,
-    generation bigint NOT NULL,
-    server_id bigint NOT NULL,
-    runtime_version text NOT NULL,
-    artifact_sha256 text NOT NULL,
-    artifact jsonb NOT NULL,
-    CONSTRAINT singbox_chain_runtime_requirements_artifact_sha256_check CHECK ((artifact_sha256 ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT singbox_chain_runtime_requirements_runtime_version_check CHECK ((runtime_version = ANY (ARRAY['1.14.2'::text, '1.14.2-apsp.1'::text, '1.14.0-apsp.1'::text, '1.14.4-apsp.1'::text, '1.14.4-apsp.2'::text])))
 );
 
 CREATE TABLE public.singbox_chain_state (
@@ -2707,15 +2702,6 @@ CREATE VIEW public.singbox_external_version_configs AS
      JOIN public.singbox_ordered_external_nodes n ON ((n.id = v.node_id)))
      JOIN public.singbox_subscription_source_revisions r ON ((r.id = v.source_revision_id)));
 
-CREATE TABLE public.singbox_installation (
-    server_id bigint NOT NULL,
-    target_rev bigint NOT NULL,
-    error text,
-    checked_at bigint NOT NULL,
-    CONSTRAINT singbox_installation_error_check CHECK (((error IS NULL) OR ((char_length(error) >= 1) AND (char_length(error) <= 2048)))),
-    CONSTRAINT singbox_installation_target_rev_check CHECK ((target_rev > 0))
-);
-
 CREATE TABLE public.singbox_invitation_policy_groups (
     group_id bigint NOT NULL
 );
@@ -2875,6 +2861,7 @@ CREATE TABLE public.singbox_nexus_bridge (
     subscription_base text NOT NULL,
     enabled boolean DEFAULT false NOT NULL,
     pending_generation uuid,
+    native_control_ready boolean DEFAULT false NOT NULL,
     last_sync_at bigint,
     activated_at bigint NOT NULL,
     CONSTRAINT singbox_nexus_bridge_singleton_check CHECK (singleton)
@@ -3432,43 +3419,6 @@ CREATE TABLE public.singbox_resource_mutation_requests (
     receipt jsonb NOT NULL,
     created_at bigint NOT NULL,
     CONSTRAINT singbox_resource_mutation_requests_request_sha256_check CHECK ((request_sha256 ~ '^[0-9a-f]{64}$'::text))
-);
-
-CREATE TABLE public.singbox_runtime_manifest_facts (
-    server_id bigint NOT NULL,
-    module text DEFAULT 'singbox'::text NOT NULL,
-    revision bigint NOT NULL,
-    runtime_version text NOT NULL,
-    artifact_sha256 text NOT NULL,
-    artifact jsonb NOT NULL,
-    CONSTRAINT singbox_runtime_manifest_facts_runtime_version_check CHECK ((runtime_version = ANY (ARRAY['1.14.2'::text, '1.14.2-apsp.1'::text, '1.14.0-apsp.1'::text, '1.14.4-apsp.1'::text, '1.14.4-apsp.2'::text])))
-);
-
-CREATE TABLE public.singbox_runtime_rollout_members (
-    rollout_id uuid NOT NULL,
-    server_id bigint NOT NULL,
-    baseline_revision bigint NOT NULL,
-    artifact_sha256 text NOT NULL,
-    inspect_request_id uuid NOT NULL,
-    inspection_result jsonb,
-    dispatched_at bigint NOT NULL
-);
-
-CREATE TABLE public.singbox_runtime_rollouts (
-    id uuid NOT NULL,
-    administrator_id bigint NOT NULL,
-    runtime_version text NOT NULL,
-    targets bigint[] NOT NULL,
-    batch_size integer NOT NULL,
-    dispatched_count integer DEFAULT 0 NOT NULL,
-    paused boolean DEFAULT false NOT NULL,
-    artifact_snapshot jsonb NOT NULL,
-    completed_at bigint,
-    created_at bigint NOT NULL,
-    updated_at bigint NOT NULL,
-    CONSTRAINT singbox_runtime_rollouts_batch_size_check CHECK (((batch_size >= 1) AND (batch_size <= 20))),
-    CONSTRAINT singbox_runtime_rollouts_dispatched_count_check CHECK ((dispatched_count >= 0)),
-    CONSTRAINT singbox_runtime_rollouts_runtime_version_check CHECK ((runtime_version = ANY (ARRAY['1.14.2'::text, '1.14.2-apsp.1'::text, '1.14.0-apsp.1'::text, '1.14.4-apsp.1'::text, '1.14.4-apsp.2'::text])))
 );
 
 CREATE TABLE public.singbox_runtime_session_addresses (
@@ -4202,9 +4152,6 @@ ALTER TABLE ONLY public.runtime_deployment_bindings
 ALTER TABLE ONLY public.runtime_deployment_bindings
     ADD CONSTRAINT runtime_deployment_bindings_server_id_module_rev_key UNIQUE (server_id, module, rev);
 
-ALTER TABLE ONLY public.runtime_enablements
-    ADD CONSTRAINT runtime_enablements_pkey PRIMARY KEY (server_id, module);
-
 ALTER TABLE ONLY public.runtime_module_checkpoints
     ADD CONSTRAINT runtime_module_checkpoints_pkey PRIMARY KEY (server_id, module);
 
@@ -4256,9 +4203,6 @@ ALTER TABLE ONLY public.singbox_account_challenges
 ALTER TABLE ONLY public.singbox_account_limits
     ADD CONSTRAINT singbox_account_limits_pkey PRIMARY KEY (bucket);
 
-ALTER TABLE ONLY public.singbox_chain_runtime_requirements
-    ADD CONSTRAINT singbox_chain_runtime_requirements_pkey PRIMARY KEY (chain_id, generation, server_id);
-
 ALTER TABLE ONLY public.singbox_chain_state
     ADD CONSTRAINT singbox_chain_state_pkey PRIMARY KEY (chain_id);
 
@@ -4285,9 +4229,6 @@ ALTER TABLE ONLY public.singbox_deployment_public_projection
 
 ALTER TABLE ONLY public.singbox_entitlement_state
     ADD CONSTRAINT singbox_entitlement_state_pkey PRIMARY KEY (user_id);
-
-ALTER TABLE ONLY public.singbox_installation
-    ADD CONSTRAINT singbox_installation_pkey PRIMARY KEY (server_id);
 
 ALTER TABLE ONLY public.singbox_invitation_policy_groups
     ADD CONSTRAINT singbox_invitation_policy_groups_pkey PRIMARY KEY (group_id);
@@ -4516,15 +4457,6 @@ ALTER TABLE ONLY public.singbox_reachability_targets
 
 ALTER TABLE ONLY public.singbox_resource_mutation_requests
     ADD CONSTRAINT singbox_resource_mutation_requests_pkey PRIMARY KEY (request_id);
-
-ALTER TABLE ONLY public.singbox_runtime_manifest_facts
-    ADD CONSTRAINT singbox_runtime_manifest_facts_pkey PRIMARY KEY (server_id, module, revision);
-
-ALTER TABLE ONLY public.singbox_runtime_rollout_members
-    ADD CONSTRAINT singbox_runtime_rollout_members_pkey PRIMARY KEY (rollout_id, server_id);
-
-ALTER TABLE ONLY public.singbox_runtime_rollouts
-    ADD CONSTRAINT singbox_runtime_rollouts_pkey PRIMARY KEY (id);
 
 ALTER TABLE ONLY public.singbox_runtime_session_addresses
     ADD CONSTRAINT singbox_runtime_session_addresses_pkey PRIMARY KEY (server_id, stat_name, address);
@@ -4871,8 +4803,6 @@ CREATE TRIGGER singbox_nexus_guard_node BEFORE INSERT OR DELETE OR UPDATE ON pub
 CREATE TRIGGER singbox_ordered_path_hop_immutable BEFORE DELETE OR UPDATE ON public.singbox_ordered_chain_hops FOR EACH ROW EXECUTE FUNCTION public.singbox_reject_path_snapshot_change();
 
 CREATE TRIGGER singbox_path_deployment_dependency_immutable BEFORE DELETE OR UPDATE ON public.singbox_path_deployment_dependencies FOR EACH ROW EXECUTE FUNCTION public.singbox_reject_path_snapshot_change();
-
-CREATE TRIGGER singbox_path_runtime_requirement_immutable BEFORE DELETE OR UPDATE ON public.singbox_chain_runtime_requirements FOR EACH ROW EXECUTE FUNCTION public.singbox_reject_path_snapshot_change();
 
 CREATE TRIGGER singbox_path_snapshot_immutable BEFORE DELETE OR UPDATE ON public.singbox_ordered_chain_versions FOR EACH ROW EXECUTE FUNCTION public.singbox_reject_path_snapshot_change();
 
@@ -5295,9 +5225,6 @@ ALTER TABLE ONLY public.runtime_control_requests
 ALTER TABLE ONLY public.runtime_deployment_bindings
     ADD CONSTRAINT runtime_deployment_bindings_server_id_module_rev_fkey FOREIGN KEY (server_id, module, rev) REFERENCES public.deployments(server_id, module, rev);
 
-ALTER TABLE ONLY public.runtime_enablements
-    ADD CONSTRAINT runtime_enablements_server_id_fkey FOREIGN KEY (server_id) REFERENCES public.servers(id);
-
 ALTER TABLE ONLY public.runtime_module_checkpoints
     ADD CONSTRAINT runtime_module_checkpoints_barrier_request_id_fkey FOREIGN KEY (barrier_request_id) REFERENCES public.runtime_control_receipts(request_id);
 
@@ -5352,12 +5279,6 @@ ALTER TABLE ONLY public.sessions
 ALTER TABLE ONLY public.singbox_account_challenges
     ADD CONSTRAINT singbox_account_challenges_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id);
 
-ALTER TABLE ONLY public.singbox_chain_runtime_requirements
-    ADD CONSTRAINT singbox_chain_runtime_requirements_chain_id_generation_fkey FOREIGN KEY (chain_id, generation) REFERENCES public.singbox_ordered_chain_versions(chain_id, generation);
-
-ALTER TABLE ONLY public.singbox_chain_runtime_requirements
-    ADD CONSTRAINT singbox_chain_runtime_requirements_server_id_fkey FOREIGN KEY (server_id) REFERENCES public.servers(id);
-
 ALTER TABLE ONLY public.singbox_chain_state
     ADD CONSTRAINT singbox_chain_state_chain_id_fkey FOREIGN KEY (chain_id) REFERENCES public.singbox_chains(id) ON DELETE CASCADE;
 
@@ -5393,9 +5314,6 @@ ALTER TABLE ONLY public.singbox_deployment_public_projection
 
 ALTER TABLE ONLY public.singbox_entitlement_state
     ADD CONSTRAINT singbox_entitlement_state_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id);
-
-ALTER TABLE ONLY public.singbox_installation
-    ADD CONSTRAINT singbox_installation_server_id_fkey FOREIGN KEY (server_id) REFERENCES public.servers(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.singbox_invitation_policy_groups
     ADD CONSTRAINT singbox_invitation_policy_groups_group_id_fkey FOREIGN KEY (group_id) REFERENCES public.singbox_policy_groups(id) ON DELETE CASCADE;
@@ -5625,15 +5543,6 @@ ALTER TABLE ONLY public.singbox_reachability_history
 ALTER TABLE ONLY public.singbox_reachability_settings
     ADD CONSTRAINT singbox_reachability_settings_credential_id_fkey FOREIGN KEY (credential_id) REFERENCES public.credential_entries(id);
 
-ALTER TABLE ONLY public.singbox_runtime_manifest_facts
-    ADD CONSTRAINT singbox_runtime_manifest_facts_server_id_module_revision_fkey FOREIGN KEY (server_id, module, revision) REFERENCES public.deployments(server_id, module, rev);
-
-ALTER TABLE ONLY public.singbox_runtime_rollout_members
-    ADD CONSTRAINT singbox_runtime_rollout_members_rollout_id_fkey FOREIGN KEY (rollout_id) REFERENCES public.singbox_runtime_rollouts(id);
-
-ALTER TABLE ONLY public.singbox_runtime_rollout_members
-    ADD CONSTRAINT singbox_runtime_rollout_members_server_id_fkey FOREIGN KEY (server_id) REFERENCES public.servers(id);
-
 ALTER TABLE ONLY public.singbox_runtime_session_addresses
     ADD CONSTRAINT singbox_runtime_session_addresses_server_id_fkey FOREIGN KEY (server_id) REFERENCES public.servers(id) ON DELETE CASCADE;
 
@@ -5843,6 +5752,20 @@ CREATE TABLE public.cloud_resource_automation (
     cdt_guard_state jsonb,
     cdt_guard_error text,
     cdt_guard_next_at bigint DEFAULT 0 NOT NULL
+);
+
+CREATE TABLE public.singbox_native_adoptions (
+    user_id bigint PRIMARY KEY REFERENCES public.users(id),
+    assignment_id bigint REFERENCES public.singbox_package_assignments(id),
+    adopted_at bigint NOT NULL,
+    cycle_start bigint,
+    next_reset bigint,
+    used_bytes numeric(30,0) NOT NULL CHECK (used_bytes>=0),
+    ledger_bytes numeric(30,0) NOT NULL CHECK (ledger_bytes>=0),
+    legacy_retired_generation uuid,
+    legacy_retired_at bigint,
+    preview_digest text NOT NULL CHECK (preview_digest ~ '^[0-9a-f]{64}$'),
+    CONSTRAINT singbox_native_adoptions_cycle CHECK ((cycle_start IS NULL AND next_reset IS NULL) OR (cycle_start IS NOT NULL AND next_reset IS NOT NULL AND cycle_start<=adopted_at AND next_reset>cycle_start))
 );
 
 CREATE TABLE public.apsp_schema_baseline (singleton boolean PRIMARY KEY CHECK (singleton), fingerprint text NOT NULL);

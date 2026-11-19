@@ -598,6 +598,50 @@ pub async fn open(
     Ok(())
 }
 
+/// Returns the existing incident of `key` (even when resolved, so a one-shot reminder never
+/// reopens or re-notifies), or opens one and returns its identifier.
+pub async fn ensure_once(
+    tx: &mut Transaction<'_, Postgres>,
+    key: &str,
+    server: Option<i64>,
+    title: &str,
+    severity: &str,
+    evidence: Value,
+    observed: i64,
+) -> ApiResult<Uuid> {
+    let existing: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM operations_incidents WHERE source_key=$1 ORDER BY opened_at LIMIT 1",
+    )
+    .bind(key)
+    .fetch_optional(&mut **tx)
+    .await?;
+    if let Some(id) = existing {
+        return Ok(id);
+    }
+    open(tx, key, server, title, severity, evidence, observed, None).await?;
+    Ok(sqlx::query_scalar(
+        "SELECT id FROM operations_incidents WHERE source_key=$1 AND status<>'resolved'",
+    )
+    .bind(key)
+    .fetch_one(&mut **tx)
+    .await?)
+}
+
+/// Cancels pending notification deliveries of `incident`, preserving completed delivery
+/// history.
+pub async fn cancel_pending_notifications(
+    tx: &mut Transaction<'_, Postgres>,
+    incident: Uuid,
+) -> ApiResult<()> {
+    sqlx::query(
+        "UPDATE operations_incident_deliveries SET status='cancelled' WHERE status='pending' AND incident_id=$1",
+    )
+    .bind(incident)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
 pub async fn recover(
     tx: &mut Transaction<'_, Postgres>,
     key: &str,

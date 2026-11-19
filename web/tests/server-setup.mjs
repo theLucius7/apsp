@@ -24,8 +24,8 @@ const results = []
 const installCommand = (version, platform = 'unix', target = 'auto') => platform === 'windows'
   ? `& { param($Version,$Panel,$Token,$Target) Write-Output "TEST_ONLY: $Version $Panel $Token $Target" } '${version}' 'https://panel.example.com' 'TEST_ONLY' '${target}'`
   : `sh -c 'set -eu; d=$(mktemp -d); curl -fsSL "$1" -o "$d/bootstrap.sh"; printf "%s  %s\\n" "$2" "$d/bootstrap.sh" | sha256sum -c -; /bin/sh "$d/bootstrap.sh" --version "$3" --panel "$4" --token "$5" --target "$6"' apsp-bootstrap 'https://api.github.com/repos/theLucius7/apsp/git/blobs/${'1'.repeat(40)}' '${'a'.repeat(64)}' '${version}' 'https://panel.example.com' 'TEST_ONLY' '${target}'`
-const signedVersion = (version, targets, cached_targets = targets) => ({ version, tag: `agent-v${version}`, targets, cached_targets, protocol_min: 1, protocol_max: 1 })
-const catalogue = [signedVersion('0.3.1', ['windows-amd64', 'windows-arm64', 'macos-arm64', 'freebsd-amd64']), signedVersion('0.3.0', ['linux-musl-arm64', 'linux-gnu-amd64'], ['linux-musl-arm64']), signedVersion('0.2.9', ['arm64']), signedVersion('0.2.8', ['linux-gnu-amd64'])]
+const signedVersion = (version, targets) => ({ version, tag: `agent-v${version}`, targets, protocol_min: 1, protocol_max: 1 })
+const catalogue = [signedVersion('0.3.1', ['windows-amd64', 'windows-arm64', 'macos-arm64', 'freebsd-amd64']), signedVersion('0.3.0', ['linux-musl-arm64', 'linux-gnu-amd64']), signedVersion('0.2.9', ['arm64']), signedVersion('0.2.8', ['linux-gnu-amd64'])]
 const matchesTarget = (entry, target) => {
   const arch = target.split('-').at(-1)
   if (target.startsWith('linux-gnu-')) return entry.targets.some(value => [target, `linux-musl-${arch}`, arch].includes(value))
@@ -45,14 +45,13 @@ try {
       const fulfill = (json, status = 200) => route.fulfill({ status, json })
       if (path === '/api/access') return route.fulfill({ json: { authenticated: true, public_dashboard: false } })
       if (path === '/api/me') return fulfill({ id: 1 })
-      if (path === '/api/artifacts') return fulfill(allVersionsMissing ? [] : catalogue.flatMap(item => item.cached_targets.map(arch => ({ name: 'agent', version: item.version, arch, sha256: 'a'.repeat(64), bytes: 1024 }))))
-      if (path === '/api/artifacts/agent-versions') {
+      if (path === '/api/system/agent-releases') {
         const platform = url.searchParams.get('platform'), target = url.searchParams.get('target')
         let versions = allVersionsMissing ? [] : catalogue
         if (platform === 'windows') versions = windowsVersionsMissing ? [] : versions.filter(item => item.targets.some(value => value.startsWith('windows-')))
         if (platform === 'unix') versions = versions.filter(item => item.targets.some(value => !value.startsWith('windows-')))
         if (target) versions = versions.filter(item => matchesTarget(item, target))
-        return fulfill({ versions })
+        return fulfill({ policy: { default_version: 'latest', selection: 'highest_stable_signed_protocol_compatible_for_target', minimum_version: '0.2.8' }, versions })
       }
       if (path === '/api/servers' && request.method() === 'GET') return fulfill(entry ? [entry] : [])
       if (path === '/api/servers' && request.method() === 'POST') {
@@ -78,7 +77,7 @@ try {
       if (path === '/api/servers/1/probe-results' || path === '/api/servers/1/commands') return fulfill([])
       // The server overview is its monitoring panel, which reads the history it charts.
       if (path === '/api/servers/1/metrics') return fulfill([])
-      if (path === '/api/traffic/servers/1') return fulfill({ id: 1, name: entry.name, enabled: false, online: entry.online, agent_supported: false, read_only: false, source: null })
+      if (path === '/api/traffic/servers/1') return fulfill({ id: 1, name: entry.name, configured: false, online: entry.online, agent_supported: false, read_only: false, source: null, runtime_version: null, status: { state: 'unconfigured', reason: '', target_rev: 0, applied_rev: 0, current_healthy: false } })
       unexpected.push(`${request.method()} ${path}`)
       return fulfill({ error: 'Unexpected fixture request' }, 500)
     })
@@ -281,14 +280,15 @@ try {
     assert.equal(await dialog.getByRole('button', { name: '复制安装命令' }).count(), 0, 'An empty signed catalogue offers no install command')
     assert.equal(enrollments.length, previousEnrollmentCount, 'An empty catalogue does not issue an unusable enrollment token')
     assert.equal(await dialog.getByRole('link', { name: /导入/ }).count(), 0, 'Enrollment does not link to a removed import form')
-    const catalogLink = dialog.getByRole('link', { name: '查看已收录版本', exact: true })
-    assert.equal(await catalogLink.getAttribute('href'), '#/settings/artifacts')
+    const catalogLink = dialog.getByRole('link', { name: '查看 Agent 版本', exact: true })
+    assert.equal(await catalogLink.getAttribute('href'), '#/settings/agent-updates')
     await catalogLink.click()
     await dialog.waitFor({ state: 'hidden' })
-    await page.getByRole('heading', { name: '制品与版本', exact: true }).waitFor()
-    await page.locator('[data-artifact="agent"]').waitFor()
-    assert.equal(await page.getByRole('button', { name: /导入|安装/ }).count(), 0, 'The retained catalogue only displays available packages')
-    assert.equal(enrollments.length, previousEnrollmentCount, 'Opening the catalogue does not issue an enrollment token')
+    await page.getByRole('heading', { name: 'Agent 版本', exact: true }).waitFor()
+    await page.locator('[data-slot="agent-releases"]').waitFor()
+    await page.getByText('暂无已收录的签名版本', { exact: true }).waitFor()
+    assert.equal(await page.getByRole('button', { name: /导入|安装/ }).count(), 0, 'The retained release page only displays signed Agent releases')
+    assert.equal(enrollments.length, previousEnrollmentCount, 'Opening the release page does not issue an enrollment token')
     assert.equal(creates.length, 2)
     assert.deepEqual(unexpected, [])
     assert.deepEqual(errors, [])

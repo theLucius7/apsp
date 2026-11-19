@@ -70,13 +70,16 @@ pub trait ServerObservation: Send + Sync {
         servers: &'a [i64],
     ) -> BoxFuture<'a, ApiResult<HashMap<i64, Value>>>;
 
-    /// Saves the telemetry settings a new server starts with, in the transaction that
-    /// creates it.
-    fn save_telemetry_settings_tx<'a, 't>(
+    /// Initializes observability state for a newly created or template-enrolled server in
+    /// the transaction that creates it: telemetry settings, probes, per-server alert rules
+    /// and default latency tasks.
+    fn initialize_tx<'a, 't>(
         &'a self,
         tx: &'a mut Transaction<'t, Postgres>,
         server: i64,
-        settings: &'a TelemetrySettings,
+        telemetry: &'a TelemetrySettings,
+        probes: &'a [ProbeSpec],
+        alerts: &'a [Value],
     ) -> BoxFuture<'a, ApiResult<()>>;
 
     /// Gives `target` the telemetry settings of `source` when a collection migrates.
@@ -97,13 +100,6 @@ pub trait ServerObservation: Send + Sync {
     fn lock_latency_tasks_tx<'a, 't>(
         &'a self,
         tx: &'a mut Transaction<'t, Postgres>,
-    ) -> BoxFuture<'a, ApiResult<()>>;
-
-    /// Assigns the default latency tasks to a new server.
-    fn assign_default_latency_tasks_tx<'a, 't>(
-        &'a self,
-        tx: &'a mut Transaction<'t, Postgres>,
-        server: i64,
     ) -> BoxFuture<'a, ApiResult<()>>;
 }
 
@@ -140,13 +136,15 @@ pub async fn telemetry_settings(pool: &PgPool, servers: &[i64]) -> ApiResult<Has
     required()?.telemetry_settings(pool, servers).await
 }
 
-pub async fn save_telemetry_settings_tx(
+pub async fn initialize_tx(
     tx: &mut Transaction<'_, Postgres>,
     server: i64,
-    settings: &TelemetrySettings,
+    telemetry: &TelemetrySettings,
+    probes: &[ProbeSpec],
+    alerts: &[Value],
 ) -> ApiResult<()> {
     required()?
-        .save_telemetry_settings_tx(tx, server, settings)
+        .initialize_tx(tx, server, telemetry, probes, alerts)
         .await
 }
 
@@ -170,13 +168,4 @@ pub fn check_alert_rule(rule: &Value) -> ApiResult<()> {
 
 pub async fn lock_latency_tasks_tx(tx: &mut Transaction<'_, Postgres>) -> ApiResult<()> {
     required()?.lock_latency_tasks_tx(tx).await
-}
-
-pub async fn assign_default_latency_tasks_tx(
-    tx: &mut Transaction<'_, Postgres>,
-    server: i64,
-) -> ApiResult<()> {
-    required()?
-        .assign_default_latency_tasks_tx(tx, server)
-        .await
 }

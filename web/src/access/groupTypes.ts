@@ -9,7 +9,7 @@ export type ProxyResourceServerRole = 'any' | 'entry' | 'middle' | 'exit'
 export type ResourceEndpoint = {
   id: number; name: string; server_id: number; server_name: string; protocol: string; port: number; public_port: number;
   public_host: string; sni: string; enabled: boolean; node_deleted: boolean; server_deleted: boolean;
-  plugin_enabled: boolean; online: boolean; desired_revision: number | null; applied_revision: number | null;
+  online: boolean; desired_revision: number | null; applied_revision: number | null;
   applied_observed_at: number | null;
 }
 export type ProxyResource = {
@@ -67,10 +67,10 @@ export function validPathState(value: unknown): value is PathState {
 
 export function proxyResourceKey(resource: Pick<ProxyResource, 'kind' | 'id'>) { return `${resource.kind}:${resource.id}` }
 export function validResourceEndpoint(value: unknown): value is ResourceEndpoint {
-  return isRecord(value) && hasExactKeys(value, 'id name server_id server_name protocol port public_port public_host sni enabled node_deleted server_deleted plugin_enabled online desired_revision applied_revision applied_observed_at') && isInteger(value.id, 1) && isInteger(value.server_id, 1)
+  return isRecord(value) && hasExactKeys(value, 'id name server_id server_name protocol port public_port public_host sni enabled node_deleted server_deleted online desired_revision applied_revision applied_observed_at') && isInteger(value.id, 1) && isInteger(value.server_id, 1)
     && ['name', 'server_name', 'protocol', 'public_host', 'sni'].every(key => typeof value[key] === 'string')
     && isPort(value.port) && isPort(value.public_port)
-    && ['enabled', 'node_deleted', 'server_deleted', 'plugin_enabled', 'online'].every(key => typeof value[key] === 'boolean')
+    && ['enabled', 'node_deleted', 'server_deleted', 'online'].every(key => typeof value[key] === 'boolean')
     && ['desired_revision', 'applied_revision', 'applied_observed_at'].every(key => nullableInteger(value[key]))
 }
 export function validProxyResource(value: unknown): value is ProxyResource {

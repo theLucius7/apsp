@@ -1,6 +1,6 @@
 # ADR 0136：每种底层机制只有一套实现（第四部分：服务器状态与几类小机制）
 
-状态：已接受（2026-11-13）。延续 [ADR 0133](0133-one-implementation-per-mechanism.md)、[ADR 0134](0134-outbound-network-and-delivery.md)、[ADR 0135](0135-health-retention-vendor-clients.md)；处理 [architecture.md §12](../architecture.md#12-扫描结论与余下工作2026-11-13) 中“服务器此刻是否可用”与几类小机制。
+状态：已接受（2026-11-13）。延续 [ADR 0133](0133-one-implementation-per-mechanism.md)、[ADR 0134](0134-outbound-network-and-delivery.md)、[ADR 0135](0135-health-retention-vendor-clients.md)；处理 [architecture.md §12](../architecture.md#12-当前优化项) 中“服务器此刻是否可用”与几类小机制。
 
 2026-11-13 用户：“目前是底层原理深度统一”，之后说“continue”。
 

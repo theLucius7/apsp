@@ -142,3 +142,44 @@
 ### 迁移线路为所有成员服务（2026-11-17）
 
 从阶段 F 第七步的基线（`edd39c0a`，指纹 `ab219b8e`）接入 [ADR 0138](adr/0138-native-users-on-migrated-lines.md) 的基线（`e96786fb`，指纹 `17b172b9`）使用 `scripts/baseline-adoption-native-lines-20261117.sql`：新增空表 `singbox_nexus_runtime_retired_rates`（下线线路的倍率），新增函数 `singbox_legacy_served_users`（兼容通道以原身份服务的用户集合）、`singbox_legacy_served`（问单个用户）、`singbox_usage_charged`（按线路倍率计的周期用量）、`singbox_runtime_credentials`（迁移线路上的普通凭据，供成员摘要），替换 `singbox_desired_accesses`（只对兼容通道服务的用户排除迁移线路）、`singbox_nexus_guard_access`（只拒绝为这些用户写凭据，删除放行）与 `singbox_entitlements`（兼容通道不服务的用户按倍率计已用量，其他人算法不变）。视图先于新表替换：新表的外键要对 `nodes` 加 SHARE ROW EXCLUSIVE 锁，面板里先读视图、再写 `nodes` 的事务不会与脚本互相等待；用到新表的定义排在它之后。不改任何行；脚本核对来源校验和与指纹，结束时校验结果指纹等于新二进制空库初始化的值并更新基线记录。演练：旧镜像初始化的空库执行后指纹等于新二进制的空库初始化，新二进制能启动，重复执行被拒绝；生产结构副本（隔离网络）上新二进制执行前拒绝启动、执行后启动，后台报错与旧镜像在同一副本上相同（副本没有初始数据）；生产数据上只读核对，期望的授权、可用凭据、17 台主机的成员名单与每位用户的已用量新旧相同（见 ADR 0138）。
+
+### 迁移成员原生采用与兼容桥控制面门禁（2026-11-17）
+
+从 ADR 0138 的基线（`e96786fb`，指纹 `17b172b9`）接入 [ADR 0140](adr/0140-domain-consolidation.md) 成员原生采用控制面的基线（校验和 `2549f8b8…`）使用 `scripts/baseline-adoption-native-control-plane-20261117.sql`：
+
+- `singbox_nexus_bridge` 增加非空布尔列 `native_control_ready DEFAULT false`，保持与 `0001_current.sql` 相同的列序（位于 `pending_generation` 之后、`last_sync_at` 与 `activated_at` 之前），并在同一事务内校验既有行值原样保留。
+- 新增空表 `singbox_native_adoptions`：保存已采用成员的当前套餐快照、采用时刻、周期边界、采用时的已用量与账本字节锚点、旧端停用代次 `legacy_retired_generation` 与确认时间 `legacy_retired_at`、以及 64 位十六进制预览摘要 `preview_digest`。
+- 新增函数 `singbox_nexus_bridge_begin(expected_import)`（取咨询锁 `73201001`，准备 `pending_generation` 并将 `native_control_ready` 置为 `true`）；替换 `singbox_nexus_bridge_exchange(sample)`（排除已采用成员的原计量写入、身份签发与成员下发，写入 `legacy_retired_generation` 并返回 `retired_members`，且以 `native_control_ready = (bridge.pending_generation IS NOT NULL AND bridge.native_control_ready)` 保证未先调用 `begin` 的旧桥交换自动置回 `false`）、`singbox_nexus_device_exchange(sample)`（排除已采用成员的旧设备限额与会话地址）、`singbox_legacy_served_users()`（排除已采用成员，使其按原生控制面管理）与 `singbox_entitlements(at_s)`（已采用成员在当前套餐锚定周期内按 `used_bytes + GREATEST(charged - ledger_bytes, 0)` 衔接计量，无套餐时仍保持 `no_package`）。
+- 标记启用中的 `singbox_nexus_runtime_hosts` 待刷新（`dirty_at = COALESCE(dirty_at, 0)`），使已应用订阅投影在不改动运行时配置包的前提下刷新；末尾重算并校验 `apsp_schema_baseline` 指纹与 `_sqlx_migrations` 校验和。
+
+本脚本本身**不切换任何成员**（`singbox_native_adoptions` 初始为空，现有身份、账单与原始用量记录原样保留）。每位成员须在部署同版本面板与兼容同步器后按[成员原生采用](native-adoption.md)逐户预览并确认；演练入口与边界见下文[本轮隔离 PG16 基线演练方法](#本轮隔离-pg16-基线演练方法)，生产尚未部署本脚本，也尚未执行任何成员采用或兼容桥退役。
+
+#### 本轮隔离 PG16 基线演练方法
+
+集中验证阶段使用 `scripts/rehearse-native-control-plane-baseline.py`（显式传入 `--execute` 才启动容器，固定读取当前 `crates/panel/migrations/0001_current.sql`、`crates/panel/schema_fingerprint.sql`、`scripts/baseline-adoption-native-control-plane-20261117.sql` 与只读 Git 来源 `8fb798b14761681607973604c0ba15e605e18b4c`）：
+
+- **SQLx 元数据与主键顺序**：`schema_fingerprint.sql` 在 `pg_class JOIN pg_attribute` 中仅排除表名 `_sqlx_migrations`，仍计入主键索引 `_sqlx_migrations_pkey`。脚本对 `apsp_rehearse_fresh` 与 `apsp_rehearse_synth` 均在同一事务内先 `SET LOCAL search_path TO public` 并创建带 `BIGINT PRIMARY KEY` 的 `public._sqlx_migrations`，再执行对应 `0001_current.sql`，最后写入真实 SHA-384 记录，严格核对 `saved == actual` 指纹一致。
+- **严格核对源/目标身份，无绕过分支**：不修改任何 SQL、不忽略索引或覆盖旧库指纹放行。若本轮新基线或接入脚本的目标 `fingerprint` / `SHA-384` 尚未随 W3 最终 SQL 冻结更新，接入事务直接报错回滚并输出当前 PG16 `fresh` 实算指纹与 `target_sha384`。
+- **无生产操作与纯结构副本限制**：不接受任何 DSN/外部连接参数并清空子进程 `PG*` 与 `*DATABASE_URL` 环境变量。`apsp_rehearse_struct_copy` 仅接受预备本地只读 `--structure-archive`（`pg_dump -Fc --schema-only --no-owner --no-privileges`，校验 `PGDMP` 头、`pg_restore -l` 拒绝含 `TABLE DATA`/`BLOB` 归档、仅 `pg_restore --schema-only` 恢复到新建空库）与 `--structure-meta`（仅含 `sqlx_migrations`、`apsp_schema_baseline` 两表身份 JSON），先比对真实来源身份匹配 `17b172b9687014f3d65dca438942d14f` / `e96786fb…` 再接入。完整演练命令与 `source-meta.json` 最小形状（占位须替换为预备结构源的真实完整 96 位小写十六进制 SHA-384 与 32 位小写十六进制指纹，禁止手填新目标哈希、截短或推测；若仅传 `--execute --allow-without-structure-copy` 则输出明确标记结构副本未执行）：
+
+```bash
+python3 scripts/rehearse-native-control-plane-baseline.py --execute \
+  --structure-archive /绝对路径/schema.dump \
+  --structure-meta /绝对路径/source-meta.json
+```
+
+```json
+{
+  "sqlx_migrations": {
+    "version": 1,
+    "success": true,
+    "checksum_hex": "<预备结构源真实完整96位SHA-384>"
+  },
+  "apsp_schema_baseline": {
+    "singleton": true,
+    "fingerprint": "<预备结构源真实完整32位指纹>"
+  }
+}
+```
+
+- **对等断言、重跑门禁与防泄漏清理**：校验 `apsp_rehearse_synth`（含 `singbox_nexus_bridge` 时间字段保留）与 `apsp_rehearse_struct_copy` 接入后指纹、校验和与 `apsp_rehearse_fresh` 精确一致；二次重跑必须非零退出且命中唯一来源门禁精确消息 `expected native-lines baseline e96786fb; refusing adoption`，并校验事务回滚后身份未变。进入 `try` 前预先确定随机容器名（前缀 `apsp-pg16-rehearse-`）与运行标签 `com.apsp.run_id`，无论启动就绪或校验何处失败，`finally` 均按 `com.apsp.owner` 与 `com.apsp.run_id` 标签核对后执行 `docker rm -f -v` 清理本次 `--network none` 临时容器及私有卷。本轮仅落盘未运行，待 W3 冻结 SQL 后集中验收。

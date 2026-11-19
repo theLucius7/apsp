@@ -5,8 +5,8 @@ import re
 MAX_SOURCE = 2 * 1024 * 1024
 SOURCES = {
     'ip.sh': {
-        'source_sha256': '66c7f3c662f24bdccbd142acf25d2a176fbe72ff417848ef977aa755d6d38c8e',
-        'patched_sha256': 'ec5162dcc8dda76a6251aa6b8940e7973732d71c9fa50def515bb3c92552274b',
+        'source_sha256': 'cb194ca6e2441ef73d8d2ffd348407e6081442ee3513d4fc8c850335b2bab089',
+        'patched_sha256': 'ea10dd7b3e2de283388987d7fb0f26cc08c54ca3b59884738a85b0c8730f3fe6',
     },
 }
 

@@ -176,12 +176,9 @@ pub(crate) async fn policy(
     tx: &mut Transaction<'_, Postgres>,
     id: i64,
 ) -> ApiResult<apsp_protocol::fleet::AccessPolicy> {
-    let value = sqlx::query("SELECT policy FROM fleet_profiles WHERE server_id=$1")
-        .bind(id)
-        .fetch_optional(&mut **tx)
-        .await?;
+    let value = apsp_resources::server_lifecycle::policy(tx, id).await?;
     value
-        .map(|row| serde_json::from_value(row.get("policy")))
+        .map(serde_json::from_value)
         .transpose()
         .map_err(|error| ApiError::Internal(error.into()))
         .map(|value| value.unwrap_or_default())

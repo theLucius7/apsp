@@ -2,7 +2,7 @@
 
 - 状态：已接受（定位、分级规则与文档）。第 2 条的“可选插件”一级按 [ADR 0128](0128-domain-architecture.md) 改称“可选”，含义不变；“拆为独立插件”不再是冻结功能的去向。界面调整、默认关闭和账本实现按[路线图](../roadmap.md)分阶段实施，本 ADR 落地时尚未实施。
 - 日期：2026-10-24。
-- 关联：[功能地图](../product-map.md)、[ADR 0086](0086-product-map-and-navigation.md)、[原始 MVP 任务](../requirements.md)、[ADR 0023](0023-proxy-business-boundary.md)、[ADR 0077](0077-fleet-operations.md)–[ADR 0082](0082-control-center.md)。
+- 关联：[功能地图](../product-map.md)、[ADR 0086](0086-product-map-and-navigation.md)、[原始 MVP 任务](https://github.com/theLucius7/apsp/blob/8fb798b14761681607973604c0ba15e605e18b4c/docs/requirements.md)、[ADR 0023](0023-proxy-business-boundary.md)、[ADR 0077](0077-fleet-operations.md)–[ADR 0082](0082-control-center.md)。
 
 ## 背景
 

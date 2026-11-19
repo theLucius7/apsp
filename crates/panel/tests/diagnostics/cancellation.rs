@@ -83,7 +83,7 @@ async fn cancellation_waits_for_device_confirmation_and_preserves_late_reports(
     .await??;
     assert_eq!(delivered.server_id, server_id);
     assert_eq!(delivered.job.id, id);
-    assert_eq!(delivered.job.plugin, "nodequality");
+    assert_eq!(delivered.job.tool, "nodequality");
     let duplicate: Value = panel
         .admin(Method::POST, &path, &cookie, None)
         .await?
@@ -136,7 +136,7 @@ async fn cancellation_waits_for_device_confirmation_and_preserves_late_reports(
     let failure = DiagnosticCancelResult {
         server_id,
         id,
-        plugin: "nodequality".into(),
+        tool: "nodequality".into(),
         confirmed: false,
         report: None,
         error: Some("仍有进程或挂载".into()),

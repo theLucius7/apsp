@@ -1,5 +1,5 @@
 use crate::{
-    AppState, artifacts, auth,
+    AppState, auth,
     error::{ApiError, ApiResult},
 };
 use apsp_protocol::{
@@ -11,7 +11,7 @@ use axum::{
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::{FromRow, Row};
 use uuid::Uuid;
@@ -46,10 +46,29 @@ pub(super) fn saved_job(mut job: Value, expected: Uuid) -> ApiResult<DiagnosticJ
 
 pub mod cancellation;
 
+/// Projects the stored `"plugin"` key onto `"tool"` on the console API boundary while
+/// leaving pre-registration historical records (which carry neither key) untouched.
+fn serialize_console_job<S>(job: &Value, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    if let Value::Object(object) = job
+        && object.contains_key("plugin")
+    {
+        let mut projected = object.clone();
+        if let Some(plugin) = projected.remove("plugin") {
+            projected.entry("tool").or_insert(plugin);
+        }
+        return projected.serialize(serializer);
+    }
+    job.serialize(serializer)
+}
+
 #[derive(Serialize, FromRow)]
 pub struct ReportRecord {
     pub id: Uuid,
     pub status: String,
+    #[serde(serialize_with = "serialize_console_job")]
     pub job: Value,
     pub report: Option<Value>,
     pub error: Option<String>,
@@ -91,15 +110,15 @@ pub async fn pending(
     }
     expire(&state).await?;
     let mut tx = state.pool.begin().await?;
-    let capabilities: Value = crate::servers::lock_row(
+    let server_row = crate::servers::lock_row(
         &mut tx,
         server_id,
         crate::servers::RowLock::Update,
-        "capabilities",
+        "static_info,static_info_received_at,last_seen,capabilities",
     )
     .await?
-    .ok_or(ApiError::NotFound)?
-    .get("capabilities");
+    .ok_or(ApiError::NotFound)?;
+    let capabilities: Value = server_row.get("capabilities");
     match crate::device_work::ensure_accepts_tasks_tx(&mut tx, server_id).await {
         Ok(()) => {}
         Err(ApiError::Conflict(_)) => {
@@ -110,12 +129,15 @@ pub async fn pending(
     }
     service::reject_queued(&mut tx, server_id).await?;
     if !capabilities.as_array().is_some_and(|values| {
-        values
-            .iter()
-            .any(|value| value.as_str() == Some(apsp_protocol::DIAGNOSTIC_COMPLETION_CAPABILITY))
+        [
+            apsp_protocol::SELF_CONTAINED_AGENT_CAPABILITY,
+            apsp_protocol::DIAGNOSTIC_COMPLETION_CAPABILITY,
+        ]
+        .into_iter()
+        .all(|required| values.iter().any(|value| value.as_str() == Some(required)))
     }) {
         // Existing device checkpoints still report and cancel through their own
-        // endpoints; unconfirmed cleanup must never authorize a fresh start.
+        // endpoints; unconfirmed cleanup or pre-self-contained Agents must never start new jobs.
         tx.commit().await?;
         return Ok(Json(Vec::new()));
     }
@@ -127,13 +149,20 @@ pub async fn pending(
         tx.commit().await?;
         return Ok(Json(Vec::new()));
     }
+    let now = now_timestamp();
     let values: Vec<(Uuid, Value)> = sqlx::query_as("SELECT id,job FROM diagnostic_jobs WHERE server_id=$1 AND status IN ('queued','running') ORDER BY created_at,id")
         .bind(server_id).fetch_all(&mut *tx).await?;
     let mut jobs = Vec::new();
     for (id, job) in values {
         if !crate::diagnostic_tools::for_job(&job)
-            .is_none_or(|plugin| plugin.can_dispatch(&job, &capabilities))
+            .is_none_or(|tool| tool.can_dispatch(&job, &capabilities))
         {
+            continue;
+        }
+        let Ok(Some(frozen)) = service::FrozenComponentIdentity::from_job(&job) else {
+            continue;
+        };
+        if frozen.verify_live(&server_row, now).is_err() {
             continue;
         }
         if job["plugin"] == "network-workbench" {
@@ -196,11 +225,11 @@ pub async fn update(
     let mut tx = state.pool.begin().await?;
     // Creation and cancellation use this same lock order. A late cleanup
     // checkpoint cannot race a new task admitted after a panel-only timeout.
-    crate::servers::lock_row(
+    let server_row = crate::servers::lock_row(
         &mut tx,
         server_id,
         crate::servers::RowLock::UpdateRecord,
-        "id",
+        "static_info,static_info_received_at,last_seen,capabilities",
     )
     .await?
     .ok_or(sqlx::Error::RowNotFound)?;
@@ -212,8 +241,9 @@ pub async fn update(
     .fetch_optional(&mut *tx)
     .await?
     .ok_or(ApiError::NotFound)?;
+    let stored_job: Value = row.get("job");
     if let Some(report) = &update.report {
-        service::validate_tool_report(&row.get::<Value, _>("job"), report)?;
+        service::validate_tool_report(&stored_job, report)?;
     }
     let status: String = row.get("status");
     if status == "cancel_requested" {
@@ -244,6 +274,11 @@ pub async fn update(
         return Ok(StatusCode::NO_CONTENT);
     }
     let now = now_timestamp();
+    if update.status == DiagnosticStatus::Succeeded
+        && let Some(frozen) = service::FrozenComponentIdentity::from_job(&stored_job)?
+    {
+        frozen.verify_live(&server_row, now)?;
+    }
     let completed = update.status.is_terminal();
     if update.status == DiagnosticStatus::Cleaning {
         let conflict: bool = sqlx::query_scalar(UNRESOLVED_QUERY)
@@ -289,7 +324,7 @@ pub async fn update(
         (
             status,
             error.or_else(|| match update.status {
-                DiagnosticStatus::Failed => Some("插件执行失败，未提供错误详情".into()),
+                DiagnosticStatus::Failed => Some("诊断工具执行失败，未提供错误详情".into()),
                 DiagnosticStatus::Cleaning => Some("设备正在清理诊断进程和挂载，等待确认".into()),
                 _ => None,
             }),
@@ -320,3 +355,41 @@ pub async fn update(
 }
 
 pub use sections::upload_section;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn sample_record(job: Value) -> ReportRecord {
+        ReportRecord {
+            id: Uuid::nil(),
+            status: "succeeded".into(),
+            job,
+            report: None,
+            error: None,
+            created_at: 0,
+            updated_at: 0,
+            expires_at: 0,
+            agent_completed: true,
+            cleanup_pending: false,
+            cancel_requested_at: None,
+            cancel_error: None,
+            expected_sections: Vec::new(),
+            report_completeness: "complete".into(),
+            sections: json!([]),
+        }
+    }
+
+    #[test]
+    fn console_report_record_projects_plugin_key_to_tool_without_rewriting_historical_jobs() {
+        let job = json!({"plugin": "tcpquality", "version": "1"});
+        let modern = serde_json::to_value(sample_record(job)).unwrap();
+        assert_eq!(modern["job"], json!({"tool": "tcpquality", "version": "1"}));
+
+        let historical = serde_json::to_value(sample_record(json!({}))).unwrap();
+        assert_eq!(historical["job"], json!({}));
+        assert!(historical["job"].get("plugin").is_none());
+        assert!(historical["job"].get("tool").is_none());
+    }
+}

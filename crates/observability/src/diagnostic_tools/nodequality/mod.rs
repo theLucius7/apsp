@@ -1,5 +1,5 @@
 use crate::{
-    AppState, artifacts, auth,
+    AppState, auth,
     diagnostics::{
         ReportRecord, expire,
         service::{self, DiagnosticTool, JobPlan, PlanFuture},
@@ -32,8 +32,8 @@ const EXPECTED_SECTIONS: [&str; 5] = [
 ];
 #[derive(Serialize)]
 pub struct NodeQualityView {
-    pub plugin_ready: bool,
-    pub plugin_reason: Option<String>,
+    pub tool_ready: bool,
+    pub tool_reason: Option<String>,
     pub full_ready: bool,
     pub full_reason: Option<String>,
     pub reports: Vec<ReportRecord>,
@@ -229,29 +229,16 @@ pub async fn legacy_get(
 async fn view(state: &AppState, id: i64) -> ApiResult<NodeQualityView> {
     expire(state).await?;
     let row = sqlx::query(
-        "SELECT static_info,last_seen,capabilities FROM servers WHERE id=$1 AND deleted_at IS NULL",
+        "SELECT static_info,static_info_received_at,last_seen,capabilities FROM servers WHERE id=$1 AND deleted_at IS NULL",
     )
     .bind(id)
     .fetch_optional(&state.pool)
     .await?
     .ok_or(ApiError::NotFound)?;
-    let mut reason = service::ready(&row, &NodeQualityTool)
-        .err()
-        .map(|error| error.to_string());
-    if reason.is_none() {
-        let arch = service::ready(&row, &NodeQualityTool)?;
-        if let Err(error) = artifacts::descriptor(state, "nodequality", TOOL_VERSION, arch).await {
-            reason = Some(match error {
-                ApiError::NotFound => {
-                    "NodeQuality 插件制品尚未上传，请先准备对应架构的制品及 SHA256SUMS".into()
-                }
-                other => format!("NodeQuality 插件制品不可用：{other}"),
-            });
-        }
-    }
+    let readiness = service::readiness(state, id, &row, &NodeQualityTool).await;
     Ok(NodeQualityView {
-        plugin_ready: reason.is_none(),
-        plugin_reason: reason,
+        tool_ready: readiness.ready,
+        tool_reason: readiness.reason,
         full_ready: false,
         full_reason: Some(FULL_START_DENIAL.into()),
         reports: service::history(state, id, Some("nodequality")).await?,

@@ -12,6 +12,9 @@ pub(crate) const INPUT_LIMIT: usize = 16 * 1024;
 pub(crate) const OUTPUT_LIMIT: usize = 64 * 1024;
 pub(crate) const ENGINE_VERSION: &str = "0.3.0";
 pub(crate) const BINARY: &str = "apsp-tcp-probe";
+pub(crate) const AGENT_BINARY: &str = "apsp-agent";
+pub(crate) const AGENT_BINARY_EXE: &str = "apsp-agent.exe";
+pub(crate) const SUBCOMMAND: &str = "tcp-probe";
 pub(crate) const SEMANTICS: &str = "连接成功率和 TCP 建连耗时；不是包丢失率、吞吐测速或上游 TcpQuality 兼容评分。地区与运营商是管理员配置标签，未指定地区不推断。";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -33,7 +36,8 @@ pub(crate) struct Snapshot {
 }
 pub(crate) struct Validated<'a> {
     pub spec: &'a DiagnosticSpec,
-    pub source: &'a str,
+    pub self_binary: bool,
+    pub source: Option<&'a str>,
     pub snapshot: Snapshot,
     pub bytes: &'a str,
     pub digest: &'a str,
@@ -99,10 +103,8 @@ pub(crate) fn path(path: &Path) -> Result<String> {
             && !path
                 .components()
                 .any(|part| matches!(part, Component::ParentDir | Component::CurDir))
-            && value
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric()
-                    || matches!(byte, b'/' | b'_' | b'.' | b'-')),
+            && value.bytes().all(|byte| byte.is_ascii_alphanumeric()
+                || matches!(byte, b'/' | b'_' | b'.' | b'+' | b'-')),
         "diagnostic paths must be absolute without expansion or traversal"
     );
     Ok(value.into())
@@ -128,8 +130,14 @@ pub(crate) fn validate(spec: &DiagnosticSpec) -> Result<Validated<'_>> {
     ensure!(uuid(&spec.id), "diagnostic id must be a UUID");
     path(&spec.binary_path)?;
     path(&spec.job_dir)?;
+    let binary_name = spec
+        .binary_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .context("missing diagnostic binary name")?;
+    let self_binary = matches!(binary_name, AGENT_BINARY | AGENT_BINARY_EXE);
     ensure!(
-        spec.binary_path.file_name().and_then(|name| name.to_str()) == Some(BINARY),
+        self_binary || binary_name == BINARY,
         "unexpected diagnostic binary"
     );
     ensure!(
@@ -137,23 +145,30 @@ pub(crate) fn validate(spec: &DiagnosticSpec) -> Result<Validated<'_>> {
         "workspace must be scoped to the diagnostic UUID"
     );
     ensure!(spec.timeout_secs > 0, "diagnostic deadline is exhausted");
-    let source = spec
-        .version
-        .strip_prefix("0.3.0-")
-        .and_then(|version| version.strip_suffix("-r1"))
-        .context("unsupported TCP artifact version")?;
-    ensure!(
-        digest(source, 40),
-        "TCP artifact must pin a lowercase source commit"
-    );
-    ensure!(
-        spec.binary_path
-            .parent()
-            .and_then(Path::file_name)
-            .and_then(|name| name.to_str())
-            == Some(spec.version.as_str()),
-        "artifact directory does not match its version"
-    );
+    let source = if self_binary && matches!(spec.version.as_str(), ENGINE_VERSION | "0.1.0") {
+        None
+    } else {
+        let pinned = spec
+            .version
+            .strip_prefix("0.3.0-")
+            .and_then(|version| version.strip_suffix("-r1"))
+            .context("unsupported TCP artifact version")?;
+        ensure!(
+            digest(pinned, 40),
+            "TCP artifact must pin a lowercase source commit"
+        );
+        Some(pinned)
+    };
+    if !self_binary {
+        ensure!(
+            spec.binary_path
+                .parent()
+                .and_then(Path::file_name)
+                .and_then(|name| name.to_str())
+                == Some(spec.version.as_str()),
+            "artifact directory does not match its version"
+        );
+    }
     ensure!(
         spec.options.keys().all(|key| matches!(
             key.as_str(),
@@ -213,6 +228,7 @@ pub(crate) fn validate(spec: &DiagnosticSpec) -> Result<Validated<'_>> {
     ensure!(snapshot.valid(), "invalid frozen target scope");
     Ok(Validated {
         spec,
+        self_binary,
         source,
         snapshot,
         bytes,

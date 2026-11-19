@@ -270,10 +270,9 @@ pub async fn create_batch(
                 "服务器 #{server} 已退役或正在退役，不能创建链路"
             )));
         }
-        super::super::settings::require_enabled(&mut tx, *server).await?;
+        super::super::settings::require_writable(&mut tx, *server).await?;
     }
     storage::probe_target(&state)?;
-    storage::require_capabilities(&mut tx, &servers).await?;
     let mut receipt = BatchReceipt {
         request_id: request.request_id,
         chain_ids: Vec::new(),
@@ -426,7 +425,6 @@ pub async fn create_batch(
                 },
             )
             .await?;
-            storage::pin_runtimes(&state, &mut tx, id, 1, &frozen).await?;
             storage::reserve_probe_capacity(&state, &mut tx, frozen.entry.server_id).await?;
             super::publication::validate_candidate(&mut tx, &path, &frozen)
                 .await
@@ -559,6 +557,7 @@ pub async fn update_resource(
         return Err(ApiError::Conflict("资源设置已被修改，请刷新后重试".into()));
     }
     crate::servers::lock(&mut tx, node.server_id).await?;
+    super::super::settings::require_writable(&mut tx, node.server_id).await?;
     if let Some(name) = input
         .entry_name
         .clone()

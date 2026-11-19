@@ -5,7 +5,7 @@ import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { resolve, extname, sep } from 'node:path'
-import { catalogNodeFixtures, proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
+import { catalogNodeFixtures, proxyResourceFixtures, runtimeServerFixture } from './proxy-resource-fixtures.mjs'
 import { openPage } from './shell-navigation.mjs'
 
 // Shipped dist with controlled API responses; PostgreSQL verifies migration/data.
@@ -55,7 +55,7 @@ try {
     const openServerServices = () => page.getByRole('navigation', { name: '服务器导航' }).getByRole('link', { name: '网络服务', exact: true }).click()
     const showView = name => page.getByRole('navigation', { name: '节点视图', exact: true }).getByRole('link', { name, exact: true }).click()
     page.on('pageerror', error => errors.push(error.message))
-    const metadata = { id: 1, name: '纯监控验收服务器', enabled: false, source: null, read_only: false, online: true, agent_supported: false, installation: { state: 'not_enabled', reason: '尚未安装 sing-box；设备支持 sing-box 不代表已安装', target_rev: 0, applied_rev: 0 } }
+    const metadata = runtimeServerFixture(1, { name: '纯监控验收服务器', configured: false, online: true, agent_supported: false, status: { state: 'unconfigured', reason: '', target_rev: 0, applied_rev: 0, current_healthy: false } })
     const entry = { id: 1, name: metadata.name, online: true, device_public_key: 'test-only-key', static_info: { runtime_version: 'test-only-runtime' }, latest_metrics: { network_interfaces: { eth0: { received_bytes: 1024, transmitted_bytes: 2048 } } }, last_seen: now, manifest_rev: 0, capabilities: [] }
     const node = { id: 2, name: '插件代理节点', server_id: 1, protocol: 'vless-reality', port: 443, public_host: 'proxy.example.com', sni: 'www.example.com', public_key: 'public-test', short_id: '0123abcd' }
     const exitNode = { ...node, id: 3, name: '另一台服务器的出口', server_id: 2, public_host: 'exit.example.com' }
@@ -70,12 +70,13 @@ try {
       { id: 10, name: '无关服务器链路', entry_node_id: 4, exit_node_id: 5, available: true },
       { id: 11, name: '本服务器作为出口', entry_node_id: 6, exit_node_id: 7, available: true },
     ]
-    const exitMetadata = { id: 2, name: '出口验收服务器', enabled: true, source: 'administrator', read_only: false, online: true, agent_supported: true, installation: { state: 'pending', reason: '出口夹具正在等待目标配置应用。', target_rev: 3, applied_rev: 2 } }
+    const exitMetadata = runtimeServerFixture(2, { name: '出口验收服务器', configured: true, online: true, agent_supported: true, status: { state: 'pending', reason: '出口夹具正在等待目标配置应用。', target_rev: 3, applied_rev: 2, current_healthy: false } })
+    const unconfirmedServer = runtimeServerFixture(3, { name: '缺少应用状态的服务器' })
     const otherMetadata = [
-      { ...exitMetadata, id: 3, name: '缺少应用状态的服务器', installation: undefined },
-      { ...exitMetadata, id: 4, name: '版本不一致的服务器', installation: { state: 'ready', reason: '不一致夹具不能认证应用成功。', target_rev: 4, applied_rev: 3 } },
-      { ...exitMetadata, id: 5, name: '离线入口服务器', online: false, installation: { state: 'offline', reason: '入口夹具当前离线。', target_rev: 2, applied_rev: 1 } },
+      runtimeServerFixture(4, { name: '版本不一致的服务器', status: { state: 'ready', reason: '不一致夹具不能认证应用成功。', target_rev: 4, applied_rev: 3, current_healthy: true } }),
+      runtimeServerFixture(5, { name: '离线入口服务器', online: false, status: { state: 'offline', reason: '入口夹具当前离线。', target_rev: 2, applied_rev: 1, current_healthy: false } }),
     ]
+    const allFixtureServers = () => [metadata, exitMetadata, unconfirmedServer, ...otherMetadata]
     let chainsFailure = false, chainFixtures = false, runtimeServersFailure = false, nodesEmpty = false, deploymentFailure = false, deploymentError = null
     await page.route('**/api/**', async route => {
       const path = new URL(route.request().url()).pathname
@@ -90,20 +91,15 @@ try {
       else if (path === '/api/traffic/servers') {
         if (runtimeServersFailure) { await route.fulfill({ status: 500, json: { error: '服务器夹具读取失败' } }); return }
         value = chainFixtures ? [metadata, exitMetadata, ...otherMetadata] : [metadata]
-      }
-      else if (path === '/api/traffic/servers/1/enable') {
-        assert.equal(route.request().method(), 'POST')
-        assert.deepEqual(route.request().postDataJSON(), {})
-        Object.assign(metadata, { enabled: true, source: 'administrator', installation: { state: 'queued', reason: '安装请求已保存，正在生成初始运行配置', target_rev: 0, applied_rev: 0 } }); value = metadata
       } else if (path === '/api/traffic/servers/1/deployments') {
-        assert.equal(metadata.enabled, true)
+        assert.equal(metadata.configured, true)
         if (deploymentFailure) { await route.fulfill({ status: 500, json: { error: '部署夹具读取失败' } }); return }
-        const installation = metadata.installation
-        value = { status: installation?.target_rev > 0 ? { module: 'singbox', target_rev: installation.target_rev, applied_rev: installation.applied_rev, last_result_rev: installation.applied_rev, healthy: installation.state === 'ready', last_error: deploymentError, updated_at: now } : null,
-          pending: ['queued', 'pending'].includes(installation?.state), enabled_nodes: node.enabled === false ? 0 : 1, authorized_nodes: 0, history: [] }
+        const status = metadata.status
+        value = { status: status?.target_rev > 0 ? { module: 'singbox', target_rev: status.target_rev, applied_rev: status.applied_rev, last_result_rev: status.applied_rev, healthy: status.state === 'ready', last_error: deploymentError, updated_at: now } : null,
+          pending: status?.state === 'pending', enabled_nodes: node.enabled === false ? 0 : 1, authorized_nodes: 0, history: [] }
       } else if (path === '/api/traffic/servers/1/deployments/redeploy') {
         assert.equal(route.request().method(), 'POST')
-        metadata.installation = { state: 'pending', reason: '重新部署已生成新版本，等待设备应用。', target_rev: 6, applied_rev: 5 }
+        metadata.status = { state: 'pending', reason: '重新部署已生成新版本，等待设备应用。', target_rev: 6, applied_rev: 5, current_healthy: false }
         deploymentError = null; value = { revision: 6 }
       } else if (path === '/api/traffic/nodes/2') {
         assert.equal(route.request().method(), 'PATCH')
@@ -111,19 +107,19 @@ try {
         assert.deepEqual(payload, { name: node.name, public_host: node.public_host, sni: node.sni, protocol_config: { type: 'vless-reality' }, port: 443, enabled: false,
           settings: { listen: '0.0.0.0', public_port: 8443, public_addresses: [], tcp_fast_open: false, disable_tcp_keep_alive: false, tcp_keep_alive_seconds: null, tcp_keep_alive_interval_seconds: null, tls_alpn: [], tls_min_version: null, tls_max_version: null, tls_handshake_timeout_seconds: null, transport: { type: 'tcp' }, reality: { handshake_server: 'handshake.example.com', handshake_port: 443, fingerprint: 'firefox', max_time_difference_seconds: null, flow: 'vision' } } })
         Object.assign(node, payload)
-        metadata.installation = { state: 'pending', reason: '节点设置已保存，等待设备应用。', target_rev: 2, applied_rev: 1 }
+        metadata.status = { state: 'pending', reason: '节点设置已保存，等待设备应用。', target_rev: 2, applied_rev: 1, current_healthy: false }
         value = node
       } else if (path === '/api/traffic/nodes') {
-        assert.equal(metadata.enabled, true); value = nodesEmpty ? [] : chainFixtures ? [node, exitNode, ...additionalNodes] : [node, exitNode]
+        assert.equal(metadata.configured, true); value = nodesEmpty ? [] : chainFixtures ? [node, exitNode, ...additionalNodes] : [node, exitNode]
       } else if (path === '/api/traffic/ordered-subscription-sources') value = []
       else if (path === '/api/traffic/node-catalog') {
-        value = catalogResourceFixtures(nodesEmpty ? [] : catalogNodeFixtures([node,exitNode,...additionalNodes],[metadata,exitMetadata,...otherMetadata],chainFixtures ? [...chains,...additionalChains] : chains).filter(resource => chainFixtures || [2,3].includes(resource.id)))
+        value = catalogResourceFixtures(nodesEmpty ? [] : catalogNodeFixtures([node,exitNode,...additionalNodes],allFixtureServers(),chainFixtures ? [...chains,...additionalChains] : chains).filter(resource => chainFixtures || [2,3].includes(resource.id)))
       } else if (path === '/api/traffic/ordered-proxy-resources') {
         if (chainsFailure) { await route.fulfill({ status:500,json:{error:'链路夹具读取失败'} }); return }
-        value = nodesEmpty ? [] : proxyResourceFixtures([node,exitNode,...additionalNodes],[metadata,exitMetadata,...otherMetadata],chainFixtures ? [...chains,...additionalChains] : chains).filter(resource => chainFixtures || resource.kind === 'chain' || [2,3].includes(resource.id))
+        value = nodesEmpty ? [] : proxyResourceFixtures([node,exitNode,...additionalNodes],allFixtureServers(),chainFixtures ? [...chains,...additionalChains] : chains).filter(resource => chainFixtures || resource.kind === 'chain' || [2,3].includes(resource.id))
       } else if (/^\/api\/traffic\/ordered-proxy-resources\/chain\/\d+$/.test(path)) {
         assert.equal(route.request().method(), 'GET')
-        value = proxyResourceFixtures([node,exitNode,...additionalNodes],[metadata,exitMetadata,...otherMetadata],chainFixtures ? [...chains,...additionalChains] : chains).find(resource => resource.kind === 'chain' && resource.id === Number(path.split('/').at(-1)))
+        value = proxyResourceFixtures([node,exitNode,...additionalNodes],allFixtureServers(),chainFixtures ? [...chains,...additionalChains] : chains).find(resource => resource.kind === 'chain' && resource.id === Number(path.split('/').at(-1)))
         assert(value, 'details must identify a current chain from the rich projection')
       } else if (path === '/api/traffic/chains/ordered-batch') {
         assert.equal(route.request().method(), 'POST')
@@ -131,7 +127,7 @@ try {
         assert.match(body.request_id,/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
         assert.deepEqual(body.items,[{name:'未授权验收链路',entry:{mode:'existing',node_id:2},hops:[{kind:'managed',node_id:3}]}])
         const chain = { id:9,name:'未授权验收链路',entry_node_id:2,exit_node_id:3,available:true,path_kind:'ordered' }
-        metadata.installation = { state:'pending',reason:'新链路已保存，两端配置仍待设备应用。',target_rev:2,applied_rev:2 }
+        metadata.status = { state:'pending',reason:'新链路已保存，两端配置仍待设备应用。',target_rev:2,applied_rev:2,current_healthy:true }
         chains.push(chain); value = {request_id:body.request_id,chain_ids:[9],entry_node_ids:[2]}
       } else if (path === '/api/access/users') value = []
       else if (/^\/api\/access\/users\/\d+\/portal$/.test(path)) value = { configuration: { enabled: false, reason: 'TEST_ONLY 未启用', origin: `http://127.0.0.1:${server.address().port}` }, keys: 0, url: null, activation_expires_at: null }
@@ -145,9 +141,9 @@ try {
       else if (path === '/api/costs/summary') value = { upcoming: [] }
       else if (path === '/api/servers/1/agent-settings') value = { sample_interval_secs: 1, upload_interval_secs: 3, discover_public_ips: false, auto_update: false }
       else if (path === '/api/servers/1/telemetry-settings') value = { persist_interval_secs: 60 }
-      else if (path === '/api/servers/1/node-quality') value = { ip_addresses: [], quality: [], plugin_ready: false, plugin_reason: '夹具未启用诊断', reports: [] }
-      else if (path === '/api/servers/1/enrollment') value = { token: 'TEST_ONLY_ENROLLMENT', expires_at: now + 3600, install_command: null, warning: '夹具未导入 Agent 制品。' }
-      else if (path === '/api/artifacts/agent-versions' && route.request().method() === 'GET') value = { versions: [] }
+      else if (path === '/api/servers/1/node-quality') value = { ip_addresses: [], quality: [], tool_ready: false, tool_reason: '夹具未启用诊断', reports: [] }
+      else if (path === '/api/servers/1/enrollment') value = { token: 'TEST_ONLY_ENROLLMENT', expires_at: now + 3600, install_command: null, warning: '夹具未收录签名 Agent 发布。' }
+      else if (path === '/api/system/agent-releases' && route.request().method() === 'GET') value = { policy: { default_version: 'latest', selection: 'highest_stable_signed_protocol_compatible_for_target', minimum_version: '0.4.0' }, versions: [] }
       else if (['/api/servers/1/probes', '/api/servers/1/probe-results', '/api/servers/1/commands'].includes(path)) value = []
       else if (path === '/api/security/totp') value = { enabled: false }
       else if (path === '/api/security/passkeys') value = { configuration: { enabled: false, reason: 'TEST_ONLY 未启用', origin: `http://127.0.0.1:${server.address().port}` }, keys: [] }
@@ -167,9 +163,9 @@ try {
     assert.equal(await page.getByText('test-only-runtime', { exact: true }).count(), 0)
     assert.equal(requests.some(path => path.endsWith('/deployments') || path.endsWith('/nodes')), false)
 
-    // Adapter support alone must not opt this server into proxy business.
-    Object.assign(metadata, { agent_supported: true, installation: { state: 'not_enabled', reason: '尚未安装。', target_rev: 0, applied_rev: 0 } })
-    entry.capabilities = ['singbox']
+    // Self-contained Agent capability alone must not opt a monitor-only server into proxy business.
+    Object.assign(metadata, { agent_supported: true, status: { state: 'unconfigured', reason: '', target_rev: 0, applied_rev: 0, current_healthy: false } })
+    entry.capabilities = ['agent:self-contained:v1']
     const supportedStart = requests.length
     await page.reload()
     await page.getByRole('heading', { name: metadata.name, exact: true }).waitFor()
@@ -179,38 +175,42 @@ try {
     await openServerServices()
     await page.getByRole('heading', { name: /^sing-box/ }).waitFor()
     assert.equal(await page.locator('[data-runtime="sing-box"]').count(), 0)
-    await page.getByRole('button', { name: '安装 sing-box', exact: true }).waitFor()
-    assert.equal(await page.getByText('设备尚未声明支持 sing-box', { exact: true }).count(), 0, 'A supported device needs no note')
-    await page.getByRole('button', { name: '安装 sing-box', exact: true }).click()
-    await page.getByText('安装已安排', { exact: true }).waitFor()
-    assert.equal(metadata.enabled, true)
-    assert.equal(await page.getByText('已安装并运行', { exact: true }).count(), 0)
+    assert.equal(await page.getByRole('button', { name: '安装 sing-box', exact: true }).count(), 0)
+    await page.getByText('未配置服务', { exact: true }).waitFor()
+    await page.getByText('当前服务器尚未配置代理节点或链路，纯监控模式不运行代理进程。', { exact: false }).waitFor()
+    assert.equal(await page.getByRole('link', { name: '添加节点', exact: true }).getAttribute('href'), '#/nodes?server=1')
 
-    metadata.installation = { state: 'failed', reason: '缺少此平台的签名 sing-box 制品。', target_rev: 1, applied_rev: 0 }
+    Object.assign(metadata, { configured: true, source: 'configured', runtime_version: '1.14.4-apsp.2', status: { state: 'pending', reason: '配置已生成，等待一体化 Agent 应用。', target_rev: 1, applied_rev: 0, current_healthy: false } })
     await page.reload()
-    await page.getByText('安装或部署失败', { exact: true }).waitFor()
-    await page.getByText(metadata.installation.reason, { exact: true }).waitFor()
-    assert.equal(await page.getByText('已安装并运行', { exact: true }).count(), 0)
+    await page.getByText('等待应用配置', { exact: true }).waitFor()
+    assert.equal(await page.getByText('运行中', { exact: true }).count(), 0)
 
-    metadata.installation = { state: 'ready', reason: '设备已确认 sing-box 安装并运行。', target_rev: 1, applied_rev: 1 }
+    metadata.status = { state: 'failed', reason: '目标端口已被其他本机进程占用。', target_rev: 1, applied_rev: 0, current_healthy: false }
     await page.reload()
-    await page.getByText('已安装并运行', { exact: true }).waitFor()
+    await page.getByText('应用失败', { exact: true }).waitFor()
+    await page.getByText(metadata.status.reason, { exact: true }).waitFor()
+    assert.equal(await page.getByText('运行中', { exact: true }).count(), 0)
+
+    metadata.status = { state: 'ready', reason: '设备已确认目标配置，健康检查通过。', target_rev: 1, applied_rev: 1, current_healthy: true }
+    await page.reload()
+    await page.getByText('运行中', { exact: true }).waitFor()
     await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/servers/1/services`)
     await page.locator('[data-slot=deployment]').waitFor()
     await page.getByText('插件代理节点', { exact: true }).waitFor()
-    await page.getByText('已安装并运行', { exact: true }).waitFor()
+    await page.getByText('运行中', { exact: true }).waitFor()
     assert.equal(await page.locator('[data-runtime="sing-box"]').count(), 1)
 
-    // A legacy response and a runtime-version string cannot certify installation.
-    delete metadata.installation
+    // Missing status and a runtime-version string alone cannot certify a running service.
+    delete metadata.status
     await page.reload()
-    await page.getByText('安装状态待确认', { exact: true }).waitFor()
-    assert.equal(await page.getByText('已安装并运行', { exact: true }).count(), 0)
-    Object.assign(metadata, { read_only: true, agent_supported: true })
+    await page.getByText('状态待确认', { exact: true }).waitFor()
+    assert.equal(await page.getByText('运行中', { exact: true }).count(), 0)
+    Object.assign(metadata, { read_only: true, source: 'nexus', agent_supported: true, status: { state: 'upgrade_required', reason: '需升级到一体化 Agent。', target_rev: 1, applied_rev: 0, current_healthy: false } })
     await page.reload()
-    await page.getByText('保留已有安装记录', { exact: true }).waitFor()
+    await page.getByText('只读保留主机', { exact: true }).waitFor()
     assert.equal(await page.getByRole('button', { name: '安装 sing-box', exact: true }).count(), 0)
+    Object.assign(metadata, { read_only: false, source: 'configured' })
 
     // The network services tab reads only this server and keeps conservative ACK semantics.
     // Leave the tab first so it mounts afresh.
@@ -220,19 +220,19 @@ try {
     await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/servers/1/services`)
     await page.getByRole('heading', { name: /^sing-box/ }).waitFor()
-    await page.getByText('安装状态待确认', { exact: true }).waitFor()
+    await page.getByText('待升级 Agent', { exact: true }).waitFor()
     assert.equal(await page.getByRole('navigation', { name: '服务器导航' }).getByRole('link', { name: '网络服务', exact: true }).getAttribute('aria-current'), 'page')
     // The experimental 运维 tab appears only with the experimental features (ADR 0111).
     assert.equal(await page.getByRole('navigation', { name: '服务器导航' }).getByRole('link', { name: '运维', exact: true }).count(), 0)
     assert.equal(requests.slice(scopedStart).includes('/api/traffic/servers/1'), true)
     assert.equal(requests.slice(scopedStart).includes('/api/traffic/servers'), false)
-    assert.equal(await page.getByText('已安装并运行', { exact: true }).count(), 0)
+    assert.equal(await page.getByText('运行中', { exact: true }).count(), 0)
 
     await navigate('概览')
     await page.getByRole('heading', { name: '概览', exact: true }).waitFor()
     // Every server on the overview (the network drawing, or a list on phones) opens its sing-box card.
     const escaped = metadata.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    await page.getByRole('link', { name: new RegExp(`^${escaped}.*安装状态待确认`) }).click()
+    await page.getByRole('link', { name: new RegExp(`^${escaped}.*待升级 Agent`) }).click()
     await page.waitForURL(/#\/servers\/1\/services$/)
     await page.getByRole('link', { name: '管理节点', exact: true }).click()
     await page.getByRole('heading', { name: '节点', exact: true }).waitFor()
@@ -253,8 +253,8 @@ try {
     await nodeEditor.locator('input[name="handshake_server"]').fill('handshake.example.com')
     await nodeEditor.locator('select[name="fingerprint"]').selectOption('firefox')
     await nodeEditor.getByRole('button', { name: '保存目标配置', exact: true }).click()
-    // The saved notice points to authorisation while nobody can use the node yet; preflight is mentioned only once users are authorised.
-    await page.getByText(/^目标已保存/).waitFor()
+    // The saved notice points to authorisation while nobody can use the node yet.
+    await page.getByText(/^目标配置已保存/).waitFor()
     await editedCatalogNode.getByText('已停用', { exact: true }).waitFor()
     await editedCatalogNode.getByText('proxy.example.com:8443', { exact: true }).waitFor()
     // The catalog shows the public endpoint. Reopen the persisted node rather
@@ -268,14 +268,14 @@ try {
     await persistedNodeEditor.getByRole('button', { name: '取消', exact: true }).click()
     assert.deepEqual(mutations.slice(nodeMutationStart), [{ path: '/api/traffic/nodes/2', method: 'PATCH' }])
     // The saved node's deployment opens in its server's network services tab.
-    await page.getByRole('button', { name: /^查看(差异、完整预检与发布状态|部署状态)$/ }).click()
+    await page.getByRole('button', { name: '查看部署状态', exact: true }).click()
     await page.waitForURL(/#\/servers\/1\/services$/)
     const services = page.locator('section').filter({ has: page.getByRole('heading', { name: /^sing-box/ }) })
     await services.getByText('等待应用配置', { exact: true }).waitFor()
-    assert.equal(await services.getByText('已安装并运行', { exact: true }).count(), 0)
-    metadata.installation = { state: 'ready', reason: '设备已确认目标配置，健康检查通过。', target_rev: 2, applied_rev: 2 }
+    assert.equal(await services.getByText('运行中', { exact: true }).count(), 0)
+    metadata.status = { state: 'ready', reason: '设备已确认目标配置，健康检查通过。', target_rev: 2, applied_rev: 2, current_healthy: true }
     await services.getByRole('button', { name: '刷新', exact: true }).click()
-    await services.getByText('已安装并运行', { exact: true }).waitFor()
+    await services.getByText('运行中', { exact: true }).waitFor()
     // A failed deployment read is reported in place and recovers by retrying.
     deploymentFailure = true
     await services.getByRole('button', { name: '刷新', exact: true }).click()
@@ -320,14 +320,14 @@ try {
     assert.equal(await createdRow.getByRole('link', { name: metadata.name, exact: true }).getAttribute('href'), '#/servers/1')
     await createdRow.locator('small').filter({ hasText: /^链路$/ }).first().waitFor()
     await createdRow.getByText('状态与指定路径验证见详情', { exact: true }).waitFor()
-    await createdRow.getByText(metadata.installation.reason, { exact: true }).waitFor()
+    await createdRow.getByText(metadata.status.reason, { exact: true }).waitFor()
     assert.equal(await createdRow.getByText('目标配置已应用', { exact: true }).count(), 0)
     let resourceDetail = await showResourceDetail(9)
     assert.equal(await resourceDetail.getByRole('link', { name: metadata.name, exact: true }).getAttribute('href'), '#/servers/1')
     assert.equal(await resourceDetail.getByRole('link', { name: exitMetadata.name, exact: true }).getAttribute('href'), '#/servers/2')
     assert.equal(await resourceDetail.getByText('目标配置已应用', { exact: true }).count(), 0)
     await closeResourceDetail()
-    metadata.installation = { state: 'ready', reason: '入口设备已确认目标配置，健康检查通过。', target_rev: 2, applied_rev: 2 }
+    metadata.status = { state: 'ready', reason: '入口设备已确认目标配置，健康检查通过。', target_rev: 2, applied_rev: 2, current_healthy: true }
     await refreshPage()
     await createdRow.getByText('目标配置已应用', { exact: true }).waitFor()
     assert.equal(await createdRow.getByText('目标配置已应用', { exact: true }).count(), 1)
@@ -352,23 +352,23 @@ try {
     await createdRow.locator('small').filter({ hasText: /^本服务器作为出口$/ }).waitFor()
     assert.equal(await page.getByText('无关服务器链路', { exact: true }).count(), 0)
     // Equal revisions alone cannot certify a still-pending dirty configuration.
-    exitMetadata.installation = { state: 'pending', reason: '新配置仍待发布确认，版本相等不足以确认应用。', target_rev: 3, applied_rev: 3 }
+    exitMetadata.status = { state: 'pending', reason: '新配置仍待发布确认，版本相等不足以确认应用。', target_rev: 3, applied_rev: 3, current_healthy: true }
     await page.reload()
     resourceDetail = await showResourceDetail(9)
-    await resourceDetail.getByText(exitMetadata.installation.reason, { exact: true }).waitFor()
+    await resourceDetail.getByText(exitMetadata.status.reason, { exact: true }).waitFor()
     assert.equal(await resourceDetail.getByText('目标配置已应用', { exact: true }).count(), 1)
     await closeResourceDetail()
-    exitMetadata.installation = { state: 'failed', reason: '出口夹具设备应用失败。', target_rev: 3, applied_rev: 2 }
+    exitMetadata.status = { state: 'failed', reason: '出口夹具设备应用失败。', target_rev: 3, applied_rev: 2, current_healthy: true }
     await page.reload()
     resourceDetail = await showResourceDetail(9)
-    await resourceDetail.getByText(exitMetadata.installation.reason, { exact: true }).waitFor()
-    await resourceDetail.getByText('安装或部署失败', { exact: true }).waitFor()
+    await resourceDetail.getByText(exitMetadata.status.reason, { exact: true }).waitFor()
+    await resourceDetail.getByText('应用失败', { exact: true }).waitFor()
     assert.equal(await resourceDetail.getByText('目标配置已应用', { exact: true }).count(), 1)
     await closeResourceDetail()
-    exitMetadata.installation = { state: 'ready', reason: '出口设备已确认目标配置，健康检查通过。', target_rev: 3, applied_rev: 3 }
+    exitMetadata.status = { state: 'ready', reason: '出口设备已确认目标配置，健康检查通过。', target_rev: 3, applied_rev: 3, current_healthy: true }
     await page.reload()
     resourceDetail = await showResourceDetail(9)
-    await resourceDetail.getByText(exitMetadata.installation.reason, { exact: true }).waitFor()
+    await resourceDetail.getByText(exitMetadata.status.reason, { exact: true }).waitFor()
     assert.equal(await resourceDetail.getByText('目标配置已应用', { exact: true }).count(), 2)
     await closeResourceDetail()
 
@@ -455,10 +455,10 @@ try {
     await page.goto(`${origin}/#/servers/1`)
     await page.getByRole('button', { name: '接入 / 升级', exact: true }).click()
     const enrollment = page.getByRole('dialog')
-    await enrollment.getByRole('link', { name: '前往代理服务', exact: true }).waitFor()
-    assert.equal(await enrollment.getByRole('link', { name: '前往代理服务', exact: true }).getAttribute('href'), '#/home')
-    await enrollment.getByRole('link', { name: '前往代理服务', exact: true }).click()
-    await page.getByRole('heading', { name: '概览', exact: true }).waitFor()
+    await enrollment.getByRole('link', { name: '前往节点管理', exact: true }).waitFor()
+    assert.equal(await enrollment.getByRole('link', { name: '前往节点管理', exact: true }).getAttribute('href'), '#/nodes?server=1')
+    await enrollment.getByRole('link', { name: '前往节点管理', exact: true }).click()
+    await page.getByRole('heading', { name: '节点', exact: true }).waitFor()
 
     await navigate('用户')
     await page.getByRole('heading', { name: '用户', exact: true }).waitFor()
@@ -472,12 +472,12 @@ try {
     assert.deepEqual(errors, [])
     assert.equal(requests.some(path => ['/api/nodes', '/api/users', '/api/usage'].includes(path)), false)
 
-    // A runtime restarted outside the Agent (a host reboot): the card says so in plain words
-    // and offers a redeploy, which asks for confirmation before it publishes a new revision.
-    metadata.installation = { state: 'failed', reason: 'TEST_ONLY 运行时被系统重新启动。', target_rev: 5, applied_rev: 5 }
-    deploymentError = 'controlled runtime instance differs from the successfully applied activation'
+    // Manual forced redeploy on an existing deployment asks for confirmation before publishing a new revision.
+    metadata.status = { state: 'failed', reason: 'TEST_ONLY 部署应用失败。', target_rev: 5, applied_rev: 5, current_healthy: false }
+    deploymentError = 'TEST_ONLY 配置校验失败，需要强制重发当前配置'
     await page.goto(`${origin}/#/servers/1/services`)
-    await page.getByText('运行时在 Agent 之外被重新启动过', { exact: true }).waitFor()
+    await page.getByText('最近一次部署失败', { exact: true }).waitFor()
+    await page.getByText(deploymentError, { exact: true }).waitFor()
     const redeploys = () => mutations.filter(entry => entry.path === '/api/traffic/servers/1/deployments/redeploy').length
     await page.getByRole('button', { name: '重新部署', exact: true }).click()
     const confirmation = page.getByRole('alertdialog', { name: '重新部署当前配置？' })
@@ -489,10 +489,10 @@ try {
     await confirmation.waitFor({ state: 'hidden' })
     await page.getByText('已生成版本 6，等待设备应用。', { exact: true }).waitFor()
     assert.equal(redeploys(), 1)
-    assert.equal(await page.getByText('运行时在 Agent 之外被重新启动过', { exact: true }).count(), 0)
+    assert.equal(await page.getByText('最近一次部署失败', { exact: true }).count(), 0)
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     assert.deepEqual(errors, [])
     await page.close()
   }
-  console.log('PASS: dist desktop/mobile, support does not enable business, queued/failed/ready installation and conservative legacy fallback, overview/server-node selection/settings preservation/deployment stale-failure guard/ungranted chain creation, either-endpoint server filtering/details/application states/unknown and stale-failure guards, listener/relay roles/enrollment navigation, statistics route and administrator/proxy-user separation, canonical APIs')
+  console.log('PASS: dist desktop/mobile, self-contained capability does not enable monitor-only business, pending/failed/ready/upgrade_required states and conservative missing-status fallback, overview/server-node selection/settings preservation/deployment stale-failure guard/ungranted chain creation, either-endpoint server filtering/details/application states/unknown and stale-failure guards, listener/relay roles/enrollment navigation, administrator/proxy-user separation, canonical APIs')
 } finally { await browser.close(); await new Promise(resolve => server.close(resolve)) }

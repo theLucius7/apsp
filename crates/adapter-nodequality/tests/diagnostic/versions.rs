@@ -237,6 +237,27 @@ async fn official_node_queries_require_exact_version_and_private_bounded_inputs(
         invalid.version = version.into();
         assert!(adapter.prepare(&invalid, &privileged).await.is_err());
     }
+    let bundled_r22 = FakePrivileged {
+        artifact_version: Some(VERSION.into()),
+        ..Default::default()
+    };
+    let mut r22_ip = spec.clone();
+    r22_ip.version = VERSION.into();
+    r22_ip.job_dir = scratch.0.join("11111111-1111-4111-8111-111111111111");
+    r22_ip.id = "11111111-1111-4111-8111-111111111111".into();
+    assert!(adapter.prepare(&r22_ip, &bundled_r22).await.is_ok());
+    let mut legacy_r21_on_r22 = spec.clone();
+    legacy_r21_on_r22.job_dir = scratch.0.join("22222222-2222-4222-8222-222222222222");
+    legacy_r21_on_r22.id = "22222222-2222-4222-8222-222222222222".into();
+    assert!(
+        adapter
+            .prepare(&legacy_r21_on_r22, &bundled_r22)
+            .await
+            .is_ok()
+    );
+    let mut invalid_r20 = r22_ip;
+    invalid_r20.version = OFFLINE_ROOTFS_VERSION.into();
+    assert!(adapter.prepare(&invalid_r20, &bundled_r22).await.is_err());
     let mut unbounded = spec.clone();
     unbounded.timeout_secs = 91;
     assert!(adapter.prepare(&unbounded, &privileged).await.is_err());

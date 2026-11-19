@@ -32,7 +32,7 @@ export function chainMutationError(snapshot: ResourceSnapshot<ProxyResource[]>, 
   if (!command) return ''
   const resource = snapshot.data.find(resource => proxyResourceKey(resource) === `${command.kind}:${command.id}`)
   if (!resource) return '所选链路已不可用，请刷新确认；原请求和草稿已保留。'
-  const endpointEligible = (endpoint: ProxyResource['entry']) => endpoint.enabled && endpoint.plugin_enabled && !endpoint.node_deleted && !endpoint.server_deleted
+  const endpointEligible = (endpoint: ProxyResource['entry']) => endpoint.enabled && !endpoint.node_deleted && !endpoint.server_deleted
   if (!resource.available || !endpointEligible(resource.entry) || resource.hops.some(hop => hop.kind === 'managed' ? !endpointEligible(hop.endpoint) : hop.source_archived || !hop.node_present)) return '链路目标或依赖已不可用，暂不能发送修改或重试；原请求和草稿已保留。'
   if (replay) return ''
   if (resource.settings_revision !== command.settings_revision) return '链路设置已变化；请确认原操作后重新打开编辑。草稿已保留。'

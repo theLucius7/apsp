@@ -134,6 +134,8 @@ pub async fn put(
     let mut tx = state.pool.begin().await?;
     business::lock_publication(&mut tx).await?;
     crate::servers::lock(&mut tx, id).await?;
+    super::settings::require_writable(&mut tx, id).await?;
+    super::runtime_controls::ensure(&mut tx, id).await?;
     let previous: Option<(Value, i64)> = sqlx::query_as(
         "SELECT definition,revision FROM singbox_server_profiles WHERE server_id=$1 FOR UPDATE",
     )
@@ -166,13 +168,15 @@ pub async fn put(
     }
     sqlx::query("INSERT INTO singbox_server_profiles(server_id,definition,revision,updated_at) VALUES($1,$2,$3,$4) ON CONFLICT(server_id) DO UPDATE SET definition=EXCLUDED.definition,revision=EXCLUDED.revision,updated_at=EXCLUDED.updated_at")
       .bind(id).bind(&request.definition).bind(request.expected_revision+1).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
-    // Compile the complete candidate before committing; publication performs its usual preflight.
+    // Compile the complete candidate before committing; only mark dirty when active services exist.
     crate::publisher::preview_profile(&state, &mut tx, id)
         .await
         .map_err(|_| {
             ApiError::BadRequest("配置与当前节点或链路不兼容，请检查对象引用和监听端口".into())
         })?;
-    business::mark_dirty(&mut tx, &[id]).await?;
+    if super::settings::is_configured(&mut tx, id).await? {
+        business::mark_dirty(&mut tx, &[id]).await?;
+    }
     tx.commit().await?;
     Ok(Json(json!({"revision":request.expected_revision+1})))
 }

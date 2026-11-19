@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { time } from '../../format'
-import { useDashboardPoll } from './useDashboardPoll'
+import { useResourcePoll } from '@/lib/useResourcePoll'
 import { familyLabel, latency, loss, lossLabel, networkLabel, probeState, probeValue } from '../probes'
 import type { Probe, ProbeResult } from '../probes'
-import Chart from './Chart'
+import Chart from '@/components/Chart'
 import { NetworkIcon } from 'lucide-react'
 import { ErrorNotice } from '../../components'
 import { SectionHeading, surface } from '@/components/board'
@@ -14,7 +14,7 @@ import { NativeSelect } from '@/components/ui/native-select'
 import { SegmentedButton, SegmentedGroup } from '@/components/segmented'
 
 function History({ base, probe, now, minutes, unavailable }: { base: string; probe: Probe; now: number; minutes: number; unavailable: boolean }) {
-  const results = useDashboardPoll<ProbeResult[]>(`${base}/probe-results?probe_id=${encodeURIComponent(probe.id)}&hours=${minutes / 60}`, 15_000, false)
+  const results = useResourcePoll<ProbeResult[]>(`${base}/probe-results?probe_id=${encodeURIComponent(probe.id)}&hours=${minutes / 60}`, 15_000, false)
   const points = (results.data ?? []).filter(result => result.probe_id === probe.id && result.sampled_at >= now - minutes * 60_000 && result.sampled_at <= now).sort((a, b) => a.sampled_at - b.sampled_at)
   const latest = points[points.length - 1]
   const state = probeState(probe, latest, now, unavailable || Boolean(results.error))
@@ -33,7 +33,7 @@ function History({ base, probe, now, minutes, unavailable }: { base: string; pro
 
 /** `settings` links to where an administrator configures the probes; the public board has none. */
 export default function ProbeCharts({ base, now, unavailable, settings }: { base: string; now: number; unavailable: boolean; settings?: string }) {
-  const definitions = useDashboardPoll<Probe[]>(`${base}/probes`, 30_000, false)
+  const definitions = useResourcePoll<Probe[]>(`${base}/probes`, 30_000, false)
   const [minutes, setMinutes] = useState(60)
   const [selected, setSelected] = useState('')
   const probes = definitions.data ?? []

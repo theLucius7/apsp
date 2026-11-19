@@ -166,7 +166,7 @@ pub async fn comparison(
                 )?,
                 _ => digest(&json!({"unknown_environment_job":id}))?,
             };
-            let condition = json!({"plugin":definition["plugin"],"version":definition["version"],"artifact_sha256":definition["artifact_sha256"],"timeout_secs":definition["timeout_secs"],"parameter_digest":digest(&normalized)?,"environment_digest":environment_digest});
+            let condition = json!({"tool":definition["plugin"],"version":definition["version"],"artifact_sha256":definition["artifact_sha256"],"timeout_secs":definition["timeout_secs"],"parameter_digest":digest(&normalized)?,"environment_digest":environment_digest});
             let key = digest(&condition)?;
             if let Some(supplier) = owner
                 .get(&server)

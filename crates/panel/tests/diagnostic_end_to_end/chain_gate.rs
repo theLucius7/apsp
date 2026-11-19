@@ -5,7 +5,7 @@ async fn saved_preparing_full_is_refused_after_upgrade_without_starting_a_servic
     pool: PgPool,
 ) -> Result<()> {
     let harness = Harness::start(pool).await?;
-    write_artifact(&harness)?;
+    let fixture = SignedAgentFixture::prepare(&harness)?;
     let server = harness
         .api(
             Method::POST,
@@ -27,20 +27,12 @@ async fn saved_preparing_full_is_refused_after_upgrade_without_starting_a_servic
         enrollment["token"].as_str().context("enrollment token")?,
     )
     .await?;
-    // A resumed Preparing task verifies the signed host architecture before adapter preparation.
-    let artifact = apsp_governance::artifacts::descriptor(
-        &harness.state,
-        "nodequality",
-        VERSION,
-        apsp_protocol::release::native_arch()?,
-    )
-    .await?;
     let now = apsp_protocol::now_timestamp();
     let job = apsp_protocol::DiagnosticJob {
         id: uuid::Uuid::new_v4(),
-        plugin: "nodequality".into(),
+        tool: "nodequality".into(),
         version: VERSION.into(),
-        artifact,
+        artifact: None,
         timeout_secs: 1800,
         expires_at: Some(now + 2100),
         resource_budget: None,
@@ -50,33 +42,23 @@ async fn saved_preparing_full_is_refused_after_upgrade_without_starting_a_servic
         .bind(job.id).bind(server_id).bind(serde_json::to_value(&job)?).bind(now)
         .bind(now + 2100).execute(&harness.state.pool).await?;
     // A legacy Agent had already received this HTTP response before rollout.
-    // The upgraded Agent must reject its durable Preparing state as well.
+    // The upgraded self-contained Agent must reject its durable Preparing state as well.
     State::open(&config.state_db)?.set_json("diagnostics:active", &json!({"Preparing": job}))?;
-    // Receiving that signed job required this previously published capability.
-    // A fresh enrollment otherwise races Hello persistence with the resumed
-    // artifact GET and can fail at HTTP 409 before reaching the full-mode gate.
     sqlx::query("UPDATE servers SET capabilities=$2 WHERE id=$1")
         .bind(server_id)
         .bind(json!([
-            apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY
+            apsp_protocol::SELF_CONTAINED_AGENT_CAPABILITY,
+            apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY,
         ]))
         .execute(&harness.state.pool)
         .await?;
-    let services = Arc::new(IndependentServices::default());
-    let agent = tokio::spawn(transport::run_with_diagnostics(
-        config.clone(),
-        vec![],
-        vec![Arc::new(NodeQualityAdapter::new())],
-        Arc::new(FakeResourceOps::new(Arc::new(SystemOps))),
-        services.clone(),
-        "full-gate-upgrade-fixture",
-    ));
+    let agent = fixture.spawn(&config)?;
     let acknowledgement = eventually(
         "preparing task refused and acknowledged after upgrade",
         20,
         || async {
             anyhow::ensure!(
-                !agent.is_finished(),
+                !agent.is_finished()?,
                 "Agent exited during gate acknowledgement"
             );
             let row: (String, Option<String>, bool) = sqlx::query_as(
@@ -91,8 +73,7 @@ async fn saved_preparing_full_is_refused_after_upgrade_without_starting_a_servic
         },
     )
     .await;
-    agent.abort();
-    let _ = agent.await;
+    agent.stop().await;
     if let Err(error) = acknowledgement {
         let state_db = config.state_db.clone();
         let evidence = tokio::time::timeout(std::time::Duration::from_secs(2), async {
@@ -125,8 +106,8 @@ async fn saved_preparing_full_is_refused_after_upgrade_without_starting_a_servic
         };
         return Err(error.context(context));
     }
-    assert_eq!(services.starts.load(Ordering::SeqCst), 0);
-    assert_eq!(services.stops.load(Ordering::SeqCst), 0);
+    assert_eq!(fixture.services.starts()?, 0);
+    assert_eq!(fixture.services.stops()?, 0);
     assert!(
         !config
             .runtime_root

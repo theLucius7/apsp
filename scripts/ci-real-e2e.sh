@@ -4,14 +4,14 @@ set -Eeuo pipefail
 umask 077
 
 usage() {
-  printf '%s\n' 'Usage: scripts/ci-real-e2e.sh --agent-root DIR --runtime-root DIR --summary FILE'
+  printf '%s\n' 'Usage: scripts/ci-real-e2e.sh --agent-root DIR --client-runtime-root DIR --summary FILE'
 }
 die() { printf 'Real e2e failed: %s\n' "$*" >&2; exit 1; }
 agent_root= runtime_root= summary=
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --agent-root) agent_root=$2; shift 2 ;;
-    --runtime-root) runtime_root=$2; shift 2 ;;
+    --runtime-root|--client-runtime-root) runtime_root=$2; shift 2 ;;
     --summary) summary=$2; shift 2 ;;
     --help|-h) usage; exit 0 ;;
     *) usage >&2; exit 2 ;;
@@ -20,11 +20,13 @@ done
 [[ -n $agent_root && -n $runtime_root && -n $summary ]] || { usage >&2; exit 2; }
 [[ $(uname -s) == Linux && $(uname -m) == x86_64 && -d /run/systemd/system ]] || die 'requires Linux amd64 with real systemd'
 [[ ${GITHUB_ACTIONS:-} == true || ${APSP_E2E_DISPOSABLE_HOST:-} == 1 ]] || die 'use a disposable runner; manual reproduction requires APSP_E2E_DISPOSABLE_HOST=1'
+# Runner-only test harness tools (Compose panel, private TLS camouflage container,
+# and independent client runtime check); real user servers only run apsp-bootstrap.
 for tool in docker python3 sudo systemctl systemd-run openssl curl readelf go sha256sum minisign install; do
   command -v "$tool" >/dev/null || die "missing tool: $tool"
 done
 sudo -n true || die 'noninteractive sudo is required'
-[[ $(/bin/mv --version) == *'GNU coreutils'* ]] || die 'real artifact publication requires GNU mv'
+[[ $(/bin/mv --version) == *'GNU coreutils'* ]] || die 'real release staging requires GNU mv'
 for path in /etc/apsp /opt/apsp /var/lib/apsp /run/apsp /usr/local/bin/apsp-agent \
   /etc/systemd/system/apsp-agent.service /etc/systemd/system/apsp-singbox@.service; do
   if sudo test -e "$path" || sudo test -L "$path"; then die 'existing Apsp installation detected; leaving it untouched'; fi
@@ -47,7 +49,7 @@ export APSP_ADMIN_PASSWORD=$(python3 -c 'import secrets; print(secrets.token_hex
 export APSP_E2E_ADMIN_PASSWORD="$APSP_ADMIN_PASSWORD"
 export APSP_E2E_STATUS_COMMAND='sudo /usr/local/bin/apsp-agent status'
 export APSP_E2E_ARTIFACT_ROOT=$scratch/artifacts
-phase=preflight owned_installation=0 hosts_entry=0 fixture_pid= client_pid= tls_container=
+phase=setup owned_installation=0 hosts_entry=0 fixture_pid= client_pid= tls_container=
 passed=0 failure_line=
 marker=$COMPOSE_PROJECT_NAME
 compose=(docker compose --env-file /dev/null -f deploy/docker-compose.yml -f "$scratch/compose.override.yml")
@@ -69,7 +71,22 @@ specification.loader.exec_module(driver)
 traffic_specification = importlib.util.spec_from_file_location("e2e_traffic_evidence", "scripts/e2e-traffic-evidence.py")
 traffic = importlib.util.module_from_spec(traffic_specification)
 traffic_specification.loader.exec_module(traffic)
-summary = {"passed": passed == "1", "last_phase": phase, "exit_code": int(exit_code), "runtime_version": "1.14.4-apsp.2"}
+summary = {
+    "passed": passed == "1",
+    "last_phase": phase,
+    "exit_code": int(exit_code),
+    "runtime_version": "1.14.4-apsp.2",
+    "release_fixture": "TEST_ONLY",
+    "e2e_scope": "singbox-first-config-reality-accounting",
+}
+embedded_path = Path(state_path).with_name("embedded-components.json")
+if embedded_path.is_file():
+    raw_embedded = json.loads(embedded_path.read_text())
+    known_components = ("sing-box", "nodequality", "ipquality", "network-workbench", "tcpquality")
+    if isinstance(raw_embedded, dict):
+        embedded_names = sorted(name for name in raw_embedded if name in known_components)
+        summary["embedded_components"] = embedded_names
+        summary["full_release_closure"] = set(embedded_names) == set(known_components)
 if not summary["passed"]:
     summary["failure_line"] = int(failure_line)
 traffic_evidence = traffic.load(Path(state_path).with_name(traffic.EVIDENCE_NAME))
@@ -94,9 +111,12 @@ if Path(state_path).is_file():
     summary["agent_version"] = state.get("installation", {}).get("version")
     if state.get("requested_port") == 443 and state.get("port") == 443:
         summary["reality_port"] = 443
+    checkpoints = state.get("checkpoints", {})
+    if "monitor" in checkpoints:
+        summary["pure_monitoring_verified"] = True
     summary["usage"] = {
         label: {key: checkpoint["usage"][key] for key in ("uplink", "downlink", "total")}
-        for label, checkpoint in state.get("checkpoints", {}).items()
+        for label, checkpoint in checkpoints.items()
         if label in ("ready", "first", "before", "after-agent", "after-runtime", "resumed", "before-reinstall", "after-reinstall")
     }
 signature = Path(state_path).with_name("signature-checks.json")
@@ -130,8 +150,9 @@ if os.environ.get('GITHUB_ACTIONS') == 'true' and not summary['passed']:
     print('::error title=Reality acceptance failed::' + json.dumps(summary, ensure_ascii=True))
 if os.environ.get('GITHUB_STEP_SUMMARY'):
     with Path(os.environ['GITHUB_STEP_SUMMARY']).open('a') as report:
-        report.write('### 真实安装与 Reality 验收\n\n')
+        report.write('### 真实安装与 Reality 验收（TEST_ONLY 集成夹具）\n\n')
         report.write(f"结果：{'通过' if summary['passed'] else '失败'}；最后阶段：{phase}。\n\n")
+        report.write('范围：使用仓库专用 `TEST_ONLY` 签名夹具验证首配 `sing-box` 自动发布、双向 Reality 流量与账本对账，按实际内嵌组件如实上报能力，不冒称完整四工具正式发布。\n\n')
         report.write('| 阶段 | 上传字节 | 下载字节 |\n| --- | ---: | ---: |\n')
         for label, usage in summary.get('usage', {}).items():
             report.write(f"| {label} | {usage['uplink']} | {usage['downlink']} |\n")
@@ -197,14 +218,15 @@ PY
 
 mkdir -m 0755 "$scratch/source"
 cp -R "$agent_root/agent" "$scratch/source/agent"
-cp -R "$runtime_root/sing-box" "$scratch/source/sing-box"
-agent_version=$(python3 - "$scratch/source/agent" <<'PY'
+agent_version=$(python3 - "$scratch/source/agent" "$scratch/embedded-components.json" <<'PY'
 import hashlib
+import importlib.util
+import json
 from pathlib import Path
 import re
 import subprocess
 import sys
-root = Path(sys.argv[1])
+root, embedded_out = Path(sys.argv[1]), Path(sys.argv[2])
 versions = [path for path in root.iterdir() if path.is_dir() and not path.is_symlink()]
 if len(versions) != 1: raise SystemExit('need one same-run Agent version')
 version = versions[0].name
@@ -222,15 +244,37 @@ dynamic = subprocess.check_output(['readelf', '-dW', str(binary)], text=True)
 if 'INTERP' in program or 'NEEDED' in dynamic: raise SystemExit('Agent must be static musl')
 if subprocess.check_output([str(binary), '--version'], text=True).strip() != 'apsp-agent ' + version:
     raise SystemExit('Agent version mismatch')
+tcp_probe = subprocess.check_output([str(binary), 'tcp-probe', '--version'], text=True).strip()
+if not tcp_probe.startswith('apsp-tcp-probe '):
+    raise SystemExit('Agent built-in tcp-probe version check failed')
+spec = importlib.util.spec_from_file_location('apsp_release_tools', 'tools/release.py')
+release_tools = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(release_tools)
+manifest = release_tools.verify_embedded_agent_manifest(
+    binary.read_bytes(), version, 'amd64', require_release_closure=False
+)
+embedded_out.write_text(
+    json.dumps({name: item['version'] for name, item in manifest['components'].items()}, sort_keys=True) + '\n'
+)
 print(version)
 PY
 )
-python3 scripts/verify-e2e-runtime.py "$runtime_root" "$scratch/runtime"
-runtime=$scratch/runtime/sing-box
+# Extract the verified runtime strictly as the independent client fixture (127.0.0.1:2080);
+# the managed server runtime is materialized solely from the self-contained apsp-agent binary.
+python3 scripts/verify-e2e-runtime.py "$runtime_root" "$scratch/client-runtime"
+client_runtime=$scratch/client-runtime/sing-box
 phase=signed-release
-bash tools/build-nodequality.sh amd64 "$scratch/source" > "$scratch/nodequality-build.log" 2>&1
 python3 scripts/ci-signed-release.py --source "$scratch/source" --bundle "$scratch/release" \
   --panel-root "$scratch/artifacts" --agent-version "$agent_version" --arch amd64
+python3 - "$scratch/release/release.json" <<'PY'
+import json
+from pathlib import Path
+import sys
+metadata = json.loads(Path(sys.argv[1]).read_text())
+entries = metadata.get('artifacts', [])
+if not entries or any(item.get('name') != 'agent' or item.get('format') != 'raw' for item in entries):
+    raise SystemExit('self-contained signed release must contain only raw Agent entries')
+PY
 chmod -R a+rX "$scratch/artifacts"
 # Provision the verifier and trust independently from the checked-out operator tools,
 # before receiving any panel installation data. No panel-provided shell is executed.
@@ -309,19 +353,41 @@ fixture_pid=$!
 
 phase=prepare
 driver=(python3 scripts/e2e-driver.py --state "$scratch/state.json")
-"${driver[@]}" prepare --origin "$APSP_PUBLIC_URL" --public-host 127.0.0.1 --sni apsp-e2e.example.test --port 443
+"${driver[@]}" prepare --origin "$APSP_PUBLIC_URL" --public-host 127.0.0.1 \
+  --sni apsp-e2e.example.test --port 443 --server-only
 phase=install
 owned_installation=1
 sudo python3 scripts/ci-bootstrap-install.py --enrollment "$scratch/enrollment.json" \
   --trust-directory "$trust_directory" --bundle "$scratch/release" --log "$scratch/install.log"
-# The panel publishes business nodes only after a confirmed read-only runtime
-# preflight. Allow it locally, restart so the Agent advertises it, then run the
-# operator flow (first empty runtime install, collect again, confirm).
-sudo sh -c "umask 077; printf '%s\\n' '{\"runtime_inspection\":true}' > /etc/apsp/fleet-policy.json"
-sudo systemctl restart apsp-agent.service
-phase=preflight
-"${driver[@]}" preflight --timeout 600
-phase=install
+phase=monitor
+"${driver[@]}" monitor --agent-version "$agent_version" --timeout 120
+python3 - "$scratch/embedded-components.json" "$scratch/monitor.json" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+expected = json.loads(Path(sys.argv[1]).read_text())
+monitor = json.loads(Path(sys.argv[2]).read_text())
+server = monitor.get('server') or {}
+actual = server.get('components')
+capabilities = set(server.get('capabilities') or ())
+if actual != expected:
+    raise SystemExit(f'Agent reported components {actual!r} do not match embedded payload {expected!r}')
+if 'singbox' not in capabilities or 'agent:self-contained:v1' not in capabilities:
+    raise SystemExit('Agent failed to report self-contained singbox capability')
+for tool in ('nodequality', 'ipquality', 'network-workbench', 'tcpquality'):
+    if ('diagnostic:' + tool in capabilities) != (tool in expected):
+        raise SystemExit(f'Agent capability advertisement for {tool} does not match embedded payload')
+PY
+[[ $(sudo systemctl show apsp-singbox@main.service -p ActiveState --value) == inactive ]] \
+  || die 'pure-monitoring Agent unexpectedly activated sing-box'
+[[ $(sudo systemctl show apsp-singbox@main.service -p MainPID --value) == 0 ]] \
+  || die 'pure-monitoring Agent unexpectedly spawned a sing-box PID'
+sudo test ! -e /var/lib/apsp/plugins/sing-box@main/current/config.json \
+  || die 'pure-monitoring Agent unexpectedly wrote a runtime configuration'
+phase=configure
+"${driver[@]}" configure
+phase=ready
 "${driver[@]}" ready --agent-version "$agent_version" --timeout 600
 python3 - "$scratch/state.json" "$scratch/client.json" <<'PY'
 import json
@@ -334,6 +400,8 @@ if state.get('requested_port') != 443 or state.get('port') != 443 or ports != [4
 PY
 runtime_pid=$(sudo systemctl show apsp-singbox@main.service -p MainPID --value)
 [[ $runtime_pid =~ ^[1-9][0-9]*$ ]] || die 'independent runtime is not active'
+sudo test -f /opt/apsp/plugins/sing-box/current/.bundled.json \
+  || die 'active runtime was not materialized from the self-contained Agent'
 
 wait_agent() {
   if python3 - <<'PY'
@@ -409,7 +477,7 @@ PY_LEDGER
 }
 
 start_client() {
-  "$runtime" run -c "$scratch/client.json" > "$scratch/client.log" 2>&1 &
+  "$client_runtime" run -c "$scratch/client.json" > "$scratch/client.log" 2>&1 &
   client_pid=$!
   for attempt in {1..30}; do
     kill -0 "$client_pid" 2>/dev/null || die 'Reality client exited'
@@ -490,4 +558,4 @@ sudo --preserve-env=APSP_E2E_ADMIN_PASSWORD env APSP_E2E_DISPOSABLE_HOST=1 \
 sudo chown -- "$(id -u):$(id -g)" "$scratch/retirement.json"
 phase=complete
 passed=1
-printf '%s\n' 'Signed installation, cache rejection, Reality traffic, accounting, restart, reload, reinstallation, and online retirement passed.'
+printf '%s\n' 'Self-contained Agent installation, pure-monitoring verification, automatic node publication, cache rejection, Reality traffic, accounting, restart, reload, reinstallation, and online retirement passed.'

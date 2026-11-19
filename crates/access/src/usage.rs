@@ -1,3 +1,5 @@
+pub mod statistics;
+
 use crate::{
     AppState, auth, device_channel,
     error::{ApiError, ApiResult},

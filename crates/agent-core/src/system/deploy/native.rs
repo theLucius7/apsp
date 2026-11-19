@@ -62,3 +62,17 @@ pub(super) async fn register(
         _ => anyhow::bail!("unsupported native service backend"),
     }
 }
+
+pub(super) async fn ensure_runtime(
+    ops: &dyn Privileged,
+    backend: ServiceBackend,
+    spec: &apsp_adapter_sdk::RuntimeServiceSpec,
+) -> Result<()> {
+    match backend {
+        ServiceBackend::WindowsTask => windows::ensure_runtime(ops, spec).await,
+        ServiceBackend::FreeBsd | ServiceBackend::Launchd => {
+            unix::ensure_runtime(ops, backend, spec).await
+        }
+        _ => anyhow::bail!("unsupported native service backend"),
+    }
+}

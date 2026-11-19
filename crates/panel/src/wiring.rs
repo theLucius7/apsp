@@ -36,7 +36,7 @@ use apsp_resources::{
 use apsp_traffic as traffic;
 use serde_json::Value;
 use sqlx::{PgConnection, PgPool, Postgres, Transaction};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use uuid::Uuid;
 
 struct Wiring;
@@ -354,6 +354,32 @@ impl Evidence for Wiring {
             notify,
         ))
     }
+
+    fn ensure_incident_once_tx<'a, 't>(
+        &'a self,
+        tx: &'a mut Transaction<'t, Postgres>,
+        report: IncidentReport<'a>,
+    ) -> BoxFuture<'a, ApiResult<Uuid>> {
+        Box::pin(observability::incidents::ensure_once(
+            tx,
+            report.key,
+            report.server,
+            report.title,
+            report.severity,
+            report.evidence,
+            report.observed_at,
+        ))
+    }
+
+    fn cancel_pending_incident_notifications_tx<'a, 't>(
+        &'a self,
+        tx: &'a mut Transaction<'t, Postgres>,
+        incident: Uuid,
+    ) -> BoxFuture<'a, ApiResult<()>> {
+        Box::pin(observability::incidents::cancel_pending_notifications(
+            tx, incident,
+        ))
+    }
 }
 
 impl Outbox for Wiring {
@@ -427,14 +453,16 @@ impl ServerObservation for Wiring {
         Box::pin(observability::telemetry::settings_of(pool, servers))
     }
 
-    fn save_telemetry_settings_tx<'a, 't>(
+    fn initialize_tx<'a, 't>(
         &'a self,
         tx: &'a mut Transaction<'t, Postgres>,
         server: i64,
-        settings: &'a apsp_protocol::telemetry::TelemetrySettings,
+        telemetry: &'a apsp_protocol::telemetry::TelemetrySettings,
+        probes: &'a [ProbeSpec],
+        alerts: &'a [Value],
     ) -> BoxFuture<'a, ApiResult<()>> {
-        Box::pin(observability::telemetry::save_settings_tx(
-            tx, server, settings,
+        Box::pin(observability::probes::initialize_server_tx(
+            tx, server, telemetry, probes, alerts,
         ))
     }
 
@@ -463,14 +491,6 @@ impl ServerObservation for Wiring {
     ) -> BoxFuture<'a, ApiResult<()>> {
         Box::pin(async move { Ok(observability::latency_tasks::lock(tx).await?) })
     }
-
-    fn assign_default_latency_tasks_tx<'a, 't>(
-        &'a self,
-        tx: &'a mut Transaction<'t, Postgres>,
-        server: i64,
-    ) -> BoxFuture<'a, ApiResult<()>> {
-        Box::pin(observability::latency_tasks::assign_defaults(tx, server))
-    }
 }
 
 impl ServerRuntime for Wiring {
@@ -488,9 +508,9 @@ impl ServerRuntime for Wiring {
         server: i64,
     ) -> BoxFuture<'a, ApiResult<RuntimeReferences>> {
         Box::pin(async move {
-            let (enabled, deployments) = traffic::settings::references(pool, server).await?;
+            let (configured, deployments) = traffic::settings::references(pool, server).await?;
             Ok(RuntimeReferences {
-                enabled,
+                configured,
                 deployments,
             })
         })
@@ -508,6 +528,17 @@ impl access::HostNetwork for Wiring {
             state,
             server,
             static_info,
+        ))
+    }
+
+    fn carrier_latencies<'a>(
+        &'a self,
+        connection: &'a mut PgConnection,
+        servers: &'a [i64],
+        since_ms: i64,
+    ) -> BoxFuture<'a, ApiResult<BTreeMap<i64, Value>>> {
+        Box::pin(observability::probes::carrier_latencies(
+            connection, servers, since_ms,
         ))
     }
 }

@@ -78,7 +78,7 @@ try {
       if (path === '/api/notifications/channels') return respond([])
       if (path === '/api/telemetry/policy') return respond({history_retention_days:30})
       if (path === '/api/notifications') return respond([{ id: 1, server_id: 1, server_name: '演示服务器', last_seen: second - 600, opened_at: second - 300, resolved_at: null, resolution: null, deliveries: [{ kind: 'offline', status: 'pending', attempts: 1, last_error: '模拟网络失败' }] }])
-      if (path === '/api/traffic/servers/1') return respond({ enabled: false, online: true, agent_supported: false, read_only: false, source: null })
+      if (path === '/api/traffic/servers/1') return respond({ id: 1, name: device.name, configured: false, online: true, agent_supported: false, read_only: false, source: null, runtime_version: null, status: { state: 'unconfigured', reason: '', target_rev: 0, applied_rev: 0, current_healthy: false } })
       if (['/metrics', '/probes', '/probe-results', '/commands', '/overview'].some(suffix => path.endsWith(suffix))) return respond([])
       throw new Error(`Unexpected route ${path}`)
     })

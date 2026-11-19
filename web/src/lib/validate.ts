@@ -18,3 +18,6 @@ export const isPort = (value: unknown): value is number => isInteger(value, 1) &
 
 /** A UUID of versions 1–5, the form the panel issues identifiers in. */
 export const isUuid = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+
+/** A finite nonnegative reading; absent, invalid and negative readings stay unknown. */
+export const nonnegativeNumber = (value: unknown): number | null => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null

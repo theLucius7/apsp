@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { resolveRoute } from '../src/app/routes'
+import { canonicalUserPath, resolveRoute } from '../src/app/routes'
 import { currentNavigation, homePath, navigation, sectionTabs, sidebarEntries } from '../src/app/navigation'
 import { visibleByTier } from '../src/lib/tiers'
 import { nodeHash } from '../src/traffic/nodeRoute'
@@ -15,8 +15,8 @@ test('old device DDNS, catalog alias and unified node selection retain their des
   expect(resolveRoute('/servers/42/ddns')).toEqual({ page: 'server', serverId: 42, section: 'ddns' })
   expect(currentNavigation(resolveRoute('/servers/42/ddns'))?.path).toBe('/dns')
   expect(currentNavigation(resolveRoute('/servers/42/node-quality'))?.path).toBe('/servers')
-  expect(resolveRoute('/settings/plugins')).toEqual({ page: 'artifacts' })
-  expect(currentNavigation(resolveRoute('/settings/plugins'))?.path).toBe('/settings/artifacts')
+  expect(resolveRoute('/settings/agent-updates')).toEqual({ page: 'agent-updates' })
+  expect(currentNavigation(resolveRoute('/settings/agent-updates'))?.path).toBe('/settings/agent-updates')
   expect(resolveRoute('/nodes?server=42')).toEqual({ page: 'nodes', serverId: 42, chains: false })
   expect(resolveRoute('/nodes?kind=chains')).toEqual({ page: 'nodes', chains: true })
   expect(resolveRoute('/nodes/chain/42')).toEqual({ page: 'nodes', selected: { kind: 'chain', id: 42 } })
@@ -55,7 +55,7 @@ test('line quality is one entry: the overview, its settings and the network test
 })
 
 test('unsafe resource IDs and ambiguous filtered paths never fall through into management routes', () => {
-  for (const path of ['/servers/0', '/servers/9007199254740992/plugins', '/dashboard/9007199254740992',
+  for (const path of ['/servers/0', '/servers/9007199254740992/services', '/dashboard/9007199254740992',
     '/nodes/direct/9007199254740992', '/nodes?role=unknown',
     '/nodes?server=42&server=43', 'constructor', '__proto__']) {
     expect(resolveRoute(path)).toEqual({ page: 'not-found' })
@@ -140,19 +140,17 @@ test('server sections, artifact and runtime views and split settings resolve to 
     expect(resolveRoute(`/servers/42/${section}`)).toEqual({ page: 'server', serverId: 42, section })
     expect(currentNavigation(resolveRoute(`/servers/42/${section}`))?.path).toBe('/servers')
   }
-  // The network services tab's previous address opens the same tab.
-  expect(resolveRoute('/servers/42/plugins')).toEqual({ page: 'server', serverId: 42, section: 'services' })
-  expect(resolveRoute('/settings/plugins/servers')).toEqual({ page: 'nodes', view: 'runtimes' })
-  expect(currentNavigation(resolveRoute('/settings/plugins/servers'))?.path).toBe('/nodes')
-  expect(currentNavigation(resolveRoute('/settings/artifacts'))?.label).toBe('制品与版本')
-  expect(currentNavigation(resolveRoute('/settings/plugins'))?.label).toBe('制品与版本')
+  expect(resolveRoute('/servers/42/services')).toEqual({ page: 'server', serverId: 42, section: 'services' })
+  expect(resolveRoute('/nodes?view=runtimes')).toEqual({ page: 'nodes', chains: false, view: 'runtimes' })
+  expect(currentNavigation(resolveRoute('/nodes?view=runtimes'))?.path).toBe('/nodes')
+  expect(currentNavigation(resolveRoute('/settings/agent-updates'))?.label).toBe('Agent 版本')
   expect(resolveRoute('/alerts/settings')).toEqual({ page: 'alert-settings' })
   expect(currentNavigation(resolveRoute('/alerts/settings'))?.group).toBe('监测与诊断')
   expect(currentNavigation(resolveRoute('/settings'))?.label).toBe('面板设置')
   expect(currentNavigation(resolveRoute('/alerts'))?.group).toBe('监测与诊断')
   expect(currentNavigation(resolveRoute('/dns'))?.group).toBe('服务器')
   expect(currentNavigation(resolveRoute('/alicloud'))?.group).toBe('服务器')
-  expect(currentNavigation(resolveRoute('/settings/plugins'))?.group).toBe('系统')
+  expect(currentNavigation(resolveRoute('/settings/agent-updates'))?.group).toBe('系统')
   expect(currentNavigation(resolveRoute('/network-workbench'))?.group).toBe('监测与诊断')
   for (const path of ['/servers/42/overview', '/servers/42/assets/extra', '/alerts/settings/extra']) expect(resolveRoute(path)).toEqual({ page: 'not-found' })
 })
@@ -170,11 +168,33 @@ test('frozen entries stay hidden until the panel shows them', () => {
   expect(visibleByTier(entries, true).map(entry => entry.key)).toEqual(['core', 'experimental', 'frozen'])
 })
 
-test('unsupported development addresses are rejected', () => {
-  for (const path of ['/plugins/sing-box', '/plugins/sing-box/nodes', '/system/settings', '/monitoring/settings', '/artifacts']) {
+test('issued external user and member addresses rewrite while retired console plugin paths do not', () => {
+  const uuid = '00000000-0000-4000-8000-000000000041'
+  const activation = `tok_${'a'.repeat(39)}`
+  const invite = 'ABCD-EFGH-JKMN-PQRS'
+  expect(canonicalUserPath(`/plugins/sing-box/account/${uuid}`)).toBe(`/account/${uuid}`)
+  expect(canonicalUserPath(`/plugins/sing-box/account/${uuid}?activate=tok_123`)).toBe(`/account/${uuid}?activate=tok_123`)
+  expect(canonicalUserPath(`#/plugins/sing-box/account/${uuid}?activate=${activation}`)).toBe(`/account/${uuid}?activate=${activation}`)
+  expect(canonicalUserPath('plugins/sing-box/member')).toBe('/member')
+  expect(canonicalUserPath('/plugins/sing-box/member')).toBe('/member')
+  expect(canonicalUserPath('/plugins/sing-box/member/lines')).toBe('/member/lines')
+  expect(canonicalUserPath('/plugins/sing-box/join/inv_123')).toBe('/join/inv_123')
+  expect(canonicalUserPath(`/plugins/sing-box/join/${invite}`)).toBe(`/join/${invite}`)
+
+  expect(resolveRoute(`/plugins/sing-box/account/${uuid}`)).toEqual({ page: 'proxy-portal', account: uuid, activation: undefined })
+  expect(resolveRoute(`/plugins/sing-box/account/${uuid}?activate=${activation}`)).toEqual({ page: 'proxy-portal', account: uuid, activation })
+  expect(resolveRoute(`/plugins/sing-box/account/${uuid}?activate=tok_123`)).toEqual(resolveRoute(`/account/${uuid}?activate=tok_123`))
+  expect(resolveRoute('/plugins/sing-box/member')).toEqual({ page: 'member-login' })
+  expect(resolveRoute('/plugins/sing-box/member/lines')).toEqual(resolveRoute('/member/lines'))
+  expect(resolveRoute('/plugins/sing-box/join')).toEqual({ page: 'member-join' })
+  expect(resolveRoute(`/plugins/sing-box/join/${invite}`)).toEqual({ page: 'member-join', token: invite })
+  expect(resolveRoute('/plugins/sing-box/join/inv_123')).toEqual(resolveRoute('/join/inv_123'))
+
+  for (const path of ['/plugins/sing-box', '/plugins/sing-box/accounts', '/plugins/sing-box/members', '/plugins/sing-box/joining', '/plugins/sing-box/nodes', '/plugins/sing-box/users', '/settings/plugins', '/settings/plugins/servers', '/servers/2/plugins', '/system/settings', '/monitoring/settings', '/artifacts', '/settings/artifacts']) {
+    expect(canonicalUserPath(path)).toBe(path)
     expect(resolveRoute(path)).toEqual({ page: 'not-found' })
   }
-  for (const path of ['/home', '/nodes', '/users/42', '/servers/1/plugins', '/dashboard/3']) {
+  for (const path of ['/home', '/nodes', '/users/42', '/servers/1/services', '/dashboard/3']) {
     expect(resolveRoute(path).page).not.toBe('not-found')
   }
 })

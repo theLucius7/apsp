@@ -1,27 +1,56 @@
 #!/usr/bin/env python3
-"""Publication CI gates and asset/tag identity checks with real signed bundles."""
+"""Publication CI gates, self-contained raw Agent contracts, and paired source-offer checks."""
 
+import argparse
 import copy
+import hashlib
 import json
 from pathlib import Path
+import subprocess
 import sys
+import tempfile
 import unittest
 import urllib.parse
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
+FIXTURES = ROOT / "crates/protocol/tests/fixtures"
+if not FIXTURES.is_dir():
+    FIXTURES = ROOT / "fixtures"
 sys.path.insert(0, str(ROOT / "tools"))
+sys.path.insert(0, str(ROOT / "tests"))
+import ipquality_artifact
 import publish
 import release
-import test_release
+from test_release import build_embedded_agent_manifest, encode_embedded_agent_manifest_frame, ipquality_fixture_data
 
 COMMIT = "a" * 40
-TAG = "agent-v0.3.0"
+VERSION = "0.4.0"
+TAG = "agent-v" + VERSION
+LINUX_TARGETS = ("amd64", "arm64", "linux-gnu-amd64", "linux-gnu-arm64")
+
+
+def encode_embedded_frame(agent_version, target, commit=COMMIT, **kwargs):
+    archive = b""
+    if target in LINUX_TARGETS and kwargs.get("omit_component") != "ipquality":
+        files, _, _ = ipquality_fixture_data(target.split("-")[-1])
+        archive = ipquality_artifact.pack(files)
+        kwargs["extra_components"] = {"ipquality": {
+            "format": "tar.gz", "version": release.IPQUALITY_DEFAULT_VERSION, "sha256": release.digest(archive),
+        }}
+    manifest = build_embedded_agent_manifest(agent_version, target, commit=commit, **kwargs)
+    return (
+        b"TEST ONLY raw apsp-agent executable "
+        + target.encode("ascii")
+        + archive
+        + encode_embedded_agent_manifest_frame(manifest)
+    )
 
 
 class FakeGithub:
-    def __init__(self, bundle):
+    def __init__(self, bundle, extra_ci_jobs=()):
         self.bundle = bundle
+        self.extra_ci_jobs = set(extra_ci_jobs)
         self.patches = []
         self.downloads = 0
         self.draft = True
@@ -31,20 +60,31 @@ class FakeGithub:
         self.changed_tag = False
         self.changed_assets = False
         self.changed_checks = False
-        self.missing_job = False
+        self.missing_job = None
         self.run_failed = False
         self.build_commit = COMMIT
         self.listed_releases = None
         self.release_detail_updates = {}
         self.changed_release_identity = {}
         self.api_calls = []
-        self.assets = [{"id": index, "name": path.name, "state": "uploaded",
-                        "size": len(path.read_bytes()), "digest": "sha256:" + release.digest(path.read_bytes())}
-                       for index, path in enumerate(sorted(bundle.iterdir()), start=1)]
+        self.assets = [
+            {
+                "id": index,
+                "name": path.name,
+                "state": "uploaded",
+                "size": len(path.read_bytes()),
+                "digest": "sha256:" + release.digest(path.read_bytes()),
+            }
+            for index, path in enumerate(sorted(bundle.iterdir()), start=1)
+        ]
 
     def release_record(self):
-        value = {"id": 7, "tag_name": self.tag_name, "draft": self.draft,
-                 "target_commitish": self.build_commit}
+        value = {
+            "id": 7,
+            "tag_name": self.tag_name,
+            "draft": self.draft,
+            "target_commitish": self.build_commit,
+        }
         if self.downloads:
             value.update(self.changed_release_identity)
         return value
@@ -67,17 +107,34 @@ class FakeGithub:
         if "/git/tags/" in endpoint:
             return {"object": {"type": "commit", "sha": COMMIT}}
         if "/actions/workflows/ci.yml/runs?" in endpoint:
-            failed = self.run_failed or self.changed_checks and self.downloads
-            return {"total_count": 1, "workflow_runs": [{
-                "id": 5, "run_attempt": 1, "head_sha": COMMIT, "head_branch": "main",
-                "event": "push", "path": ".github/workflows/ci.yml@refs/heads/main",
-                "status": "completed", "conclusion": "failure" if failed else "success"}]}
+            failed = self.run_failed or (self.changed_checks and self.downloads)
+            return {
+                "total_count": 1,
+                "workflow_runs": [{
+                    "id": 5,
+                    "run_attempt": 1,
+                    "head_sha": COMMIT,
+                    "head_branch": "main",
+                    "event": "push",
+                    "path": ".github/workflows/ci.yml@refs/heads/main",
+                    "status": "completed",
+                    "conclusion": "failure" if failed else "success",
+                }],
+            }
         if "/actions/runs/5/jobs?" in endpoint:
-            names = sorted(publish.REQUIRED_JOBS)
+            names = sorted(set(publish.REQUIRED_JOBS) | self.extra_ci_jobs)
             if self.missing_job:
-                names.remove("Reality installation and accounting")
-            jobs = [{"id": index, "name": name, "status": "completed", "conclusion": "success",
-                     "head_sha": COMMIT} for index, name in enumerate(names, start=1)]
+                names.remove(self.missing_job)
+            jobs = [
+                {
+                    "id": index,
+                    "name": name,
+                    "status": "completed",
+                    "conclusion": "success",
+                    "head_sha": COMMIT,
+                }
+                for index, name in enumerate(names, start=1)
+            ]
             return {"total_count": len(jobs), "jobs": jobs}
         if "/releases/tags/" in endpoint:
             if self.draft:
@@ -106,111 +163,317 @@ class FakeGithub:
 
 class PublicationTests(unittest.TestCase):
     def setUp(self):
-        self.fixture = test_release.ReleaseTests("test_valid_complete_signature_and_every_asset")
-        self.fixture.setUp()
-        self.github = FakeGithub(self.fixture.bundle)
+        self.temporary = tempfile.TemporaryDirectory(prefix="apsp-publish-test-")
+        self.directory = Path(self.temporary.name)
+        self.source = self.directory / "artifacts"
+        self.installer = self.directory / "installer.sh"
+        self.installer.write_text(
+            "#!/bin/sh\n# APSP_BOOTSTRAP_AGENT_SOURCE=preloaded-github-v1\nexit 0\n",
+            encoding="utf-8",
+        )
+        self.roots = release.load_roots(FIXTURES / "public-keys.json")
+        self.write_source_inputs()
+        self.bundle = self.assemble_and_sign("release", targets=LINUX_TARGETS)
+        self.github = FakeGithub(self.bundle)
 
     def tearDown(self):
-        self.fixture.tearDown()
+        self.temporary.cleanup()
+
+    def write_source_inputs(self, targets=LINUX_TARGETS, **frame_kwargs):
+        agent_dir = self.source / "agent" / VERSION
+        agent_dir.mkdir(parents=True, exist_ok=True)
+        for target in targets:
+            (agent_dir / target).write_bytes(
+                encode_embedded_frame(VERSION, target, **frame_kwargs)
+            )
+        sb_dir = self.source / "sing-box" / release.SINGBOX_VERSION
+        sb_dir.mkdir(parents=True, exist_ok=True)
+        (sb_dir / f"sing-box-{release.SINGBOX_VERSION}-sources.tar.gz").write_bytes(
+            b"TEST ONLY corresponding sing-box source archive"
+        )
+        for arch in ("amd64", "arm64"):
+            files, _, paired = ipquality_fixture_data(arch)
+            ipq_dir = self.source / "ipquality" / release.IPQUALITY_DEFAULT_VERSION
+            ipq_dir.mkdir(parents=True, exist_ok=True)
+            (ipq_dir / arch).write_bytes(ipquality_artifact.pack(files))
+            (ipq_dir / f"{arch}.sources.tar.gz").write_bytes(paired)
+            for component, ver in (
+                ("nodequality", release.NODEQUALITY_VERSION),
+                ("network-workbench", release.WORKBENCH_VERSION),
+            ):
+                comp_dir = self.source / component / ver
+                comp_dir.mkdir(parents=True, exist_ok=True)
+                (comp_dir / f"{arch}.sources.tar.gz").write_bytes(
+                    f"TEST ONLY corresponding {component} {arch} source archive".encode("utf-8")
+                )
+
+    def sign(self, bundle):
+        result = subprocess.run(
+            [
+                "minisign",
+                "-S",
+                "-m",
+                str(bundle / "SHA256SUMS"),
+                "-s",
+                str(FIXTURES / "TEST_ONLY.key"),
+                "-x",
+                str(bundle / "SHA256SUMS.minisig"),
+                "-t",
+                "Apsp TEST ONLY automated fixture",
+            ],
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, "fixture signing failed")
+
+    def assemble_and_sign(self, output_name, targets=LINUX_TARGETS, require_paired=True):
+        output = self.directory / output_name
+        arguments = argparse.Namespace(
+            source=str(self.source),
+            output=str(output),
+            agent_version=VERSION,
+            tag=TAG,
+            installer=str(self.installer),
+            target=list(targets),
+            include_present_targets=False,
+            paired_source=[],
+            no_auto_paired_sources=False,
+            require_paired_sources=require_paired,
+        )
+        # Use inert source instead of a Debian rootfs in publication fixtures.
+        # Assembly still checks the Agent digest, notice, and all paired archive bytes.
+        def fixture_inventory(files):
+            source = files["source.tar.gz"]
+            return {"apsp-source.tar.gz": {"size": len(source), "sha256": release.digest(source)}}
+
+        with patch.object(ipquality_artifact, "validate_files"), \
+                patch.object(ipquality_artifact, "source_inventory", side_effect=fixture_inventory):
+            release.assemble(arguments)
+        self.sign(output)
+        return output
 
     def verify(self, publish_release=False):
-        return publish.checked_publication(self.github, TAG, self.fixture.roots,
-                                           "minisign", publish_release)
+        return publish.checked_publication(
+            self.github, TAG, self.roots, "minisign", publish_release
+        )
 
-    def test_openrc_release_requires_complete_musl_pair_without_reclassifying_gnu(self):
-        metadata = json.loads((self.fixture.bundle / "release.json").read_text())
-        publish.require_components(metadata)
-        metadata["tag"] = "agent-v0.3.3"
-        for arch in ("linux-musl-amd64", "linux-musl-arm64"):
-            with self.assertRaisesRegex(ValueError, "every selected module"):
-                publish.require_components(metadata)
-            metadata["artifacts"].append({"name": "sing-box", "arch": arch})
-        publish.require_components(metadata)
-        metadata["artifacts"] = [entry for entry in metadata["artifacts"]
-                                 if (entry["name"], entry["arch"]) != ("sing-box", "amd64")]
-        with self.assertRaisesRegex(ValueError, "every selected module"):
-            publish.require_components(metadata)
+    def test_self_contained_release_rejects_standalone_optional_components(self):
+        base = json.loads((self.bundle / "release.json").read_text(encoding="utf-8"))
+        publish.require_components(base)
+        for standalone in ("sing-box", "nodequality", "tcpquality", "ipquality"):
+            with self.subTest(standalone=standalone):
+                mutated = copy.deepcopy(base)
+                mutated["artifacts"].append({
+                    "name": standalone,
+                    "version": "1.0.0",
+                    "arch": "amd64",
+                    "format": "tar.gz",
+                    "binary_name": standalone,
+                    "archive_size": 16,
+                    "binary_size": 16,
+                    "binary_sha256": "0" * 64,
+                    "asset_name": f"{standalone}-1.0.0-linux-amd64.tar.gz",
+                })
+                with self.assertRaisesRegex(ValueError, "standalone components are prohibited"):
+                    publish.require_components(mutated)
 
-    def test_old_release_with_optional_musl_still_requires_both_architectures(self):
-        metadata = json.loads((self.fixture.bundle / "release.json").read_text())
-        metadata["artifacts"].append({"name": "sing-box", "arch": "linux-musl-amd64"})
-        with self.assertRaisesRegex(ValueError, "every selected module"):
-            publish.require_components(metadata)
-        metadata["artifacts"].append({"name": "sing-box", "arch": "linux-musl-arm64"})
-        publish.require_components(metadata)
+    def test_release_requires_complete_linux_musl_and_gnu_pairs_and_optional_platform_pairs(self):
+        base = json.loads((self.bundle / "release.json").read_text(encoding="utf-8"))
+        for omitted in ("amd64", "arm64", "linux-gnu-amd64", "linux-gnu-arm64"):
+            with self.subTest(omitted=omitted):
+                mutated = copy.deepcopy(base)
+                mutated["artifacts"] = [
+                    entry for entry in mutated["artifacts"] if entry["arch"] != omitted
+                ]
+                with self.assertRaises(ValueError):
+                    publish.require_components(mutated)
 
-    def test_optional_ipquality_publication_requires_both_architectures_and_exact_component_count(self):
-        metadata = json.loads((self.fixture.bundle / "release.json").read_text())
-        metadata["artifacts"].append({"name": "ipquality", "arch": "amd64"})
-        with self.assertRaisesRegex(ValueError, "every selected module on both architectures"):
-            publish.require_components(metadata)
-        metadata["artifacts"].append({"name": "ipquality", "arch": "arm64"})
-        publish.require_components(metadata)
-        metadata["artifacts"].append({"name": "ipquality", "arch": "arm64"})
-        with self.assertRaisesRegex(ValueError, "every selected module on both architectures"):
-            publish.require_components(metadata)
+        for prefix in ("freebsd", "windows"):
+            with self.subTest(prefix=prefix):
+                binary_name = "apsp-agent.exe" if prefix == "windows" else "apsp-agent"
+                mutated = copy.deepcopy(base)
+                mutated["artifacts"].append({
+                    "name": "agent",
+                    "version": VERSION,
+                    "arch": f"{prefix}-amd64",
+                    "format": "raw",
+                    "binary_name": binary_name,
+                    "archive_size": 64,
+                    "binary_size": 64,
+                    "binary_sha256": "1" * 64,
+                    "asset_name": f"agent-{VERSION}-{prefix}-amd64",
+                })
+                with self.assertRaisesRegex(ValueError, "both amd64 and arm64"):
+                    publish.require_components(mutated)
+                mutated["artifacts"].append({
+                    "name": "agent",
+                    "version": VERSION,
+                    "arch": f"{prefix}-arm64",
+                    "format": "raw",
+                    "binary_name": binary_name,
+                    "archive_size": 64,
+                    "binary_size": 64,
+                    "binary_sha256": "2" * 64,
+                    "asset_name": f"agent-{VERSION}-{prefix}-arm64",
+                })
+                publish.require_components(mutated)
 
-    def ipquality_fixture(self):
-        import ipquality_artifact
-        files = {}
-        for arch in ("amd64", "arm64"):
-            files[arch] = self.fixture.append_ipquality_fixture(arch)
-        self.github = FakeGithub(self.fixture.bundle)
-        return ipquality_artifact, files
-
-    def test_paired_sources_publish_only_after_hash_and_inventory_checks(self):
-        artifact, files = self.ipquality_fixture()
-        with patch.object(artifact, "validate_files"), \
-                patch.object(artifact, "validate_source_offer") as validate:
-            evidence = self.verify()
-            self.assertFalse(evidence["published"])
-            self.assertEqual(validate.call_count, 2)
-            self.assertEqual(self.github.patches, [])
-            self.assertEqual(len(evidence["source_offers"]), 2)
-            for arch, sources in files.items():
-                offer = artifact.source_offer(sources, artifact.VERSION, arch)
-                record = next(item for item in evidence["source_offers"] if item["asset"] == offer["asset"])
-                self.assertEqual(record, dict(offer, url=f"https://github.com/{release.REPOSITORY}/releases/download/{TAG}/{offer['asset']}"))
-        with patch.object(artifact, "validate_files"), \
-                patch.object(artifact, "validate_source_offer", side_effect=ValueError("incomplete Debian source inventory")):
-            with self.assertRaisesRegex(ValueError, "incomplete Debian source inventory"):
-                self.verify(True)
+    def test_native_platform_targets_require_matching_tagged_main_ci_jobs(self):
+        targets = (*LINUX_TARGETS, "macos-arm64")
+        self.write_source_inputs(targets=targets)
+        bundle = self.assemble_and_sign("with-macos", targets=targets)
+        self.github = FakeGithub(bundle)
+        with self.assertRaisesRegex(ValueError, "required CI job is missing"):
+            self.verify(True)
         self.assertEqual(self.github.patches, [])
 
-    def test_github_source_digest_cannot_replace_the_signed_binary_source_declaration(self):
-        artifact, files = self.ipquality_fixture()
-        offer = artifact.source_offer(files["amd64"], artifact.VERSION, "amd64")
-        (self.fixture.bundle / offer["asset"]).write_bytes(b"replaced corresponding source archive")
+        self.github = FakeGithub(bundle, extra_ci_jobs=("Agent macos (arm64)",))
+        evidence = self.verify()
+        self.assertIn("Agent macos (arm64)", evidence["checks"]["jobs"])
+        self.assertIn("macos-arm64", evidence["embedded_components"])
+
+    def tampered_signed_bundle(self, output_name, target, payload):
+        bundle = self.directory / output_name
+        bundle.mkdir(parents=True)
+        for item in self.bundle.iterdir():
+            (bundle / item.name).write_bytes(item.read_bytes())
+        metadata = json.loads((bundle / "release.json").read_text(encoding="utf-8"))
+        entry = next(item for item in metadata["artifacts"] if item["arch"] == target)
+        (bundle / entry["asset_name"]).write_bytes(payload)
+        entry.update(
+            archive_size=len(payload),
+            binary_size=len(payload),
+            binary_sha256=release.digest(payload),
+        )
+        encoded_meta = (
+            json.dumps(metadata, sort_keys=True, separators=(",", ":")) + "\n"
+        ).encode("utf-8")
+        (bundle / "release.json").write_bytes(encoded_meta)
+        rows = dict(
+            line.split("  ", 1)[::-1]
+            for line in (bundle / "SHA256SUMS").read_text(encoding="utf-8").splitlines()
+        )
+        rows[release.canonical_path(entry)] = release.digest(payload)
+        rows["release.json"] = release.digest(encoded_meta)
+        (bundle / "SHA256SUMS").write_text(
+            "".join(f"{rows[path]}  {path}\n" for path in sorted(rows)),
+            encoding="utf-8",
+        )
+        self.sign(bundle)
+        return bundle
+
+    def test_embedded_abi_cronet_or_commit_mismatch_blocks_publication(self):
+        agent_dir = self.source / "agent" / VERSION
+
+        # Case 1: linux-gnu-amd64 binary accidentally built with musl target_env.
+        bad_abi_payload = encode_embedded_frame(
+            VERSION, "linux-gnu-amd64", abi_override=("linux", "x86_64", "musl")
+        )
+        (agent_dir / "linux-gnu-amd64").write_bytes(bad_abi_payload)
+        with self.assertRaisesRegex(ValueError, "embedded Agent ABI"):
+            self.assemble_and_sign("bad-abi-rejected-at-assemble")
+        bad_abi = self.tampered_signed_bundle("bad-abi", "linux-gnu-amd64", bad_abi_payload)
+        self.github = FakeGithub(bad_abi)
+        with self.assertRaisesRegex(ValueError, "embedded Agent ABI"):
+            self.verify(True)
+        self.assertEqual(self.github.patches, [])
+
+        # Case 2: linux-gnu-amd64 and amd64 (musl) share identical sing-box archive digest.
+        shared_sha = "c" * 64
+        (agent_dir / "amd64").write_bytes(
+            encode_embedded_frame(VERSION, "amd64", singbox_sha=shared_sha)
+        )
+        (agent_dir / "linux-gnu-amd64").write_bytes(
+            encode_embedded_frame(VERSION, "linux-gnu-amd64", singbox_sha=shared_sha)
+        )
+        same_runtime = self.assemble_and_sign("same-runtime")
+        self.github = FakeGithub(same_runtime)
+        with self.assertRaisesRegex(ValueError, "cannot share the same runtime/Cronet archive"):
+            self.verify(True)
+        self.assertEqual(self.github.patches, [])
+
+        # Case 3: built-in tcp-probe commit pin differs from tagged build commit.
+        self.write_source_inputs(commit="d" * 40)
+        wrong_commit = self.assemble_and_sign("wrong-tcp-commit")
+        self.github = FakeGithub(wrong_commit)
+        with self.assertRaisesRegex(ValueError, "build-commit-pinned built-in tcp-probe"):
+            self.verify(True)
+        self.assertEqual(self.github.patches, [])
+
+        # Case 4: Linux raw Agent missing one required embedded component.
+        self.write_source_inputs()
+        missing_ipq_payload = encode_embedded_frame(
+            VERSION, "arm64", omit_component="ipquality"
+        )
+        (agent_dir / "arm64").write_bytes(missing_ipq_payload)
+        with self.assertRaisesRegex(ValueError, "lacks verified embedded 'ipquality'"):
+            self.assemble_and_sign("missing-ipq-rejected-at-assemble")
+        missing_ipq = self.tampered_signed_bundle("missing-ipq", "arm64", missing_ipq_payload)
+        self.github = FakeGithub(missing_ipq)
+        with self.assertRaisesRegex(ValueError, "lacks verified embedded 'ipquality'"):
+            self.verify(True)
+        self.assertEqual(self.github.patches, [])
+
+    def test_paired_sources_publish_without_polluting_legacy_agent_checksums(self):
+        checksums = (self.bundle / "SHA256SUMS").read_text(encoding="utf-8")
+        self.assertNotIn("sources.tar.gz", checksums)
+        evidence = self.verify()
+        self.assertFalse(evidence["published"])
+        self.assertEqual(self.github.patches, [])
+        self.assertEqual(len(evidence["source_offers"]), 7)
+        expected_names = {
+            f"sing-box-{release.SINGBOX_VERSION}-sources.tar.gz",
+            *(
+                f"{name}-{ver}-linux-{arch}-sources.tar.gz"
+                for arch in ("amd64", "arm64")
+                for name, ver in (
+                    ("nodequality", release.NODEQUALITY_VERSION),
+                    ("network-workbench", release.WORKBENCH_VERSION),
+                    ("ipquality", release.IPQUALITY_DEFAULT_VERSION),
+                )
+            ),
+        }
+        self.assertEqual({item["asset"] for item in evidence["source_offers"]}, expected_names)
+        for item in evidence["source_offers"]:
+            self.assertEqual(
+                item["url"],
+                f"https://github.com/{release.REPOSITORY}/releases/download/{TAG}/{item['asset']}",
+            )
+
+    def test_github_source_digest_cannot_replace_the_signed_installer_source_declaration(self):
+        target_name = f"sing-box-{release.SINGBOX_VERSION}-sources.tar.gz"
+        (self.bundle / target_name).write_bytes(b"replaced corresponding source archive")
         # GitHub's current digest legitimately describes the replacement. The signed
-        # notice inside the unchanged binary still authenticates the earlier source.
-        self.github = FakeGithub(self.fixture.bundle)
-        with patch.object(artifact, "validate_files"), \
-                patch.object(artifact, "validate_source_offer"):
-            with self.assertRaisesRegex(ValueError, "signed declaration"):
-                self.verify(True)
+        # # APSP_PAIRED_SOURCE header in install.sh still authenticates the original bytes.
+        self.github = FakeGithub(self.bundle)
+        with self.assertRaisesRegex(ValueError, "signed declaration"):
+            self.verify(True)
         self.assertEqual(self.github.patches, [])
 
     def test_missing_paired_source_blocks_publication(self):
-        artifact, files = self.ipquality_fixture()
-        offer = artifact.source_offer(files["arm64"], artifact.VERSION, "arm64")
-        (self.fixture.bundle / offer["asset"]).unlink()
-        self.github = FakeGithub(self.fixture.bundle)
-        with patch.object(artifact, "validate_files"), \
-                patch.object(artifact, "validate_source_offer"):
-            with self.assertRaisesRegex(ValueError, "ordinary file"):
-                self.verify(True)
+        target_name = f"network-workbench-{release.WORKBENCH_VERSION}-linux-arm64-sources.tar.gz"
+        (self.bundle / target_name).unlink()
+        self.github = FakeGithub(self.bundle)
+        with self.assertRaisesRegex(ValueError, "ordinary file"):
+            self.verify(True)
         self.assertEqual(self.github.patches, [])
 
-    def test_only_fixed_source_offer_names_receive_the_larger_download_bound(self):
-        artifact, files = self.ipquality_fixture()
-        offer = artifact.source_offer(files["amd64"], artifact.VERSION, "amd64")
-        item = next(asset for asset in self.github.assets if asset["name"] == offer["asset"])
+    def test_only_canonical_source_offer_names_receive_the_larger_download_bound(self):
+        offer_name = f"ipquality-{release.IPQUALITY_DEFAULT_VERSION}-linux-amd64-sources.tar.gz"
+        item = next(asset for asset in self.github.assets if asset["name"] == offer_name)
         item["size"] = release.MAX_BINARY + 1
         self.assertEqual(publish.release_snapshot(self.github, TAG)["id"], 7)
         item["name"] = "untrusted-sources.tar.gz"
         self.refuse_before_download("oversized asset")
-        self.assertEqual(release.source_offer_asset_limit(offer["asset"]), artifact.MAX_SOURCE_OFFER)
-        self.assertEqual(release.source_offer_asset_limit("untrusted-sources.tar.gz"), release.MAX_BINARY)
+        self.assertGreater(release.source_offer_asset_limit(offer_name), release.MAX_BINARY)
+        self.assertEqual(
+            release.source_offer_asset_limit(f"sing-box-{release.SINGBOX_VERSION}-sources.tar.gz"),
+            release.MAX_PAIRED_SOURCE,
+        )
+        self.assertEqual(
+            release.source_offer_asset_limit("untrusted-sources.tar.gz"),
+            release.MAX_BINARY,
+        )
 
     def test_real_download_pipe_limits_selected_size_and_error_output(self):
         github = publish.Github()
@@ -218,7 +481,7 @@ class PublicationTests(unittest.TestCase):
         for index, program in enumerate(("import sys; sys.stdout.buffer.write(b'x'*64)",
                                          "import sys; sys.stderr.buffer.write(b'e'*70000)")):
             with self.subTest(program=program):
-                target = self.fixture.directory / f"bounded-download-{index}"
+                target = self.directory / f"bounded-download-{index}"
                 with patch.object(github, "command", return_value=[sys.executable, "-c", program]):
                     with self.assertRaises(ValueError):
                         github.download(asset, target)
@@ -227,7 +490,8 @@ class PublicationTests(unittest.TestCase):
     def test_verified_draft_remains_draft_without_publish_flag(self):
         evidence = self.verify()
         self.assertFalse(evidence["published"])
-        self.assertEqual(len(evidence["release"]["assets"]), 10)
+        # 4 proof/installer files + 4 Linux raw Agents + 7 corresponding source archives = 15 assets.
+        self.assertEqual(len(evidence["release"]["assets"]), 15)
         self.assertEqual(self.github.patches, [])
 
     def test_draft_tag_endpoint_is_unavailable_but_id_lookup_succeeds(self):
@@ -314,7 +578,7 @@ class PublicationTests(unittest.TestCase):
         for updates in ({"id": 8}, {"tag_name": TAG + "-rc.1"},
                         {"target_commitish": "b" * 40}):
             with self.subTest(updates=updates):
-                self.github = FakeGithub(self.fixture.bundle)
+                self.github = FakeGithub(self.bundle)
                 self.github.changed_release_identity = updates
                 with self.assertRaises(ValueError):
                     self.verify(True)
@@ -343,7 +607,6 @@ class PublicationTests(unittest.TestCase):
                          ("draft=false", f"tag_name={TAG}", f"target_commitish={COMMIT}"))
 
     def test_publish_preserves_identity_when_omitted_tag_is_reassigned(self):
-        # Model the observed omitted-tag failure without assuming an API-version cause.
         self.github.reassign_tag_if_omitted = True
         evidence = self.verify(True)
         self.assertTrue(evidence["published"])
@@ -353,7 +616,7 @@ class PublicationTests(unittest.TestCase):
     def test_concurrent_changes_after_patch_still_refuse_success(self):
         for change in ("release_id", "release_tag", "build_commit", "git_tag", "asset_id"):
             with self.subTest(change=change):
-                self.github = FakeGithub(self.fixture.bundle)
+                self.github = FakeGithub(self.bundle)
                 api = self.github.api
 
                 def change_after_patch(endpoint, method="GET", fields=()):
@@ -395,40 +658,32 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(self.github.patches, [])
 
     def test_missing_required_reality_check_refuses_publication(self):
-        self.github.missing_job = True
-        with self.assertRaises(ValueError):
-            self.verify(True)
-        self.assertEqual(self.github.patches, [])
+        self.github.missing_job = "Reality installation and accounting"
+        self.refuse_before_download("required CI job is missing")
+
+    def test_missing_required_gnu_linux_check_refuses_publication(self):
+        self.github.missing_job = "Agent Linux gnu (arm64)"
+        self.refuse_before_download("required CI job is missing")
 
     def test_failed_main_ci_refuses_before_download(self):
         self.github.run_failed = True
-        with self.assertRaises(ValueError):
-            self.verify(True)
-        self.assertEqual(self.github.downloads, 0)
-        self.assertEqual(self.github.patches, [])
+        self.refuse_before_download("latest tagged main commit CI has not passed")
 
     def test_tag_must_match_the_recorded_draft_build_commit(self):
         self.github.build_commit = "b" * 40
-        with self.assertRaises(ValueError):
-            self.verify(True)
-        self.assertEqual(self.github.downloads, 0)
-        self.assertEqual(self.github.patches, [])
+        self.refuse_before_download("tag differs from the draft build commit")
 
     def test_signed_single_arch_ci_bundle_cannot_be_published(self):
-        self.fixture.arguments.arch = ["amd64"]
-        self.fixture.arguments.output = str(self.fixture.directory / "single-arch")
-        release.assemble(self.fixture.arguments)
-        self.fixture.bundle = Path(self.fixture.arguments.output)
-        self.fixture.sign()
-        self.github = FakeGithub(self.fixture.bundle)
+        single = self.assemble_and_sign("single-arch", targets=("amd64",), require_paired=False)
+        self.github = FakeGithub(single)
         with self.assertRaises(ValueError):
             self.verify(True)
         self.assertEqual(self.github.patches, [])
 
     def test_matching_github_digest_does_not_replace_release_signature(self):
-        target = self.fixture.bundle / "agent-0.3.0-linux-musl-amd64"
+        target = self.bundle / f"agent-{VERSION}-linux-musl-amd64"
         target.write_bytes(target.read_bytes() + b"tampered")
-        self.github = FakeGithub(self.fixture.bundle)
+        self.github = FakeGithub(self.bundle)
         with self.assertRaises(ValueError):
             self.verify(True)
         self.assertEqual(self.github.patches, [])

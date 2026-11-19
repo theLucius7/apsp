@@ -120,6 +120,14 @@ fn verified_files() -> &'static Mutex<HashMap<PathBuf, Verified>> {
     VERIFIED.get_or_init(Mutex::default)
 }
 
+pub(crate) async fn verify_file_digest(
+    path: &Path,
+    expected_size: u64,
+    expected_sha256: &str,
+) -> Result<()> {
+    verify_digest(path, expected_size, expected_sha256).await
+}
+
 async fn verify_digest(path: &Path, expected_size: u64, expected_sha256: &str) -> Result<()> {
     let metadata = tokio::fs::symlink_metadata(path).await?;
     ensure!(
@@ -221,7 +229,7 @@ pub(super) fn signed_artifact(
     keys: &TrustedKeys,
 ) -> Result<VerifiedArtifact> {
     let release = signed_release(proof, keys)?;
-    let verified = crate::runtime_platform::artifact(&release, &descriptor.plugin_name, version)?;
+    let verified = crate::runtime_platform::artifact(&release, &descriptor.artifact_name, version)?;
     ensure!(
         verified.metadata().binary_name == descriptor.binary_name
             && verified.metadata().format == "tar.gz"
@@ -249,7 +257,7 @@ pub(crate) fn runtime_descriptor(
 ) -> Result<Descriptor> {
     let release = signed_release(proof, keys)?;
     let verified =
-        crate::runtime_platform::artifact(&release, &adapter.describe().plugin_name, version)?;
+        crate::runtime_platform::artifact(&release, &adapter.describe().artifact_name, version)?;
     Ok(adapter.describe_artifact(version, &verified.metadata().arch))
 }
 
@@ -288,11 +296,116 @@ pub(crate) async fn verify_expected(
     verify_file(binary, &verified).await
 }
 
+pub(crate) async fn verify_local_cached_artifact(
+    artifact: &apsp_protocol::Artifact,
+    version: &str,
+    descriptor: &Descriptor,
+    install_root: &Path,
+    keys: &TrustedKeys,
+) -> Result<PathBuf> {
+    let proof = artifact
+        .proof
+        .as_ref()
+        .context("artifact has no signed release proof")?;
+    let verified = signed_artifact(proof, descriptor, version, keys)?;
+    ensure!(
+        super::normalized_hash(&artifact.sha256)? == verified.sha256(),
+        "artifact digest differs from signed release"
+    );
+    let binary = install_root
+        .join(&descriptor.artifact_name)
+        .join(version)
+        .join(&descriptor.binary_name);
+    verify_expected(&binary, descriptor, version, keys).await?;
+    Ok(binary)
+}
+
+fn inventory_matches(
+    frame: &apsp_protocol::bundled::EmbeddedAgentManifest,
+    manifest: &apsp_protocol::bundled::BundledManifest,
+    inventory_sha256: &str,
+) -> bool {
+    frame.target_os == std::env::consts::OS
+        && frame.target_arch == std::env::consts::ARCH
+        && (!cfg!(target_os = "linux")
+            || frame.target_env
+                == if cfg!(target_env = "musl") {
+                    "musl"
+                } else {
+                    "gnu"
+                })
+        && frame
+            .components
+            .get(&manifest.component_name)
+            .is_some_and(|record| {
+                record.format == "tar.gz"
+                    && record.version == manifest.version
+                    && record.sha256.as_deref() == Some(manifest.bundle_sha256.as_str())
+                    && record.inventory_sha256.as_deref() == Some(inventory_sha256)
+            })
+}
+
+async fn signed_inventory_matches(
+    directory: &Path,
+    version: &str,
+    manifest: &apsp_protocol::bundled::BundledManifest,
+    inventory_sha256: &str,
+    keys: &TrustedKeys,
+) -> Result<bool> {
+    let proof = read_proof(directory).await?;
+    let release = signed_release(&proof, keys)?;
+    let agent = release.native_artifact("agent", version)?;
+    let entry = agent.metadata();
+    ensure!(
+        apsp_protocol::release::is_valid_agent_release_entry(entry),
+        "invalid signed Agent entry"
+    );
+    let binary = ordinary_bytes(
+        &directory.join(&entry.binary_name),
+        entry.binary_size as usize,
+    )
+    .await?;
+    // Parse the same bytes whose digest was authenticated by the release proof.
+    agent.verify_binary(&binary)?;
+    let frame = apsp_protocol::bundled::extract_embedded_agent_manifest(&binary)
+        .map_err(anyhow::Error::msg)?;
+    Ok(frame.agent_version == version && inventory_matches(&frame, manifest, inventory_sha256))
+}
+
+/// A prior release may still own the active runtime during a trial or rollback.
+pub(crate) async fn verify_installed_bundle(
+    agent_root: &Path,
+    directory: &Path,
+    manifest: &apsp_protocol::bundled::BundledManifest,
+    keys: &TrustedKeys,
+) -> Result<()> {
+    let inventory_sha256 = manifest.inventory_sha256().map_err(anyhow::Error::msg)?;
+    let mut releases = tokio::fs::read_dir(agent_root)
+        .await
+        .context("open installed Agent releases")?;
+    while let Some(release) = releases.next_entry().await? {
+        let name = release.file_name();
+        let Some(version) = name.to_str() else {
+            continue;
+        };
+        if release.file_type().await?.is_dir()
+            && apsp_protocol::bundled::valid_version_segment(version)
+            && signed_inventory_matches(&release.path(), version, manifest, &inventory_sha256, keys)
+                .await
+                .unwrap_or(false)
+        {
+            return crate::bundled::verify_manifest_files(directory, manifest).await;
+        }
+    }
+    anyhow::bail!("no signed installed Agent authenticates this component inventory")
+}
+
 pub(super) async fn verify_binary_with_keys(
     binary: &Path,
     expected_name: &str,
     expected_format: &str,
     keys: &TrustedKeys,
+    compiled_frame: Option<&[u8]>,
 ) -> Result<()> {
     ensure!(
         binary.is_absolute(),
@@ -331,6 +444,29 @@ pub(super) async fn verify_binary_with_keys(
         .file_name()
         .and_then(|name| name.to_str())
         .context("invalid binary path")?;
+    if let Some(manifest) = crate::bundled::read_bundled_manifest(&resolved).await? {
+        ensure!(
+            manifest.component_name == expected_name
+                && manifest.binary_name == name
+                && expected_format == "tar.gz"
+                && crate::bundled::matches_version_directory_name(version, &manifest.version),
+            "installed bundled component role, format, or executable name differs from requested identity"
+        );
+        if let Some(bytes) = compiled_frame {
+            let frame = apsp_protocol::bundled::extract_embedded_agent_manifest(bytes)
+                .map_err(anyhow::Error::msg)?;
+            let inventory = manifest.inventory_sha256().map_err(anyhow::Error::msg)?;
+            if inventory_matches(&frame, &manifest, &inventory) {
+                return crate::bundled::verify_manifest_files(&resolved, &manifest).await;
+            }
+        }
+        let executable = crate::bundled::current_agent_binary()?;
+        let agent_root = executable
+            .parent()
+            .and_then(Path::parent)
+            .context("running Agent has no installation root")?;
+        return verify_installed_bundle(agent_root, &resolved, &manifest, keys).await;
+    }
     let proof = read_proof(&resolved).await?;
     let release = signed_release(&proof, keys)?;
     let verified = crate::runtime_platform::artifact(&release, expected_name, version)?;
@@ -346,12 +482,14 @@ pub async fn verify_installed_binary(
     binary: &Path,
     expected_name: &str,
     expected_format: &str,
+    compiled_frame: Option<&[u8]>,
 ) -> Result<()> {
     verify_binary_with_keys(
         binary,
         expected_name,
         expected_format,
         &TrustedKeys::compiled()?,
+        compiled_frame,
     )
     .await
 }

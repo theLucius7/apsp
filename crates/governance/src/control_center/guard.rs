@@ -153,6 +153,9 @@ fn independent_identity(path: &str) -> bool {
 }
 
 fn feature(path: &str) -> Option<&'static str> {
+    if path == "/api/access/native-adoption/retire" {
+        return None;
+    }
     if path == "/api/control-center/observers" {
         return Some("monitoring");
     }
@@ -205,7 +208,10 @@ fn feature(path: &str) -> Option<&'static str> {
     {
         return Some("diagnostics");
     }
-    if path.starts_with("/api/fleet/") || path.starts_with("/api/servers") {
+    if path.starts_with("/api/fleet/")
+        || path.starts_with("/api/servers")
+        || path == "/api/system/agent-releases"
+    {
         return Some("servers");
     }
     if path.starts_with("/api/dashboard/")
@@ -220,7 +226,7 @@ fn feature(path: &str) -> Option<&'static str> {
     }
     if path.starts_with("/api/security/")
         || path.starts_with("/api/settings")
-        || path.starts_with("/api/artifacts")
+        || path.starts_with("/api/system/agent-releases/")
         || path.starts_with("/api/exchange-rates")
     {
         return Some("security");
@@ -286,6 +292,7 @@ fn high_risk(path: &str, method: &Method) -> bool {
         return false;
     }
     *method == Method::DELETE
+        || path.contains("/native-adoption/")
         || path.contains("/enrollment")
         || path.ends_with("/batch-enrollment")
         || path.contains("/commands")
@@ -308,6 +315,7 @@ fn high_risk(path: &str, method: &Method) -> bool {
 fn guarded_change(path: &str) -> bool {
     path == "/api/costs/import"
         || path == "/api/costs/settings"
+        || path == "/api/system/agent-releases/import"
         || (path.starts_with("/api/resources/alicloud/")
             && !path.ends_with("/preview")
             && !path.ends_with("/cdt-check")
@@ -347,7 +355,7 @@ fn reads_only(path: &str, method: &Method) -> bool {
 /// Entries an administrator limited to some servers may open without a server in the
 /// path: the handlers narrow the result to that administrator's servers themselves.
 fn any_scope(path: &str, method: &Method, read: bool) -> bool {
-    (path == "/api/servers" && read)
+    ((path == "/api/servers" || path == "/api/system/agent-releases") && read)
         || names(path)
         || (path == "/api/costs/servers" && (*method == Method::GET || *method == Method::HEAD))
         || path.starts_with("/api/network-workbench/")

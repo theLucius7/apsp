@@ -99,7 +99,7 @@ pub async fn create(
     let mut transaction = state.pool.begin().await?;
     crate::business::lock_publication(&mut transaction).await?;
     crate::servers::lock(&mut transaction, request.server_id).await?;
-    super::settings::require_enabled(&mut transaction, request.server_id).await?;
+    super::settings::require_writable(&mut transaction, request.server_id).await?;
     let node = create_locked(&mut transaction, request).await?;
     business::mark_dirty(&mut transaction, &[node.server_id]).await?;
     transaction.commit().await?;
@@ -112,7 +112,7 @@ pub(crate) async fn create_on(
     request: CreateNode,
 ) -> ApiResult<NodeView> {
     crate::servers::lock(transaction, request.server_id).await?;
-    super::settings::require_enabled(transaction, request.server_id).await?;
+    super::settings::require_writable(transaction, request.server_id).await?;
     let node = create_locked(transaction, request).await?;
     business::mark_dirty(transaction, &[node.server_id]).await?;
     node.view()
@@ -124,6 +124,7 @@ pub(super) async fn create_locked(
     transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     request: CreateNode,
 ) -> ApiResult<NodeRow> {
+    super::runtime_controls::ensure(transaction, request.server_id).await?;
     let requested_port = request.port.map(validate_port).transpose()?;
     let protocol = request
         .protocol_config

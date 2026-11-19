@@ -16,19 +16,19 @@ esac
 SOURCES = {
     'hardware.sh': {
         'source_sha256': '73e032ef5409e014cca411a71c677a76db19a94ef0a96a73827b41b2059cd86c',
-        'patched_sha256': 'f7413e8a19eaacce2df70b1ae6c63bab89334bca0d07846badacde5ef6afcb0c',
+        'patched_sha256': '0729052a2f9f11787ab71b34b0d8c0dbeaf4928d28de68178555a8aaee281847',
         'original_guard': b'[[ mode_privacy -eq 0 ]]&&report_link=$(curl -$2 -s -X POST http://upload.check.place -d "type=hardware" --data-urlencode "json=$hwjson" --data-urlencode "content=$hw_report")\n',
         'patched_guard': b'[[ $apsp_public_report_upload == true && mode_privacy -eq 0 ]]&&report_link=$(curl -$2 -s -X POST http://upload.check.place -d "type=hardware" --data-urlencode "json=$hwjson" --data-urlencode "content=$hw_report")\n',
     },
     'ip.sh': {
         'source_sha256': 'b30df5a3c2204276c54e99dcc5080b46f8a627667730aee7de63b109b8ecaecf',
-        'patched_sha256': '176295d6bc9803d19c1794b73f5c801fe8325f076c60f2114cc943a4b62e68dc',
+        'patched_sha256': 'a063a1563280d2d0ad25b2921d6003c53c69163c1e015d2a82c98ab721927141',
         'original_guard': b'[[ $mode_lite -eq 0 && mode_privacy -eq 0 ]]&&report_link=$(curl -$2 -s -X POST https://upload.check.place -d "type=ip" --data-urlencode "json=$ipjson" --data-urlencode "content=$ip_report")\n',
         'patched_guard': b'[[ $apsp_public_report_upload == true && $mode_lite -eq 0 && mode_privacy -eq 0 ]]&&report_link=$(curl -$2 -s -X POST https://upload.check.place -d "type=ip" --data-urlencode "json=$ipjson" --data-urlencode "content=$ip_report")\n',
     },
     'net.sh': {
         'source_sha256': '6c40fe1ae40d969255cb63075c94882733b82ba43831341eb1aadeea7b1fbfcd',
-        'patched_sha256': 'f35836caa8e598f443c7b718daa71211cee393534b03f2f3b3d3062a6a3a90b2',
+        'patched_sha256': 'd1d9995233601480c94c88aec6a87e0c35e8a2621ddf52487d2303382b1457e9',
         'original_guard': b'[[ mode_privacy -eq 0 ]]&&report_link=$(curl -$2 -s -X POST https://upload.check.place -d "type=net" --data-urlencode "json=$netdata" --data-urlencode "content=$net_report")\n',
         'patched_guard': b'[[ $apsp_public_report_upload == true && mode_privacy -eq 0 ]]&&report_link=$(curl -$2 -s -X POST https://upload.check.place -d "type=net" --data-urlencode "json=$netdata" --data-urlencode "content=$net_report")\n',
     },

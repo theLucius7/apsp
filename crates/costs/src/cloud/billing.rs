@@ -1,5 +1,6 @@
 use crate::cloud::accounts::{Bill, BillRow, Traffic, TrafficRegion};
 use apsp_cloud_api::{Failure, aliyun::Aliyun};
+use apsp_panel_host::text::Text;
 use apsp_resources::cloud::{
     client::{Cloud, Keys},
     model::Account,
@@ -152,23 +153,58 @@ pub async fn query(
     Err("billing_incomplete".into())
 }
 
+fn valid_code(value: &Value) -> bool {
+    value == "Success" || value == "200" || value == 200
+}
+
+fn traffic_bytes(value: &Value) -> Option<u64> {
+    if let Some(v) = value.as_u64() {
+        return Some(v);
+    }
+    let text = value.as_str()?;
+    if text.is_empty() || !text.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    text.parse().ok()
+}
+
 pub fn parse_traffic(result: &Value, now: i64) -> Result<Traffic, Failure> {
-    let entries = result
-        .get("TrafficDetails")
-        .or_else(|| result["Data"].get("TrafficDetails"))
-        .and_then(Value::as_array)
-        .filter(|v| !v.is_empty() && v.len() <= 256)
+    if !result.is_object() {
+        return Err("invalid_response".into());
+    }
+    let Some(request_id) = result["RequestId"].as_str() else {
+        return Err("invalid_response".into());
+    };
+    if !Text::bytes(128).not_blank().accepts(request_id) {
+        return Err("invalid_response".into());
+    }
+    if result.get("Data").is_some_and(|v| !v.is_object()) {
+        return Err("invalid_response".into());
+    }
+    let top = result.get("TrafficDetails");
+    let nested = result["Data"].get("TrafficDetails");
+    let details = match (top, nested) {
+        (Some(v), None) | (None, Some(v)) => v,
+        (Some(a), Some(b)) if a == b => a,
+        _ => return Err("invalid_response".into()),
+    };
+    let entries = details
+        .as_array()
+        .filter(|v| v.len() <= 256)
         .ok_or(Failure::from("invalid_response"))?;
     // A nested compatibility response must prove the same complete snapshot.
-    // Metadata at either level can advertise additional pages; never discard it.
+    // Metadata at either level can advertise additional pages or provider errors; never discard it.
     for metadata in [result, &result["Data"]] {
-        if metadata
+        let bad_code = metadata.get("Code").is_some_and(|v| !valid_code(v));
+        let bad_message = metadata.get("Message").is_some();
+        let bad_success = metadata.get("Success").is_some_and(|v| v != true);
+        let bad_token = metadata
             .get("NextToken")
-            .is_some_and(|v| !v.is_null() && v != "")
-            || metadata
-                .get("TotalCount")
-                .is_some_and(|v| v.as_u64() != Some(entries.len() as u64))
-        {
+            .is_some_and(|v| !v.is_null() && v.as_str() != Some(""));
+        let bad_count = metadata
+            .get("TotalCount")
+            .is_some_and(|v| v.as_u64() != Some(entries.len() as u64));
+        if bad_code || bad_message || bad_success || bad_token || bad_count {
             return Err("invalid_response".into());
         }
     }
@@ -176,14 +212,14 @@ pub fn parse_traffic(result: &Value, now: i64) -> Result<Traffic, Failure> {
     let (mut mainland, mut overseas) = (0_u64, 0_u64);
     let mut regions = Vec::new();
     for item in entries {
+        if !item.is_object() {
+            return Err("invalid_response".into());
+        }
         let region = field(item, "BusinessRegionId")?;
         if !apsp_resources::cloud::model::identifier(&region, "") || !seen.insert(region.clone()) {
             return Err("invalid_response".into());
         }
-        let bytes = item["Traffic"]
-            .as_u64()
-            .or_else(|| item["Traffic"].as_str().and_then(|v| v.parse::<u64>().ok()))
-            .ok_or(Failure::from("invalid_response"))?;
+        let bytes = traffic_bytes(&item["Traffic"]).ok_or(Failure::from("invalid_response"))?;
         let sum = if region.starts_with("cn-") && region != "cn-hongkong" {
             &mut mainland
         } else {
@@ -233,4 +269,87 @@ pub async fn traffic(cloud: &Cloud, keys: &Keys, now: i64) -> Result<Traffic, Fa
         )
         .await?;
     parse_traffic(&result, now)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_traffic;
+    use serde_json::json;
+
+    #[test]
+    fn valid_empty_cdt_traffic_records_zero_usage_and_fresh_timestamp() {
+        for valid in [
+            json!({"RequestId": "C4A45FE1-RNA-EMPTY", "TrafficDetails": []}),
+            json!({
+                "RequestId": "C4A45FE1-RNA-COMPLETE",
+                "TrafficDetails": [],
+                "TotalCount": 0,
+                "NextToken": ""
+            }),
+            json!({
+                "RequestId": "C4A45FE1-RNA-LAST-PAGE",
+                "TrafficDetails": [],
+                "NextToken": null
+            }),
+            json!({
+                "RequestId": "C4A45FE1-RNA-NESTED",
+                "Code": "Success",
+                "Success": true,
+                "Data": {"TrafficDetails": [], "TotalCount": 0, "NextToken": ""}
+            }),
+        ] {
+            let parsed = parse_traffic(&valid, 1_700_000_123).unwrap();
+            assert_eq!(parsed.queried_at, 1_700_000_123);
+            assert_eq!(parsed.mainland_bytes, "0");
+            assert_eq!(parsed.overseas_bytes, "0");
+            assert!(parsed.regions.is_empty());
+        }
+    }
+
+    #[test]
+    fn malformed_incomplete_or_error_cdt_responses_never_invent_zero() {
+        let row = json!({"BusinessRegionId": "cn-hongkong", "Traffic": "1024"});
+        for invalid in [
+            json!(null),
+            json!([]),
+            json!({"TrafficDetails": []}),
+            json!({"RequestId": "", "TrafficDetails": []}),
+            json!({"RequestId": "   ", "TrafficDetails": []}),
+            json!({"RequestId": 123, "TrafficDetails": []}),
+            json!({"RequestId": "bad\nid", "TrafficDetails": []}),
+            json!({"RequestId": "r1"}),
+            json!({"RequestId": "r1", "Data": {}}),
+            json!({"RequestId": "r1", "Data": null, "TrafficDetails": []}),
+            json!({"RequestId": "r1", "Data": "invalid", "TrafficDetails": []}),
+            json!({"RequestId": "r1", "TrafficDetails": null}),
+            json!({"RequestId": "r1", "TrafficDetails": {}}),
+            json!({"RequestId": "r1", "TrafficDetails": "[]"}),
+            json!({"RequestId": "r1", "TrafficDetails": [], "Data": {"TrafficDetails": [row]}}),
+            json!({"RequestId": "r1", "Code": null, "TrafficDetails": []}),
+            json!({"RequestId": "r1", "Code": "InternalError", "TrafficDetails": []}),
+            json!({"RequestId": "r1", "Code": 500, "TrafficDetails": []}),
+            json!({"RequestId": "r1", "Message": null, "TrafficDetails": []}),
+            json!({"RequestId": "r1", "Message": "service error", "TrafficDetails": []}),
+            json!({"RequestId": "r1", "Success": null, "TrafficDetails": []}),
+            json!({"RequestId": "r1", "Success": false, "TrafficDetails": []}),
+            json!({"RequestId": "r1", "Success": "true", "TrafficDetails": []}),
+            json!({"RequestId": "r1", "Data": {"Code": "Throttling", "TrafficDetails": []}}),
+            json!({"RequestId": "r1", "Data": {"Message": "denied", "TrafficDetails": []}}),
+            json!({"RequestId": "r1", "Data": {"Success": false, "TrafficDetails": []}}),
+            json!({"RequestId": "r1", "TrafficDetails": [], "NextToken": "more"}),
+            json!({"RequestId": "r1", "TrafficDetails": [], "NextToken": 1}),
+            json!({"RequestId": "r1", "Data": {"TrafficDetails": [], "NextToken": "more"}}),
+            json!({"RequestId": "r1", "Data": {"TrafficDetails": [], "NextToken": 1}}),
+            json!({"RequestId": "r1", "TrafficDetails": [], "TotalCount": null}),
+            json!({"RequestId": "r1", "TrafficDetails": [], "TotalCount": 2}),
+            json!({"RequestId": "r1", "TrafficDetails": [], "TotalCount": "0"}),
+            json!({"RequestId": "r1", "TrafficDetails": [], "TotalCount": -1}),
+            json!({"RequestId": "r1", "Data": {"TrafficDetails": [], "TotalCount": null}}),
+            json!({"RequestId": "r1", "Data": {"TrafficDetails": [], "TotalCount": 1}}),
+            json!({"RequestId": "r1", "Data": {"TrafficDetails": [], "TotalCount": "0"}}),
+        ] {
+            let err = parse_traffic(&invalid, 1_700_000_123).unwrap_err();
+            assert_eq!(err.code, "invalid_response", "{invalid}");
+        }
+    }
 }

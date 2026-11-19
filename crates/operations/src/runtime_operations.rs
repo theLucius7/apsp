@@ -19,7 +19,6 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::{PgConnection, Row};
-use std::collections::HashMap;
 use uuid::Uuid;
 
 #[derive(Deserialize)]
@@ -52,7 +51,7 @@ pub async fn list(
     auth::require_admin(&state, &headers).await?;
     let mut tx = state.pool.begin().await?;
     crate::servers::lock(&mut tx, server).await?;
-    apsp_traffic::settings::require_enabled(&mut tx, server).await?;
+    apsp_traffic::settings::require_configured(&mut tx, server).await?;
     let row = sqlx::query(&format!(
         "SELECT capabilities,last_seen,{} AS retiring FROM servers WHERE id=$1",
         crate::retirement::retiring_sql("$1")
@@ -118,7 +117,7 @@ pub async fn create(
     }
     let mut tx = state.pool.begin().await?;
     crate::servers::lock(&mut tx, server).await?;
-    apsp_traffic::settings::require_enabled(&mut tx, server).await?;
+    apsp_traffic::settings::require_configured(&mut tx, server).await?;
     crate::fleet::ensure_accepts_tasks_tx(&mut tx, server).await?;
     let row = sqlx::query(&format!(
         "SELECT capabilities,last_seen,{} AS pending,{} AS retiring FROM servers WHERE id=$1",
@@ -211,20 +210,6 @@ pub(crate) async fn unresolved(
         .bind(module)
         .fetch_one(connection)
         .await?)
-}
-
-/// The results of those operations among `ids` that finished.
-pub(crate) async fn results(
-    connection: &mut PgConnection,
-    ids: &[Uuid],
-) -> ApiResult<HashMap<Uuid, Value>> {
-    let rows: Vec<(Uuid, Value)> = sqlx::query_as(
-        "SELECT id,result FROM runtime_operations WHERE id=ANY($1) AND result IS NOT NULL",
-    )
-    .bind(ids)
-    .fetch_all(connection)
-    .await?;
-    Ok(rows.into_iter().collect())
 }
 
 pub async fn pending(

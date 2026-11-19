@@ -4,8 +4,8 @@ import hashlib
 MAX_SOURCE = 2 * 1024 * 1024
 SOURCES = {
     'hardware.sh': {
-        'source_sha256': '82b18e8eef943a4acfcfb3724fb6b0526ac1b769d8c3591839e89d50f82f562c',
-        'patched_sha256': '3590bf56114fa8a2ec8bb7b9249efb2faf10ae52b49566a1084f8f00ab1d05eb',
+        'source_sha256': 'eb81ac33d47422290e1df815ef049ef9ac26a213c0bb8353087c4b37e7bd7a6b',
+        'patched_sha256': '13112a65c60a8919d90e4f4b8484b4a525cf5121cf94a0bf505faa3350950ca7',
     },
 }
 REPLACEMENTS = [

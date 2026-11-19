@@ -104,7 +104,6 @@ async fn profiles_redact_secrets_preserve_them_on_edit_and_reject_stale_writes(
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let server = panel.create_server(&cookie, "配置主机").await?;
-    panel.enable_runtime(&cookie, server).await?;
     let path = format!("/api/traffic/servers/{server}/profile");
     let definition = json!({"outbounds":[{"type":"socks","tag":"extra-exit","server":"proxy.example.com","server_port":1080,"username":"fixture","password":"TEST_ONLY-private-password"}]});
     let response = panel
@@ -173,6 +172,16 @@ async fn profiles_redact_secrets_preserve_them_on_edit_and_reject_stale_writes(
     .fetch_all(&pool)
     .await?;
     assert!(!format!("{events:?}").contains("private-password"));
+    assert_eq!(
+        sqlx::query_scalar::<_, Option<i64>>(
+            "SELECT (SELECT dirty_at FROM runtime_publications WHERE server_id=$1)"
+        )
+        .bind(server)
+        .fetch_one(&pool)
+        .await?,
+        None,
+        "editing a server profile on an unconfigured server must not schedule empty sing-box"
+    );
     Ok(())
 }
 
@@ -251,9 +260,6 @@ async fn dns_certificate_secrets_are_write_only_and_reuse_stays_on_one_host(
     let cookie = panel.admin_cookie().await?;
     let server = panel.create_server(&cookie, "证书主机").await?;
     let other = panel.create_server(&cookie, "其他主机").await?;
-    for host in [server, other] {
-        panel.enable_runtime(&cookie, host).await?;
-    }
     let secret = "TEST_ONLY-cloudflare-dns-credential";
     let definition = json!({"name":"DNS 证书","server_id":server,"public_host":"proxy.example.com","sni":"proxy.example.com","protocol_config":{"type":"vless-tls","tls":{"mode":"dns01","email":"admin@example.com","domains":["*.example.com"],"api_token":secret}}});
     let response = panel

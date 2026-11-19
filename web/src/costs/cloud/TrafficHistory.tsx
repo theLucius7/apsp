@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { ErrorNotice, Modal } from '../../components'
 import { useResource } from '../../hooks'
-import Chart from '../../observability/display/Chart'
+import Chart from '@/components/Chart'
 import { Button } from '@/components/ui/button'
 import { trafficPoints } from './usageHistory'
 import type { TrafficHistory as History } from './usageHistory'

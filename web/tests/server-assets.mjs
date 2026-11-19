@@ -46,7 +46,7 @@ try {
       if (path === '/api/access') return route.fulfill({ json: { authenticated: true, public_dashboard: false } })
       if (/^\/api\/servers\/\d+\/telemetry-settings$/.test(path) && request.method() === 'GET') return route.fulfill({ json: { persist_interval_secs: 60 } })
       if (path === '/api/me') return fulfill({ id: 1 })
-      if (path === '/api/artifacts/agent-versions') return fulfill({ versions: [{ version: '0.3.0', tag: 'agent-v0.3.0', targets: ['linux-musl-amd64'], cached_targets: ['linux-musl-amd64'], protocol_min: 1, protocol_max: 1 }] })
+      if (path === '/api/system/agent-releases') return fulfill({ policy: { default_version: 'latest', selection: 'latest_compatible', minimum_version: '0.3.0' }, versions: [{ version: '0.3.0', tag: 'agent-v0.3.0', targets: ['linux-musl-amd64'], protocol_min: 1, protocol_max: 1 }] })
       if (request.method() !== 'GET') writes.push({ path, method: request.method(), body: request.postDataJSON() })
       if (path === '/api/servers' && request.method() === 'GET') return fulfill(entries)
       if (path === '/api/servers' && request.method() === 'POST') {
@@ -65,7 +65,7 @@ try {
       if (path.endsWith('/enrollment')) return fulfill({ token: 'TEST_ONLY', expires_at: second + 86400, install_command: 'sudo apsp-bootstrap --token TEST_ONLY', installation: { version: '0.3.0', tag: 'agent-v0.3.0' } })
       if (path.endsWith('/agent-settings')) return fulfill(settings)
       if (path.endsWith('/probes') || path.endsWith('/probe-results') || path.endsWith('/commands') || path.endsWith('/metrics') || path === '/api/probes/overview') return fulfill([])
-      if (/^\/api\/traffic\/servers\/\d+$/.test(path)) return fulfill({ id: 2, name: '东京资产', enabled: false, online: true, agent_supported: false, read_only: false, source: null })
+      if (/^\/api\/traffic\/servers\/\d+$/.test(path)) return fulfill({ id: 2, name: '东京资产', configured: false, online: true, agent_supported: false, read_only: false, source: null, runtime_version: null, status: { state: 'unconfigured', reason: '', target_rev: 0, applied_rev: 0, current_healthy: false } })
       unexpected.push(`${request.method()} ${path}`)
       return fulfill({ error: 'Unexpected fixture request' }, 500)
     })

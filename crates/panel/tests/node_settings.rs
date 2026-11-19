@@ -1,11 +1,10 @@
 #![forbid(unsafe_code)]
 mod business_support;
-use business_support::release_fixture;
 #[path = "../../protocol/tests/support/release.rs"]
 mod release_support;
 
 use anyhow::Result;
-use business_support::{TestPanel, id};
+use business_support::{TestPanel, id, release_fixture};
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 use sqlx::PgPool;
@@ -31,7 +30,6 @@ async fn settings_preserve_secrets_validate_atomically_and_pause_without_revokin
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let server = panel.create_server(&cookie, "Protocols").await?;
-    panel.enable_runtime(&cookie, server).await?;
     let node: Value = panel.admin(Method::POST, "/api/traffic/nodes", &cookie, Some(json!({
         "name":"HY2", "server_id":server,"port":20443,"public_host":"proxy.example.com","sni":"proxy.example.com",
         "protocol_config":{"type":"hysteria2","tls":{"mode":"acme","email":"admin@example.com","challenge":"http-01"}},
@@ -106,6 +104,9 @@ async fn settings_preserve_secrets_validate_atomically_and_pause_without_revokin
         .await?;
     assert_eq!(client["outbounds"][1]["server_port"], 443);
     assert_eq!(client["outbounds"][1]["obfs"]["password"], secret);
+    // Keep another enabled ungranted node on the server so pausing HY2 still compiles
+    // a server bundle and proves the disabled node's inbound is omitted.
+    panel.create_node(&cookie, server, "Sibling").await?;
     patch(&panel, &cookie, node, json!({"enabled":false})).await?;
     assert_eq!(
         panel.client.get(&url).send().await?.status(),
@@ -173,7 +174,7 @@ async fn settings_preserve_secrets_validate_atomically_and_pause_without_revokin
 }
 
 #[sqlx::test]
-async fn deployment_checks_distinguish_pending_unenrolled_and_missing_artifacts(
+async fn deployment_checks_distinguish_pending_unenrolled_and_legacy_agent(
     pool: PgPool,
 ) -> Result<()> {
     let panel = TestPanel::start(pool.clone()).await?;
@@ -227,19 +228,16 @@ async fn deployment_checks_distinguish_pending_unenrolled_and_missing_artifacts(
         .json()
         .await?;
     assert_eq!(result["ready"], false);
+    let checks = result["checks"].as_array().unwrap();
+    assert_eq!(checks.len(), 3);
+    assert!(checks[..2].iter().all(|item| item["passed"] == true));
+    assert_eq!(checks[2]["passed"], false);
+    assert_eq!(checks[2]["name"], "内置运行时能力");
     assert!(
-        result["checks"].as_array().unwrap()[..3]
-            .iter()
-            .all(|item| item["passed"] == true)
-    );
-    assert_eq!(result["checks"][3]["passed"], false);
-    assert_eq!(result["checks"][3]["name"], "制品验签能力");
-    assert_eq!(result["checks"][4]["passed"], false);
-    assert!(
-        result["checks"][4]["detail"]
+        checks[2]["detail"]
             .as_str()
             .unwrap()
-            .contains("缺少")
+            .contains("未声明内置 sing-box 一体化能力")
     );
     assert!(!result.to_string().contains("fixture"));
     panel.publish_now().await?;
@@ -256,40 +254,58 @@ async fn deployment_checks_distinguish_pending_unenrolled_and_missing_artifacts(
 }
 
 #[sqlx::test]
-async fn signed_runtime_cannot_make_an_agent_without_signature_support_ready(
+async fn legacy_agent_without_self_contained_capability_is_gated_on_check_and_manifest(
     pool: PgPool,
 ) -> Result<()> {
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let (server, _socket, ack) = panel
-        .authenticated_device(&cookie, "Signature readiness")
+        .authenticated_device(&cookie, "Self-contained readiness")
         .await?;
-    panel.enable_runtime(&cookie, server).await?;
-    let binary = b"TEST_ONLY inert signed readiness runtime";
-    let archive = release_fixture::archive("sing-box", binary)?;
-    release_fixture::write(
+    let created = panel
+        .create_node(&cookie, server, "Self-contained node")
+        .await?;
+    let node = id(&created)?;
+    let user = id(&panel.create_user(&cookie, "Readiness user").await?)?;
+    panel.grant(&cookie, user, node).await?;
+    panel.publish_now().await?;
+
+    let signed = release_fixture::write_signed_agent(
         &panel.state.config.data_dir,
-        "sing-box",
-        "1.14.4-apsp.2",
-        "sing-box",
-        &archive,
-        binary,
-        "tar.gz",
+        "0.4.0",
+        "linux-musl-amd64",
+        release_fixture::pinned_components(&["sing-box"])?,
     )?;
     let check = format!("/api/traffic/servers/{server}/deployments/check");
-    for (capabilities, expected) in [
-        (json!(["singbox"]), false),
+    for (capabilities, info, expected_error) in [
+        (
+            json!(["singbox"]),
+            json!({"os": "linux", "arch": "x86_64", "libc": "musl"}),
+            "尚不支持签名发布升级",
+        ),
         (
             json!([
                 "singbox",
                 apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY
             ]),
-            true,
+            json!({"os": "linux", "arch": "x86_64", "libc": "musl"}),
+            "尚未声明内置 sing-box 一体化能力",
+        ),
+        (
+            json!(["singbox", apsp_protocol::SELF_CONTAINED_AGENT_CAPABILITY]),
+            json!({
+                "os": "linux",
+                "arch": "x86_64",
+                "libc": "musl",
+                "components": {"sing-box": "1.13.0"}
+            }),
+            "不一致",
         ),
     ] {
-        sqlx::query("UPDATE servers SET capabilities=$2,last_seen=$3 WHERE id=$1")
+        sqlx::query("UPDATE servers SET capabilities=$2,static_info=$3,last_seen=$4 WHERE id=$1")
             .bind(server)
             .bind(capabilities)
+            .bind(info)
             .bind(apsp_protocol::now_timestamp())
             .execute(&pool)
             .await?;
@@ -299,17 +315,17 @@ async fn signed_runtime_cannot_make_an_agent_without_signature_support_ready(
             .error_for_status()?
             .json()
             .await?;
-        assert_eq!(result["ready"], expected);
+        assert_eq!(result["ready"], false);
         let checks = result["checks"].as_array().unwrap();
-        let signature = checks
+        let builtin = checks
             .iter()
-            .find(|check| check["name"] == "制品验签能力")
+            .find(|check| check["name"] == "内置运行时能力")
             .unwrap();
-        assert_eq!(signature["passed"], expected);
+        assert_eq!(builtin["passed"], false);
         assert!(
-            checks
-                .iter()
-                .all(|check| { check["name"] == "制品验签能力" || check["passed"] == true })
+            checks.iter().all(|check| {
+                check["name"] == "内置运行时能力" || check["passed"] == true
+            })
         );
         // Exercise the actual authenticated manifest capability gate too.
         let manifest = panel
@@ -318,17 +334,83 @@ async fn signed_runtime_cannot_make_an_agent_without_signature_support_ready(
             .bearer_auth(&ack.session_token)
             .send()
             .await?;
-        assert_eq!(
-            manifest.status(),
-            if expected {
-                StatusCode::OK
-            } else {
-                StatusCode::CONFLICT
-            }
-        );
-        if !expected {
-            assert!(manifest.text().await?.contains("尚不支持制品验签"));
-        }
+        assert_eq!(manifest.status(), StatusCode::CONFLICT);
+        assert!(manifest.text().await?.contains(expected_error));
     }
+
+    panel
+        .observe_signed_agent(server, &signed, &["singbox"])
+        .await?;
+    let (observed_info, received_at, last_seen): (Value, Option<i64>, Option<i64>) =
+        sqlx::query_as(
+            "SELECT static_info,static_info_received_at,last_seen FROM servers WHERE id=$1",
+        )
+        .bind(server)
+        .fetch_one(&pool)
+        .await?;
+    let now = apsp_protocol::now_timestamp();
+    let verified = apsp_governance::releases::verify_running_component(
+        &panel.state,
+        &observed_info,
+        received_at,
+        last_seen,
+        now,
+        "sing-box",
+        apsp_traffic::RUNTIME_VERSION,
+    )
+    .await
+    .expect("verified signed self-contained Agent");
+    assert_eq!(verified.agent_sha256, signed.agent_sha256);
+    assert_eq!(
+        verified.component_sha256,
+        signed.component_digests["sing-box"]
+    );
+
+    for (field, spoofed) in [("sing-box", "0".repeat(64)), ("agent", "f".repeat(64))] {
+        let mut wrong_binding = observed_info.clone();
+        wrong_binding["component_digests"][field] = json!(spoofed);
+        assert!(
+            apsp_governance::releases::verify_running_component(
+                &panel.state,
+                &wrong_binding,
+                received_at,
+                last_seen,
+                now,
+                "sing-box",
+                apsp_traffic::RUNTIME_VERSION,
+            )
+            .await
+            .is_err()
+        );
+    }
+
+    let result: Value = panel
+        .admin(Method::POST, &check, &cookie, None)
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    assert_eq!(result["ready"], true);
+    assert!(
+        result["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|item| item["passed"] == true)
+    );
+    let body: Value = panel
+        .client
+        .get(format!("{}/api/agent/v1/manifest", panel.base))
+        .bearer_auth(&ack.session_token)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    assert!(body["modules"]["singbox"]["artifact"].is_null());
+    assert_eq!(
+        body["modules"]["singbox"]["kernel_version"],
+        apsp_traffic::RUNTIME_VERSION
+    );
     Ok(())
 }

@@ -79,6 +79,18 @@ fn management() -> Router<AppState> {
         .route("/api/access/users/{id}/package", post(packages::assign))
         .route("/api/access/users/{id}/entitlement", get(entitlements::get))
         .route(
+            "/api/access/users/{id}/native-adoption/preview",
+            post(nexus::adoption::preview),
+        )
+        .route(
+            "/api/access/users/{id}/native-adoption/adopt",
+            post(nexus::adoption::adopt),
+        )
+        .route(
+            "/api/access/native-adoption/retire",
+            post(nexus::adoption::retire),
+        )
+        .route(
             "/api/access/users/{id}/limits",
             get(user_limits::get).put(user_limits::put),
         )

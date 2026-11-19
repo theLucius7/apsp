@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { api, ApiError, errorMessage, isTransient } from '../../api'
+import { api, ApiError, errorMessage, isTransient } from '../api'
 import { readKept, writeKept } from '@/lib/resource-cache'
 import { connectionRestoredEvent } from '@/stores/connection'
 
@@ -9,7 +9,7 @@ const empty = <T,>(path: string | null, kept?: Kept<T>): Snapshot<T> => ({ path,
 
 // Every request has its own identity. Hidden pages abort in-flight reads, and a
 // late response from an old route or cleared authorization cannot restore data.
-export function useDashboardPoll<T>(path: string | null, interval: number, paused: boolean, identity = '', reconcile?: (previous: T | undefined, incoming: T) => T) {
+export function useResourcePoll<T>(path: string | null, interval: number, paused: boolean, identity = '', reconcile?: (previous: T | undefined, incoming: T) => T) {
   const key = path === null ? null : `${identity}\n${path}`
   const kept = () => key === null ? undefined : readKept<Kept<T>>(key)
   const [snapshot, setSnapshot] = useState<Snapshot<T>>(() => empty(key, kept()))

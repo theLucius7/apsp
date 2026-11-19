@@ -1,6 +1,6 @@
 # ADR 0135：每种底层机制只有一套实现（第三部分：健康视图、保留期与供应商客户端）
 
-状态：已接受（2026-11-13）。延续 [ADR 0133](0133-one-implementation-per-mechanism.md) 与 [ADR 0134](0134-outbound-network-and-delivery.md)；处理 [architecture.md §12](../architecture.md#12-扫描结论与余下工作2026-11-13) 中“系统健康视图用 SQL 拼其他领域的积压”“保留期清理替别的领域删行”“Globalping 客户端两个”“Cloudflare 接口三处”四项。
+状态：已接受（2026-11-13）。延续 [ADR 0133](0133-one-implementation-per-mechanism.md) 与 [ADR 0134](0134-outbound-network-and-delivery.md)；处理 [architecture.md §12](../architecture.md#12-当前优化项) 中“系统健康视图用 SQL 拼其他领域的积压”“保留期清理替别的领域删行”“Globalping 客户端两个”“Cloudflare 接口三处”四项。
 
 2026-11-13 用户：“目前是底层原理深度统一”，之后说“continue”。
 

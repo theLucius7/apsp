@@ -127,6 +127,9 @@ pub async fn addresses(pool: &PgPool) -> ApiResult<HashMap<i64, String>> {
     .fetch_all(pool)
     .await?;
     let mut addresses: HashMap<i64, String> = bridged.into_iter().collect();
+    let adopted: Vec<(i64,String)> = sqlx::query_as("SELECT i.user_id,b.subscription_base||u.subscription_token FROM singbox_native_adoptions a JOIN singbox_nexus_identities i ON i.user_id=a.user_id JOIN singbox_nexus_bridge b ON b.import_id=i.import_id JOIN users u ON u.id=i.user_id WHERE u.deleted_at IS NULL")
+        .fetch_all(pool).await?;
+    addresses.extend(adopted);
     addresses.extend(own_addresses(pool).await?);
     Ok(addresses)
 }
@@ -250,6 +253,12 @@ pub async fn gate(State(state): State<AppState>, mut request: Request, next: Nex
         return next.run(request).await;
     };
     let path = request.uri().path().to_owned();
+    if matches!(*request.method(), Method::GET | Method::HEAD)
+        && let Some(response) =
+            adopted_old_route(&state, request.uri(), request.headers(), &host).await
+    {
+        return response;
+    }
     if host == panel_host(&state.config.public_url) {
         if let Some(rest) = path.strip_prefix(PORTAL_API)
             && portal_moved(&state.pool, rest.split('/').next().unwrap_or_default()).await
@@ -319,6 +328,64 @@ pub async fn gate(State(state): State<AppState>, mut request: Request, next: Nex
         Err(ApiError::NotFound) => plain_not_found(),
         Err(error) => error.into_response(),
     }
+}
+
+/// An already issued renderer URL can be forwarded to the panel without changing
+/// its host, path or token. Only adopted users are answered here; an operator keeps
+/// the other tokens on their original upstream until their own adoption completes.
+async fn adopted_old_route(
+    state: &AppState,
+    uri: &Uri,
+    headers: &HeaderMap,
+    host: &str,
+) -> Option<Response> {
+    let base: Option<String> =
+        sqlx::query_scalar("SELECT subscription_base FROM singbox_nexus_bridge WHERE singleton")
+            .fetch_optional(&state.pool)
+            .await
+            .ok()?;
+    let base = reqwest::Url::parse(base.as_deref()?).ok()?;
+    if base.host_str()? != host {
+        return None;
+    }
+    let token = old_route_token(&base, uri)?;
+    let adopted: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users u JOIN singbox_native_adoptions a ON a.user_id=u.id WHERE u.subscription_token=$1 AND u.deleted_at IS NULL)")
+        .bind(&token).fetch_one(&state.pool).await.ok()?;
+    if !adopted {
+        return None;
+    }
+    let query = query_of(uri);
+    Some(
+        match super::subscriptions::serve(state, headers, token, query).await {
+            Ok(response) => response,
+            Err(error) => error.into_response(),
+        },
+    )
+}
+
+fn old_route_token(base: &reqwest::Url, uri: &Uri) -> Option<String> {
+    let query_token = base.query().is_some();
+    let encoded = if let Some(query) = base.query() {
+        if uri.path() != base.path() {
+            return None;
+        }
+        uri.query()?.strip_prefix(query)?.split('&').next()?
+    } else {
+        uri.path().strip_prefix(base.path())?
+    };
+    if encoded.is_empty() || encoded.len() > 1536 || encoded.contains('/') {
+        return None;
+    }
+    let mut decoder = reqwest::Url::parse("https://decode.invalid/").ok()?;
+    let encoded = if query_token {
+        encoded.to_owned()
+    } else {
+        // A path segment treats both characters literally; the form decoder does not.
+        encoded.replace('+', "%2B").replace('&', "%26")
+    };
+    decoder.set_query(Some(&format!("token={encoded}")));
+    let (_, token) = decoder.query_pairs().next()?;
+    (token.len() <= 512).then(|| token.into_owned())
 }
 
 /// The origin and RP ID a portal request verifies Passkeys for, or `None` for the
@@ -894,6 +961,20 @@ mod scope_tests {
             legacy_paths: true,
             revision: 1,
         }
+    }
+
+    #[test]
+    fn adopted_renderer_preserves_the_whole_path_token_and_decodes_query_tokens() {
+        let path_base = reqwest::Url::parse("https://legacy.example/sub/").unwrap();
+        let uri = Uri::from_static("/sub/a+b&c%20d?format=clash");
+        assert_eq!(
+            old_route_token(&path_base, &uri).as_deref(),
+            Some("a+b&c d")
+        );
+
+        let query_base = reqwest::Url::parse("https://legacy.example/sub?token=").unwrap();
+        let uri = Uri::from_static("/sub?token=a+b%26c&format=clash");
+        assert_eq!(old_route_token(&query_base, &uri).as_deref(), Some("a b&c"));
     }
 
     #[test]

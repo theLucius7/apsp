@@ -555,3 +555,127 @@ async fn output_identity_permissions_symlinks_hardlinks_and_size_are_enforced() 
     fixture.write("result.json", &vec![b'x'; OUTPUT_LIMIT + 1]);
     assert!(adapter.collect(&spec).await.is_err());
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn bundled_manifest_and_frozen_component_digest_bind_runner_identity() {
+    let fixture = Fixture::new();
+    let bundle_sha = "e".repeat(64);
+    let bin_sha = "d".repeat(64);
+    let sibling_dir = fixture
+        .root
+        .join(format!("{VERSION}-{}", &bundle_sha[..12]));
+    stdfs::create_dir(&sibling_dir).unwrap();
+    let runner_bytes = b"TEST ONLY bundled ipquality runner";
+    Fixture::write_path(&sibling_dir.join(BINARY), runner_bytes, 0o755);
+    let arch = native_arch().unwrap();
+    let build_bytes = json!({
+        "schema":1,"plugin":"ipquality","version":VERSION,"arch":arch,"profile":"ipquality-node-v1",
+        "source_commit":SOURCE_COMMIT,"source_sha256":SOURCE_SHA256,"source_lock_sha256":"1".repeat(64),
+        "policy_sha256":"1".repeat(64),"transport_sha256":"1".repeat(64),"rootfs_sha256":"4".repeat(64),
+        "rootfs_manifest_sha256":"5".repeat(64),"license_review_sha256":"1".repeat(64),
+        "source_archive_sha256":"6".repeat(64),"factory_provenance_sha256":"1".repeat(64)
+    })
+    .to_string()
+    .into_bytes();
+    Fixture::write_path(&sibling_dir.join("build-info.json"), &build_bytes, 0o644);
+    let mut files = BTreeMap::from([
+        (
+            BINARY.to_owned(),
+            json!({"sha256": bin_sha, "size": runner_bytes.len(), "executable": true}),
+        ),
+        (
+            "build-info.json".to_owned(),
+            json!({"sha256": "7".repeat(64), "size": build_bytes.len(), "executable": false}),
+        ),
+    ]);
+    for (name, sha) in [
+        ("rootfs.tar.gz", "4".repeat(64)),
+        ("rootfs-manifest.json", "5".repeat(64)),
+        ("LICENSE", "8".repeat(64)),
+        ("source.tar.gz", "6".repeat(64)),
+        ("THIRD_PARTY_NOTICES.txt", "9".repeat(64)),
+    ] {
+        let payload = b"fixture-aux";
+        Fixture::write_path(&sibling_dir.join(name), payload, 0o644);
+        files.insert(
+            name.to_owned(),
+            json!({"sha256": sha, "size": payload.len(), "executable": false}),
+        );
+    }
+    stdfs::create_dir_all(sibling_dir.join("bin")).unwrap();
+    let py_bytes = b"fixture-python";
+    Fixture::write_path(&sibling_dir.join("bin/python3"), py_bytes, 0o755);
+    files.insert(
+        "bin/python3".to_owned(),
+        json!({"sha256": "a".repeat(64), "size": py_bytes.len(), "executable": true}),
+    );
+    Fixture::write_path(
+        &sibling_dir.join(".bundled.json"),
+        json!({
+            "schema": 1,
+            "component_name": BINARY,
+            "binary_name": BINARY,
+            "version": VERSION,
+            "bundle_sha256": bundle_sha,
+            "binary_sha256": bin_sha,
+            "files": files,
+        })
+        .to_string()
+        .as_bytes(),
+        0o644,
+    );
+
+    let mut mismatch = fixture.spec();
+    mismatch.binary_path = sibling_dir.join(BINARY);
+    mismatch
+        .options
+        .insert("expected_component_sha256".into(), "f".repeat(64));
+    let adapter = IpQualityAdapter::new();
+    assert!(
+        adapter
+            .prepare(&mismatch, &Recorder::default())
+            .await
+            .is_err()
+    );
+    assert!(!mismatch.job_dir.exists());
+
+    let mut valid = mismatch;
+    valid
+        .options
+        .insert("expected_component_sha256".into(), bundle_sha.clone());
+    let service = adapter.prepare(&valid, &Recorder::default()).await.unwrap();
+    assert_eq!(
+        service.args,
+        vec![
+            "--workspace".to_owned(),
+            valid.job_dir.to_str().unwrap().into(),
+            "--job-id".into(),
+            valid.id.clone(),
+            "--ip-version".into(),
+            "4".into(),
+            "--artifact-sha256".into(),
+            bundle_sha.clone(),
+        ]
+    );
+
+    Fixture::write_path(
+        &sibling_dir.join(".bundled.json"),
+        json!({
+            "schema": 1,
+            "artifact_name": BINARY,
+            "binary_name": BINARY,
+            "version": VERSION,
+            "bundle_sha256": bundle_sha,
+            "binary_sha256": bin_sha,
+            "files": files,
+        })
+        .to_string()
+        .as_bytes(),
+        0o644,
+    );
+    let legacy_id = uuid::Uuid::new_v4().to_string();
+    valid.job_dir = valid.job_dir.with_file_name(&legacy_id);
+    valid.id = legacy_id;
+    assert!(adapter.prepare(&valid, &Recorder::default()).await.is_ok());
+}

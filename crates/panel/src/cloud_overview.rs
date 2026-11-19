@@ -132,6 +132,6 @@ async fn resources(State(state): State<AppState>, headers: HeaderMap) -> ApiResu
         })
         .collect();
     Ok(Json(
-        json!({"resources":values,"providers":[{"id":"alicloud","supported_resources":["ecs_fixed_public_ip","independent_pay_as_you_go_eip"],"official_interfaces":["DescribeInstances","DescribeEipAddresses","QueryAccountBalance","DescribeInstanceBill","QueryInstanceBill","DescribeSecurityGroupAttribute","JoinSecurityGroup","LeaveSecurityGroup"],"operations":"使用阿里云插件预览与未知结果对账流程","security_group_membership":{"available":true,"resource_kind":"registered_ecs","group_kind":"normal","baseline_preserved":true,"rules_edit_available":false,"fee":"unknown"},"billing_note":"账单和余额为带查询时间的缓存，不能作为实时硬限额；账号余额需要全局授权"}],"comparison":"使用本平台的历史观测、诊断报告和采购金额；不引入外部排名"}),
+        json!({"resources":values,"providers":[{"id":"alicloud","supported_resources":["ecs_fixed_public_ip","independent_pay_as_you_go_eip"],"official_interfaces":["DescribeInstances","DescribeEipAddresses","QueryAccountBalance","DescribeInstanceBill","QueryInstanceBill","DescribeSecurityGroupAttribute","JoinSecurityGroup","LeaveSecurityGroup"],"operations":"使用阿里云账号接入的预览与未知结果对账流程","security_group_membership":{"available":true,"resource_kind":"registered_ecs","group_kind":"normal","baseline_preserved":true,"rules_edit_available":false,"fee":"unknown"},"billing_note":"账单和余额为带查询时间的缓存，不能作为实时硬限额；账号余额需要全局授权"}],"comparison":"使用本平台的历史观测、诊断报告和采购金额；不引入外部排名"}),
     ))
 }

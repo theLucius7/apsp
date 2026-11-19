@@ -18,6 +18,7 @@
 - [2026-10-23 界面完全重构（shadcn/ui Nova）](ui-refactor-20261023.md)
 - [2026-10-04 其余分支与 main 整合](branch-main-integration-20261004.md)
 - [2026-10-03 全仓缺陷扫描与修复（按严重程度清单）](defect-scan-20261003.md)
+- [2026-10-03 平台扩展：21 类需求源码覆盖与现行入口对照](operations-platform-coverage.md)、[当轮集中验收](operations-platform-expansion.md)
 - [2026-10-03 代理流量按天汇总与数据保留（D5–D7）](usage-rollup-retention.md)
 - [2026-10-03 管理界面重排与 D12–D16](ui-relayout-20261003.md)
 - [2026-10-03 重新架构阶段一：插件编译边界](rearchitecture-phase1-20261003.md)
@@ -127,9 +128,9 @@
 - [安装前的端点与原生工具预检](installation-readiness.md)
 - [NeXus 当前连接上下文补验](nexus-context-recovery.md)
 
-## 原生 TCP 与制品发布
+## 原生 TCP 与签名发布
 
-- [原生 TCP 固定源码与签名制品：独立验收](native-tcp-artifacts.md)
+- [原生 TCP 固定源码与签名记录（2026-10-01 独立包证据；现内置于一体化 Agent）](native-tcp-artifacts.md)
 - [原生 TCP 工具独立验收](native-tcp-probe.md)
 - [Release 发布身份保留验收](release-publication-identity.md)
 - [原生 TCP 无状态适配器独立验收](tcpquality-adapter.md)

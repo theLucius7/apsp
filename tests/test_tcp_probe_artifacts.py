@@ -192,8 +192,10 @@ class SignedTcpTests(unittest.TestCase):
             output.mkdir(parents=True, exist_ok=True)
             (output / arch).write_bytes(tcp.pack(files))
         shutil.rmtree(self.fixture.bundle)
-        self.fixture.arguments.tcp_probe_version = self.version
-        release.assemble(self.fixture.arguments)
+        test_release.stage_historical_0_3_bundle(
+            self.fixture.source, self.fixture.bundle, self.fixture.installer,
+            tcp_probe_version=self.version,
+        )
         self.fixture.sign()
 
     def tearDown(self):
@@ -228,7 +230,8 @@ class SignedTcpTests(unittest.TestCase):
             self.assertEqual(entry["binary_name"], tcp.BINARY)
             self.assertEqual(set(entry["auxiliary_files"]), tcp.FILES - {tcp.BINARY})
         self.assertEqual(len(metadata["artifacts"]), 8)
-        publish.require_components(metadata)
+        with self.assertRaisesRegex(ValueError, "standalone components are prohibited"):
+            publish.require_components(metadata)
 
     def test_opt_in_publication_requires_both_tcp_architectures_and_all_old_modules(self):
         metadata = self.fixture.verify()
@@ -271,9 +274,12 @@ class SignedTcpTests(unittest.TestCase):
                     self.fixture.verify()
 
     def setUp_payload_from_fixture(self):
-        # Restore all unsigned inputs and reassemble, retaining only public test signatures.
+        # Restore all unsigned inputs and restage historical 0.3.x fixture, retaining only public test signatures.
         shutil.rmtree(self.fixture.bundle)
-        release.assemble(self.fixture.arguments)
+        test_release.stage_historical_0_3_bundle(
+            self.fixture.source, self.fixture.bundle, self.fixture.installer,
+            tcp_probe_version=self.version,
+        )
         self.fixture.sign()
 
     def test_signed_auxiliary_digest_does_not_replace_inner_provenance_validation(self):
@@ -302,8 +308,9 @@ class SignedTcpTests(unittest.TestCase):
 
     def test_default_release_keeps_three_modules_and_does_not_require_tcp(self):
         shutil.rmtree(self.fixture.bundle)
-        self.fixture.arguments.tcp_probe_version = None
-        release.assemble(self.fixture.arguments)
+        test_release.stage_historical_0_3_bundle(
+            self.fixture.source, self.fixture.bundle, self.fixture.installer,
+        )
         self.fixture.sign()
         self.assertEqual({entry["name"] for entry in self.fixture.verify()["artifacts"]},
                          {"agent", "sing-box", "nodequality"})

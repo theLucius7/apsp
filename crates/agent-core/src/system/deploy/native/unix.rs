@@ -255,11 +255,11 @@ pub(super) async fn register(
     if let Some(descriptor) = descriptor {
         let runtime = config
             .runtime_root
-            .join(format!("{}@main", descriptor.plugin_name));
+            .join(format!("{}@main", descriptor.artifact_name));
         let launcher = root.join("runtime-launcher.sh");
         let binary = config
             .install_root
-            .join(&descriptor.plugin_name)
+            .join(&descriptor.artifact_name)
             .join("current")
             .join(&descriptor.binary_name);
         let configuration = runtime.join("current/config.json");
@@ -268,7 +268,7 @@ pub(super) async fn register(
             &binary,
             &configuration,
             &runtime.join("data"),
-            &descriptor.plugin_name,
+            &descriptor.artifact_name,
         );
         ops.write_file(&launcher, script.as_bytes(), 0o755, None)
             .await?;
@@ -285,20 +285,77 @@ pub(super) async fn register(
     Ok(())
 }
 
+pub(in crate::system::deploy) async fn ensure_runtime(
+    ops: &dyn Privileged,
+    backend: ServiceBackend,
+    spec: &apsp_adapter_sdk::RuntimeServiceSpec,
+) -> Result<()> {
+    let service_name = spec
+        .descriptor
+        .service_unit
+        .strip_suffix(".service")
+        .unwrap_or(&spec.descriptor.service_unit);
+    let definition_exists = match backend {
+        ServiceBackend::Launchd => Path::new(&format!(
+            "/Library/LaunchDaemons/org.apsp.{}.plist",
+            service_name.replace('@', ".")
+        ))
+        .exists(),
+        ServiceBackend::FreeBsd => Path::new("/usr/local/etc/rc.d")
+            .join(service_name.replace(['@', '-', '.'], "_"))
+            .exists(),
+        _ => anyhow::bail!("unsupported Unix native service backend"),
+    };
+    if definition_exists {
+        return Ok(());
+    }
+    let runtime = spec
+        .runtime_root
+        .join(format!("{}@main", spec.descriptor.artifact_name));
+    let launcher = spec.agent_root.join("runtime-launcher.sh");
+    let binary = spec
+        .install_root
+        .join(&spec.descriptor.artifact_name)
+        .join("current")
+        .join(&spec.descriptor.binary_name);
+    let configuration = runtime.join("current/config.json");
+    let script = runtime_launcher(
+        &spec.agent_root.join("current").join(executable_name()),
+        &binary,
+        &configuration,
+        &runtime.join("data"),
+        &spec.descriptor.artifact_name,
+    );
+    ops.create_dir(&spec.agent_root, 0o755, None).await?;
+    ops.write_file(&launcher, script.as_bytes(), 0o755, None)
+        .await?;
+    let account = (!spec.descriptor.service_group.is_empty())
+        .then_some(spec.descriptor.service_group.as_str());
+    service(
+        ops,
+        backend,
+        &spec.descriptor.service_unit,
+        &[launcher.to_string_lossy().into_owned()],
+        account,
+        &runtime.join("data"),
+    )
+    .await
+}
+
 fn runtime_launcher(
     agent: &Path,
     binary: &Path,
     configuration: &Path,
     data: &Path,
-    plugin: &str,
+    artifact_name: &str,
 ) -> String {
     format!(
-        "#!/bin/sh\nset -eu\nwhile [ ! -x {binary} ] || [ ! -f {configuration} ]; do sleep 2; done\n{agent} verify-installed --binary {binary} --name {plugin} --format tar.gz\nexec {binary} run -c {configuration} -D {data}\n",
+        "#!/bin/sh\nset -eu\nwhile [ ! -x {binary} ] || [ ! -f {configuration} ]; do sleep 2; done\n{agent} verify-installed --binary {binary} --name {artifact_name} --format tar.gz\nexec {binary} run -c {configuration} -D {data}\n",
         agent = quote(&agent.to_string_lossy()),
         binary = quote(&binary.to_string_lossy()),
         configuration = quote(&configuration.to_string_lossy()),
         data = quote(&data.to_string_lossy()),
-        plugin = quote(plugin),
+        artifact_name = quote(artifact_name),
     )
 }
 

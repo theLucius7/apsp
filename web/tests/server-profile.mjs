@@ -36,7 +36,7 @@ try {
     const errors = [], unexpected = [], reads = [], writes = []
     const prefix = '/api/traffic/servers'
     const name='TEST_ONLY 服务端配置'
-    const selected=()=>({id:1,name,enabled:true,online:true,agent_supported:true,read_only:false,source:'administrator',installation:{state:'ready',reason:'',target_rev:1,applied_rev:1}})
+    const selected=()=>({id:1,name,configured:true,online:true,agent_supported:true,read_only:false,source:'configured',runtime_version:'1.14.4-apsp.2',status:{state:'ready',reason:'',target_rev:1,applied_rev:1,current_healthy:true}})
     let definition={outbounds:[],endpoints:[],services:[],cloudflared:[],dns:null,route:null},revision=0,conflict=false
     page.on('pageerror', error => errors.push(error.message))
     page.on('console', message => { if (message.type() === 'error' && !message.text().includes('409 (Conflict)')) errors.push(message.text()) })

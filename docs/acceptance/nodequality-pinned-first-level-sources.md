@@ -4,7 +4,7 @@
 
 ## 来源与打包契约
 
-版本为 `a92fca6c0067df29ddd03fdc2fee6f3000f64545-r6`。入口、首层五脚本和四仓完整 LICENSE 的身份、大小和 SHA256 全在 [source-lock.json](../../plugins/nodequality/source-lock.json)，其摘要为 `3d20398eeda72654c59b3271fd03b35ca8c0b4e92ee92a054a4a8c432a62723a`。
+版本为 `a92fca6c0067df29ddd03fdc2fee6f3000f64545-r6`。入口、首层五脚本和四仓完整 LICENSE 的身份、大小和 SHA256 全在 [source-lock.json](../../crates/observability/upstream/nodequality/source-lock.json)（验收当时位于 `plugins/nodequality/source-lock.json`），其摘要为 `3d20398eeda72654c59b3271fd03b35ca8c0b4e92ee92a054a4a8c432a62723a`。
 
 | 文件 | 固定来源提交 | SHA256 |
 | --- | --- | --- |
@@ -21,7 +21,7 @@
 
 发布前发现旧构建路径依赖 `--max-filesize` 的边界缺口：[curl 官方文档](https://curl.se/docs/manpage.html#--max-filesize) 明确 8.4.0 之前无法用该选项限制预先未知长度的响应。已推送的首个源码点 `7d4e940f1f65af937758cecafc5d7f2de2b947fd` 保留为原验收快照；本项在同一 PR 中补上上述接收器与管道，不改写原证据或发布旧制品。
 
-helper 可以独立输出固定下载清单或校验已有私有源码目录，以下命令不运行源码：
+helper 可以独立输出固定下载清单或校验已有私有源码目录（现行路径在 `crates/observability/upstream/nodequality/`，下述验收命令保留当时路径），以下命令不运行源码：
 
 ```sh
 python3 plugins/nodequality/source-helper.py downloads plugins/nodequality/source-lock.json

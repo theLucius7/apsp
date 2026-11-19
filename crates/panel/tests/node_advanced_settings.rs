@@ -80,7 +80,6 @@ async fn optional_settings_preserve_omitted_values_and_clear_explicit_nulls(
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let server = panel.create_server(&cookie, "Settings").await?;
-    panel.enable_runtime(&cookie, server).await?;
     let values = json!({"public_port":8443,"tcp_keep_alive_seconds":120,"tcp_keep_alive_interval_seconds":30,
         "tls_min_version":"1.2","tls_max_version":"1.3","tls_handshake_timeout_seconds":15,
         "anytls":{"idle_session_check_seconds":30,"padding_scheme":["stop=2","0=30-30","1=100-400,c,500-1000"]}});
@@ -139,7 +138,6 @@ async fn protocol_options_roundtrip_preserve_credentials_and_reach_the_correct_s
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let server = panel.create_server(&cookie, "Options").await?;
-    panel.enable_runtime(&cookie, server).await?;
     let user = panel.create_user(&cookie, "Subscriber").await?;
     let user_id = id(&user)?;
     let cases = [
@@ -286,7 +284,6 @@ async fn reality_transport_edits_preserve_keys_grants_and_reset_to_tcp(pool: PgP
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let server = panel.create_server(&cookie, "Transport").await?;
-    panel.enable_runtime(&cookie, server).await?;
     let created = create(&panel, &cookie, server, "vless-reality", json!({})).await?;
     let node = id(&created)?;
     let user = id(&panel.create_user(&cookie, "Transport subscriber").await?)?;
@@ -330,7 +327,6 @@ async fn invalid_options_roll_back_the_entire_node_edit(pool: PgPool) -> Result<
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let server = panel.create_server(&cookie, "Validation").await?;
-    panel.enable_runtime(&cookie, server).await?;
     for (kind, invalid) in [
         (
             "vless-reality",

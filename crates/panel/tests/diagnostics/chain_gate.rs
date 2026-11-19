@@ -1,20 +1,13 @@
 use super::*;
 
 async fn saved_full(panel: &TestPanel, server: i64, version: &str, status: &str) -> Result<Uuid> {
-    let artifact = apsp_governance::artifacts::descriptor(
-        &panel.state,
-        "nodequality",
-        diagnostics::TOOL_VERSION,
-        "amd64",
-    )
-    .await?;
     let id = Uuid::new_v4();
     let now = apsp_protocol::now_timestamp();
     let job = apsp_protocol::DiagnosticJob {
         id,
-        plugin: "nodequality".into(),
+        tool: "nodequality".into(),
         version: version.into(),
-        artifact,
+        artifact: None,
         timeout_secs: 1800,
         expires_at: Some(now + 2100),
         resource_budget: None,
@@ -52,7 +45,7 @@ async fn new_full_is_denied_on_both_routes_but_daily_remains_ready(pool: PgPool)
         .await?
         .json()
         .await?;
-    assert_eq!(view["plugin_ready"], true);
+    assert_eq!(view["tool_ready"], true);
     assert_eq!(view["full_ready"], false);
     assert!(view["full_reason"].as_str().unwrap().contains("宿主 swap"));
     assert_eq!(
@@ -251,9 +244,9 @@ async fn running_full_is_not_redispatched_to_an_agent_without_the_start_gate(
     let (server, _socket, ack) = panel.authenticated_device(&cookie, "旧已运行夹具").await?;
     capable(&panel, server).await?;
     fixture(&panel).await?;
-    let id = saved_full(&panel, server, diagnostics::TOOL_VERSION, "running").await?;
+    let legacy_id = saved_full(&panel, server, diagnostics::TOOL_VERSION, "running").await?;
     sqlx::query("UPDATE diagnostic_jobs SET job=job-'plugin' WHERE id=$1")
-        .bind(id)
+        .bind(legacy_id)
         .execute(&panel.state.pool)
         .await?;
     let endpoint = format!("{}/api/agent/v1/diagnostics", panel.base);
@@ -268,13 +261,77 @@ async fn running_full_is_not_redispatched_to_an_agent_without_the_start_gate(
     assert_eq!(queue, json!([]));
     assert_eq!(
         sqlx::query_scalar::<_, String>("SELECT status FROM diagnostic_jobs WHERE id=$1")
-            .bind(id)
+            .bind(legacy_id)
             .fetch_one(&panel.state.pool)
             .await?,
         "running"
     );
     sqlx::query("UPDATE servers SET capabilities=capabilities || '[\"diagnostic:nodequality-full-start-gate\"]'::jsonb WHERE id=$1")
         .bind(server).execute(&panel.state.pool).await?;
+    let queue: Value = panel
+        .client
+        .get(&endpoint)
+        .bearer_auth(&ack.session_token)
+        .send()
+        .await?
+        .json()
+        .await?;
+    assert_eq!(
+        queue,
+        json!([]),
+        "legacy unfrozen jobs must never be redispatched even with the full start gate"
+    );
+    let saved: Value = sqlx::query_scalar("SELECT job FROM diagnostic_jobs WHERE id=$1")
+        .bind(legacy_id)
+        .fetch_one(&panel.state.pool)
+        .await?;
+    assert!(saved.get("plugin").is_none());
+    assert!(saved["options"].get("mode").is_none());
+    assert_eq!(
+        update(
+            &panel,
+            &ack,
+            &legacy_id.to_string(),
+            json!({"id":legacy_id,"status":"failed","error":"legacy running checkpoint cleaned up"})
+        )
+        .await?
+        .status(),
+        StatusCode::NO_CONTENT
+    );
+
+    sqlx::query("UPDATE servers SET capabilities=capabilities-'diagnostic:nodequality-full-start-gate' WHERE id=$1")
+        .bind(server)
+        .execute(&panel.state.pool)
+        .await?;
+    let created: Value = panel
+        .admin(
+            Method::POST,
+            &format!("/api/servers/{server}/node-quality/reports"),
+            &cookie,
+            Some(json!({"mode":"daily"})),
+        )
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let id = Uuid::parse_str(created["id"].as_str().unwrap())?;
+    sqlx::query("UPDATE diagnostic_jobs SET status='running',job=jsonb_set(job,'{options,mode}','\"full\"') WHERE id=$1")
+        .bind(id)
+        .execute(&panel.state.pool)
+        .await?;
+    let queue: Value = panel
+        .client
+        .get(&endpoint)
+        .bearer_auth(&ack.session_token)
+        .send()
+        .await?
+        .json()
+        .await?;
+    assert_eq!(queue, json!([]));
+    sqlx::query("UPDATE servers SET capabilities=capabilities || '[\"diagnostic:nodequality-full-start-gate\"]'::jsonb WHERE id=$1")
+        .bind(server)
+        .execute(&panel.state.pool)
+        .await?;
     let queue: Value = panel
         .client
         .get(endpoint)
@@ -287,11 +344,5 @@ async fn running_full_is_not_redispatched_to_an_agent_without_the_start_gate(
     assert_eq!(queue[0]["id"], id.to_string());
     assert_eq!(queue[0]["plugin"], "nodequality");
     assert_eq!(queue[0]["version"], diagnostics::TOOL_VERSION);
-    let saved: Value = sqlx::query_scalar("SELECT job FROM diagnostic_jobs WHERE id=$1")
-        .bind(id)
-        .fetch_one(&panel.state.pool)
-        .await?;
-    assert!(saved.get("plugin").is_none());
-    assert!(saved["options"].get("mode").is_none());
     Ok(())
 }

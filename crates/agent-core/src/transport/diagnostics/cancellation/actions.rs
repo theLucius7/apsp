@@ -38,7 +38,7 @@ impl DiagnosticWorker {
             control.save_result(DiagnosticCancelResult {
                 server_id: request.server_id,
                 id: request.job.id,
-                plugin: request.job.plugin,
+                tool: request.job.tool,
                 confirmed,
                 report,
                 error,
@@ -52,7 +52,7 @@ impl DiagnosticWorker {
         request: &DiagnosticCancelRequest,
     ) -> Result<Option<DiagnosticReport>> {
         let job = &request.job;
-        let adapter = self.adapters.get(&job.plugin);
+        let adapter = self.adapters.get(&job.tool);
         let unit = format!("apsp-diagnostic-{}.service", job.id);
         let directory = self
             .config
@@ -65,12 +65,12 @@ impl DiagnosticWorker {
             Some(Checkpoint::Started {
                 spec,
                 service,
-                plugin,
+                tool,
                 terminal_update,
                 ..
             }) if spec.id == job.id.to_string() => {
                 ensure!(
-                    plugin == job.plugin
+                    tool == job.tool
                         && spec.version == job.version
                         && service.unit == unit
                         && service.working_directory == directory
@@ -91,7 +91,7 @@ impl DiagnosticWorker {
                     job,
                     directory.clone(),
                     adapter
-                        .context("cancel plugin is no longer registered")?
+                        .context("cancel tool is no longer registered")?
                         .as_ref(),
                 )
             }
@@ -99,7 +99,7 @@ impl DiagnosticWorker {
                 job,
                 directory.clone(),
                 adapter
-                    .context("cancel plugin is no longer registered")?
+                    .context("cancel tool is no longer registered")?
                     .as_ref(),
             ),
         };
@@ -115,7 +115,7 @@ impl DiagnosticWorker {
         // removing the active checkpoint. Failures do not erase saved chapters.
         if let Err(error) = tokio::time::timeout(
             Duration::from_secs(2),
-            self.capture_sections(&spec, &job.plugin),
+            self.capture_sections(&spec, &job.tool),
         )
         .await
         .context("cancelled diagnostic chapter capture timed out")
@@ -156,15 +156,41 @@ impl DiagnosticWorker {
         adapter: &dyn DiagnosticAdapter,
     ) -> DiagnosticSpec {
         let descriptor = adapter.describe();
+        let binary_path = if let Some(item) = self.bundled.get(&job.tool) {
+            match &item.payload {
+                crate::bundled::BundledPayload::AgentSubcommand { .. } => {
+                    crate::bundled::current_agent_binary().unwrap_or_else(|_| {
+                        self.config
+                            .agent_root
+                            .join("current")
+                            .join(crate::system::deploy::executable_name())
+                    })
+                }
+                crate::bundled::BundledPayload::TarGz { .. } => self
+                    .config
+                    .install_root
+                    .join(&item.component_name)
+                    .join(&item.version)
+                    .join(&item.binary_name),
+            }
+        } else {
+            self.config
+                .install_root
+                .join(descriptor.artifact_name)
+                .join(&job.version)
+                .join(descriptor.binary_name)
+        };
         DiagnosticSpec {
             id: job.id.to_string(),
-            version: job.version.clone(),
-            binary_path: self
-                .config
-                .install_root
-                .join(descriptor.plugin_name)
-                .join(&job.version)
-                .join(descriptor.binary_name),
+            version: if job.version.is_empty() {
+                self.bundled
+                    .get(&job.tool)
+                    .map(|item| item.version.clone())
+                    .unwrap_or_default()
+            } else {
+                job.version.clone()
+            },
+            binary_path,
             job_dir: directory,
             timeout_secs: u32::try_from(job.timeout_secs).unwrap_or(1),
             options: job.options.clone(),

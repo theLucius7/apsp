@@ -45,6 +45,7 @@ impl Fixture {
         let config = Config {
             state_db: directory.join("state.db"),
             install_root: directory.join("install"),
+            agent_root: directory.join("agents"),
             ..Config::default()
         };
         Self { directory, config }
@@ -88,7 +89,7 @@ async fn installed_proof_checks_file_identity_and_ordinary_paths() {
     let test = Fixture::new();
     let runtime = test.runtime("1");
     let keys = release_support::trusted_keys();
-    verify_binary_with_keys(&runtime.spec.binary_path, "runtime", "tar.gz", &keys)
+    verify_binary_with_keys(&runtime.spec.binary_path, "runtime", "tar.gz", &keys, None)
         .await
         .unwrap();
     let directory = runtime.spec.binary_path.parent().unwrap();
@@ -98,7 +99,8 @@ async fn installed_proof_checks_file_identity_and_ordinary_paths() {
             &directory.with_file_name("2").join("runtime"),
             "runtime",
             "tar.gz",
-            &keys
+            &keys,
+            None
         )
         .await
         .is_err()
@@ -117,7 +119,7 @@ async fn installed_proof_checks_file_identity_and_ordinary_paths() {
         )
         .unwrap();
         assert!(
-            verify_binary_with_keys(&runtime.spec.binary_path, "runtime", "tar.gz", &keys)
+            verify_binary_with_keys(&runtime.spec.binary_path, "runtime", "tar.gz", &keys, None)
                 .await
                 .is_err()
         );
@@ -129,11 +131,11 @@ async fn installed_proof_checks_file_identity_and_ordinary_paths() {
 async fn current_link_can_only_select_a_signed_sibling_version() {
     let test = Fixture::new();
     let runtime = test.runtime("1");
-    let plugin = test.config.install_root.join("runtime");
-    let link = plugin.join("current");
+    let artifact_directory = test.config.install_root.join("runtime");
+    let link = artifact_directory.join("current");
     let keys = release_support::trusted_keys();
     std::os::unix::fs::symlink(runtime.spec.binary_path.parent().unwrap(), &link).unwrap();
-    verify_binary_with_keys(&link.join("runtime"), "runtime", "tar.gz", &keys)
+    verify_binary_with_keys(&link.join("runtime"), "runtime", "tar.gz", &keys, None)
         .await
         .unwrap();
     fs::remove_file(&link).unwrap();
@@ -141,20 +143,26 @@ async fn current_link_can_only_select_a_signed_sibling_version() {
     let outside_runtime = outside.runtime("1");
     std::os::unix::fs::symlink(outside_runtime.spec.binary_path.parent().unwrap(), &link).unwrap();
     assert!(
-        verify_binary_with_keys(&link.join("runtime"), "runtime", "tar.gz", &keys)
+        verify_binary_with_keys(&link.join("runtime"), "runtime", "tar.gz", &keys, None)
             .await
             .is_err()
     );
     fs::remove_file(&link).unwrap();
     std::os::unix::fs::symlink(
         runtime.spec.binary_path.parent().unwrap(),
-        plugin.join("alias"),
+        artifact_directory.join("alias"),
     )
     .unwrap();
     assert!(
-        verify_binary_with_keys(&plugin.join("alias/runtime"), "runtime", "tar.gz", &keys)
-            .await
-            .is_err()
+        verify_binary_with_keys(
+            &artifact_directory.join("alias/runtime"),
+            "runtime",
+            "tar.gz",
+            &keys,
+            None
+        )
+        .await
+        .is_err()
     );
 }
 
@@ -216,10 +224,10 @@ async fn migration_preflight_checks_current_even_without_a_database() {
     fs::write(&runtime.spec.binary_path, b"untrusted-runtime").unwrap();
     assert!(verify_cache_with_keys(&test.config, &keys).await.is_err());
     assert!(!test.config.state_db.exists());
-    let plugin = test.config.install_root.join("runtime");
+    let artifact_directory = test.config.install_root.join("runtime");
     let moved = test.directory.join("moved-runtime");
-    fs::rename(&plugin, &moved).unwrap();
-    std::os::unix::fs::symlink(&moved, &plugin).unwrap();
+    fs::rename(&artifact_directory, &moved).unwrap();
+    std::os::unix::fs::symlink(&moved, &artifact_directory).unwrap();
     assert!(verify_cache_with_keys(&test.config, &keys).await.is_err());
 }
 
@@ -261,13 +269,13 @@ async fn migration_preflight_checks_resumable_diagnostic_jobs() {
     );
     let mut job = apsp_protocol::DiagnosticJob {
         id: Uuid::new_v4(),
-        plugin: "runtime".into(),
+        tool: "runtime".into(),
         version: "1".into(),
-        artifact: apsp_protocol::Artifact {
+        artifact: Some(apsp_protocol::Artifact {
             url: "http://127.0.0.1:1/unused".into(),
             sha256: release_support::hash(b"cached-archive"),
             proof: Some(proof),
-        },
+        }),
         timeout_secs: 30,
         resource_budget: None,
         expires_at: None,
@@ -277,7 +285,7 @@ async fn migration_preflight_checks_resumable_diagnostic_jobs() {
         .set_json("diagnostics:active", &serde_json::json!({"Preparing":job}))
         .unwrap();
     verify_cache_with_keys(&test.config, &keys).await.unwrap();
-    job.artifact.proof = None;
+    job.artifact.as_mut().unwrap().proof = None;
     state
         .set_json("diagnostics:active", &serde_json::json!({"Preparing":job}))
         .unwrap();
@@ -341,11 +349,12 @@ async fn installed_verification_rejects_a_signed_artifact_with_another_role_or_f
         "diagnostic-fixture",
         "tar.gz",
         &keys,
+        None,
     )
     .await
     .unwrap();
     assert!(
-        verify_binary_with_keys(&runtime.spec.binary_path, "runtime", "tar.gz", &keys)
+        verify_binary_with_keys(&runtime.spec.binary_path, "runtime", "tar.gz", &keys, None)
             .await
             .is_err()
     );
@@ -355,12 +364,104 @@ async fn installed_verification_rejects_a_signed_artifact_with_another_role_or_f
         bytes.to_vec(),
     )]);
     release_support::install_proof(directory, &proof);
-    verify_binary_with_keys(&runtime.spec.binary_path, "runtime", "raw", &keys)
+    verify_binary_with_keys(&runtime.spec.binary_path, "runtime", "raw", &keys, None)
         .await
         .unwrap();
     assert!(
-        verify_binary_with_keys(&runtime.spec.binary_path, "runtime", "tar.gz", &keys)
+        verify_binary_with_keys(&runtime.spec.binary_path, "runtime", "tar.gz", &keys, None)
             .await
             .is_err()
     );
+}
+
+#[tokio::test]
+async fn cached_bundle_is_bound_to_the_inventory_of_an_installed_signed_agent() -> anyhow::Result<()>
+{
+    use apsp_protocol::bundled::{
+        BundledFileRecord, BundledManifest, EmbeddedAgentManifest, EmbeddedComponentRecord,
+        encode_embedded_agent_manifest_frame,
+    };
+    use apsp_protocol::release::{canonical_asset_name, native_target};
+
+    let test = Fixture::new();
+    let component_dir = &test.config.install_root.join("runtime/1");
+    fs::create_dir_all(component_dir)?;
+    let contents = b"fixture-runtime";
+    let path = component_dir.join("runtime");
+    fs::write(&path, contents)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o755))?;
+    }
+    let sha256 = release_support::hash(contents);
+    let mut marker = BundledManifest {
+        schema: 1,
+        component_name: "runtime".into(),
+        binary_name: "runtime".into(),
+        version: "1".into(),
+        bundle_sha256: release_support::hash(b"archive"),
+        binary_sha256: sha256.clone(),
+        files: BTreeMap::from([(
+            "runtime".into(),
+            BundledFileRecord {
+                sha256,
+                size: contents.len() as u64,
+                executable: true,
+            },
+        )]),
+    };
+    let owner_version = "0.4.0";
+    let frame = EmbeddedAgentManifest {
+        schema: 1,
+        agent_version: owner_version.into(),
+        target_os: std::env::consts::OS.into(),
+        target_arch: std::env::consts::ARCH.into(),
+        target_env: if cfg!(target_env = "musl") {
+            "musl"
+        } else {
+            "gnu"
+        }
+        .into(),
+        components: BTreeMap::from([(
+            "runtime".into(),
+            EmbeddedComponentRecord {
+                format: "tar.gz".into(),
+                version: "1".into(),
+                sha256: Some(marker.bundle_sha256.clone()),
+                inventory_sha256: Some(marker.inventory_sha256().unwrap()),
+                subcommand: None,
+            },
+        )]),
+    };
+    let binary = encode_embedded_agent_manifest_frame(&frame).unwrap();
+    let name = if cfg!(windows) {
+        "apsp-agent.exe"
+    } else {
+        "apsp-agent"
+    };
+    let mut entry = release_support::entry("agent", owner_version, name, "raw", &binary, &binary);
+    entry.arch = native_target()?;
+    entry.asset_name = canonical_asset_name(&entry)?;
+    let proof = release_support::signed_release(vec![(entry, binary.clone())]);
+    let owner = test.config.agent_root.join(owner_version);
+    fs::create_dir_all(&owner)?;
+    fs::write(owner.join(name), binary)?;
+    release_support::install_proof(&owner, &proof);
+    let keys = release_support::trusted_keys();
+    super::verify_installed_bundle(&test.config.agent_root, component_dir, &marker, &keys).await?;
+    marker.version = "2".into();
+    assert!(
+        super::verify_installed_bundle(&test.config.agent_root, component_dir, &marker, &keys)
+            .await
+            .is_err()
+    );
+    marker.version = "1".into();
+    fs::remove_file(owner.join("SHA256SUMS.minisig"))?;
+    assert!(
+        super::verify_installed_bundle(&test.config.agent_root, component_dir, &marker, &keys)
+            .await
+            .is_err()
+    );
+    Ok(())
 }

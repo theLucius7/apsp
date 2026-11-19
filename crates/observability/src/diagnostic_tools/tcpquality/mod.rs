@@ -3,6 +3,7 @@ use crate::{
     diagnostics::service::{DiagnosticTool, JobPlan, PlanFuture},
     error::{ApiError, ApiResult},
 };
+use apsp_governance::releases::VerifiedRunningComponent;
 use apsp_protocol::{DiagnosticResourceBudget, ProbeKind, ProbeSpec, now_timestamp};
 use axum::{
     Json,
@@ -15,9 +16,21 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
-// Both signed architectures must identify this immutable source snapshot.
+// Default commit-pinned version format; signed Agents bind their exact HEAD commit in EmbeddedAgentManifest.
 pub const TOOL_VERSION: &str = "0.3.0-b562effcd90f8ae319665fb4ead1807b770ed4d5-r1";
 const REGIONS: [&str; 5] = ["east_asia", "southeast_asia", "europe", "americas", "other"];
+
+pub fn valid_version(value: &str) -> bool {
+    value
+        .strip_prefix("0.3.0-")
+        .and_then(|rest| rest.strip_suffix("-r1"))
+        .is_some_and(|commit| {
+            commit.len() == 40
+                && commit
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        })
+}
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -139,6 +152,38 @@ impl DiagnosticTool for TcpQualityTool {
     }
     fn required_capabilities(&self) -> &'static [&'static str] {
         &["diagnostic:tcpquality", "diagnostic:tcpquality-native-v1"]
+    }
+    fn expected_version(&self, static_info: &Value) -> ApiResult<String> {
+        let Some(reported) = static_info["components"]["tcpquality"]
+            .as_str()
+            .filter(|version| valid_version(version))
+        else {
+            return Err(ApiError::Conflict(
+                "设备尚未上报有效的内置 TCP 连接诊断版本，请升级至当前一体化 Agent 版本".into(),
+            ));
+        };
+        Ok(reported.to_owned())
+    }
+    fn freeze_dispatch(
+        &self,
+        verified: &VerifiedRunningComponent,
+        plan: &mut JobPlan,
+    ) -> ApiResult<()> {
+        if let Some(meta) = plan
+            .metadata
+            .get_mut("tcpquality")
+            .and_then(Value::as_object_mut)
+        {
+            meta.insert(
+                "source_version".into(),
+                Value::String(verified.component_version.clone()),
+            );
+            meta.insert(
+                "agent_sha256".into(),
+                Value::String(verified.agent_sha256.clone()),
+            );
+        }
+        Ok(())
     }
     fn plan<'a>(
         &'a self,

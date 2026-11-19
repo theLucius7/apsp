@@ -17,8 +17,8 @@ REQUESTS = {
 }
 DATA = {'ip-iso3166.json': {'sha256': 'e1434e42786484b1841082a0a16cf27208691443dc6440d125ad81d49007ea42', 'size': 65317}, 'ip-dnsbl.list': {'sha256': 'a92ca482843310167309c82f05cb7e208d7decc7f8bb7eada0f96af42f1143ad', 'size': 8812}, 'net-AS_Mapping.txt': {'sha256': '18596092c50e95ba23a6e997dc1ed823e4b01401034ffa2068a69e3a05c3cc50', 'size': 1154}, 'net-iso3166.json': {'sha256': 'e1434e42786484b1841082a0a16cf27208691443dc6440d125ad81d49007ea42', 'size': 65317}, 'net-province.json': {'sha256': 'a2b8fd700adc16a95dfc9d1671dfca6c1bb0ea3d8f94bf11e8fce2a7c15807e1', 'size': 3960}, 'net-iperf.json': {'sha256': '83170b97007fd9f3792934943d2120cd0c6650b6499ac56c67056f9d20c43298', 'size': 2120}, 'net-speedtest_cn.json': {'sha256': 'ec153fa9b0db16abbb0c93e6eacba6494ce56fc9427d3ea0afe21a9126279d87', 'size': 7772}}
 SOURCES = {
-    'ip.sh': {'source_sha256': 'f7d7bb8ebce65795f0d54848d9897b5c887cb5eda61a65f5a1df2bf3c43deff9', 'patched_sha256': 'e332b5405ca12fe03ad5f427789c38c92f04bb2b66df05d296060e4cd8483c1e'},
-    'net.sh': {'source_sha256': 'b0596e02786b1ae6d1dbedd4af10df6b120135715481dec2a9e75d4eca55cfda', 'patched_sha256': '99f8a26dabdc09163a165edbb9e200f675011d4f7bef5cfe8b0b729b726e861f'},
+    'ip.sh': {'source_sha256': '1cd4dda181abdf129a1d9a6910f68276307327f5837ffc823031283bdbf15523', 'patched_sha256': '5e4f6453b87d0b720d0ad0ae88ad49dd814b3890ba73fb26f43c3eafadbfc31e'},
+    'net.sh': {'source_sha256': '82e9e766be14938cadcb764ac6b904dc389c18cef1c5cb39e2a687cb2fafe333', 'patched_sha256': 'bd365128d871bbee48dcf18ac17d961ca67912e1bcc4c01c6ecb8dbcd9f7bcd4'},
 }
 
 

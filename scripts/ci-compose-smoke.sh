@@ -88,8 +88,10 @@ if phase == 'create':
         assert enrollment['installation'] is None
         assert enrollment['install_command'] is None
         assert enrollment['warning']
-    with request('/api/artifacts') as response:
-        assert json.load(response) == []
+    with request('/api/system/agent-releases') as response:
+        releases = json.load(response)
+        assert releases['versions'] == []
+        assert releases['policy']['default_version'] == 'latest'
 else:
     server_id = json.loads(Path(state_file).read_text())['server_id']
     with request('/api/servers/' + str(server_id)) as response:

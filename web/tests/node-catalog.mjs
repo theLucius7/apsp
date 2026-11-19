@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto'
 import { readFile, mkdir } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { resolve, extname, sep } from 'node:path'
-import { proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
+import { proxyResourceFixtures, runtimeServerFixture } from './proxy-resource-fixtures.mjs'
 
 // The shipped bundle consumes explicit public DTOs, with every write confined here.
 const hash = value => createHash('sha256').update(String(value)).digest('hex')
@@ -41,7 +41,7 @@ try {
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await page.clock.pauseAt(new Date('2026-10-24T00:01:00Z'))
     page.on('pageerror', error => errors.push(error.message))
-    const runtimeServers = [{ id: 1, name: '服务器', enabled: true, online: true, agent_supported: true, read_only: false }]
+    const runtimeServers = [runtimeServerFixture(1, { name: '服务器' })]
     const node = { id: 1, name: '受管节点', server_id: 1, port: 443, public_host: 'managed.example.com', sni: 'www.example.com', protocol: 'vless-reality', enabled: true, protocol_config: { type: 'vless-reality' }, settings: { public_port: 8443 } }
     const managed = { id: 1, kind: 'direct', name: node.name, original_name: node.name, server_id: 1, server_name: '服务器', public_host: node.public_host, port: 443, protocol: node.protocol, enabled: true, available: true, role: 'direct', entry_node_id: null, tcp: true, udp: true, stage: 'direct', reference_count: 0, tags: [], note: '', sort_order: 0, revision: hash('managed-1'), managed_server_ids: [1], metadata_revision: 0, entry_eligible: true }
     const managedNodes = [node]
@@ -60,7 +60,7 @@ try {
       if (path === '/api/me') value = { authenticated: true }
       else if (path === '/api/dashboard/access') value = { authenticated: true, public_dashboard: false }
       else if (path === `${trafficApi}/nodes`) value = managedNodes
-      else if (path === `${trafficApi}/ordered-proxy-resources`) value = proxyResourceFixtures(managedNodes, [...runtimeServers, ...(!runtimeServers.length ? [{ id: 1, name: '服务器', enabled: false, online: false }] : [])])
+      else if (path === `${trafficApi}/ordered-proxy-resources`) value = proxyResourceFixtures(managedNodes, [...runtimeServers, ...(!runtimeServers.length ? [runtimeServerFixture(1, { name: '服务器', configured: false, online: false })] : [])])
       else if (path === `${trafficApi}/ordered-subscription-sources`) value = []
       else if (path === `${trafficApi}/servers`) value = runtimeServers
       else if (path === `${accessApi}/usage`) value = { total: '0', uplink: '0', downlink: '0', by_node: [], by_user: [] }
@@ -166,7 +166,10 @@ try {
       runtimeServers.splice(0); await refresh(); await wait(() => cloneSave.isDisabled(), 'Disappeared target server blocks cloning')
       assert.equal(await dialog.getByLabel('目标服务器').inputValue(), '1')
       await forceSubmit(dialog); assert.equal(writes.length, cloneBefore, 'Unknown clone target issues zero POST'); assert.equal(await dialog.getByLabel('副本名称').inputValue(), 'TEST_ONLY 保留副本草稿'); assert.equal(await dialog.getByLabel('公开地址', { exact: true }).inputValue(), 'clone.example.com')
-      runtimeServers.push(...restoredServers); await refresh(); await wait(() => cloneSave.isEnabled(), 'Original server restores the exact clone draft')
+      runtimeServers.push({ ...restoredServers[0] }); delete runtimeServers[0].read_only
+      await refresh(); await wait(() => cloneSave.isDisabled(), 'Missing read_only field fails closed for cloning')
+      await forceSubmit(dialog); assert.equal(writes.length, cloneBefore, 'Missing read_only field issues zero POST')
+      runtimeServers.splice(0, runtimeServers.length, ...restoredServers); await refresh(); await wait(() => cloneSave.isEnabled(), 'Original server restores the exact clone draft')
       await cloneSave.click(); await dialog.waitFor({ state: 'hidden' }); await row('TEST_ONLY 保留副本草稿').waitFor()
       assert.equal(writes.length, cloneBefore + 1)
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `overflow at ${width}`)

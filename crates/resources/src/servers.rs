@@ -16,7 +16,6 @@ use ed25519_dalek::VerifyingKey;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sqlx::{FromRow, PgConnection, PgPool, Row, postgres::PgRow};
-use uuid::Uuid;
 
 pub const SERVER_COLUMNS: &str = "id, name, device_public_key, static_info, last_seen, last_contact_at, last_heartbeat_at, agent_settings, asset_settings, capabilities";
 
@@ -213,7 +212,7 @@ pub async fn list(
 pub async fn create(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(mut request): Json<CreateServerRequest>,
+    Json(request): Json<CreateServerRequest>,
 ) -> ApiResult<(StatusCode, Json<Server>)> {
     require_admin(&state, &headers).await?;
     let name = valid_name(&request.name)?;
@@ -231,11 +230,6 @@ pub async fn create(
     if request.probes.len() > 32 {
         return Err(ApiError::BadRequest("每台服务器最多配置 32 个拨测".into()));
     }
-    for spec in &mut request.probes {
-        spec.normalize();
-        spec.id = Uuid::new_v4();
-        server_observation::prepare_probe(spec)?;
-    }
     let mut transaction = state.pool.begin().await?;
     server_observation::lock_latency_tasks_tx(&mut transaction).await?;
     let query = format!(
@@ -247,21 +241,14 @@ pub async fn create(
         .bind(json!(asset))
         .fetch_one(&mut *transaction)
         .await?;
-    server_observation::save_telemetry_settings_tx(
+    server_observation::initialize_tx(
         &mut transaction,
         server.id,
         &request.telemetry_settings,
+        &request.probes,
+        &[],
     )
     .await?;
-    for spec in request.probes {
-        sqlx::query("INSERT INTO network_probes (id, server_id, spec) VALUES ($1, $2, $3)")
-            .bind(spec.id)
-            .bind(server.id)
-            .bind(json!(spec))
-            .execute(&mut *transaction)
-            .await?;
-    }
-    server_observation::assign_default_latency_tasks_tx(&mut transaction, server.id).await?;
     transaction.commit().await?;
     let mut server = server.with_online();
     server_observation::attach_live(&state, std::slice::from_mut(&mut server)).await?;

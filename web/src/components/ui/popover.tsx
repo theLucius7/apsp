@@ -21,7 +21,7 @@ function PopoverTrigger({
 function PopoverContent({
   className,
   align = "center",
-  sideOffset = 4,
+  sideOffset = 6,
   children,
   ...props
 }: React.ComponentProps<typeof PopoverPrimitive.Content>) {
@@ -33,7 +33,7 @@ function PopoverContent({
           animate={popoverMotion.animate}
           transition={popoverMotion.transition}
           className={cn(
-            "bg-popover text-popover-foreground ring-foreground/10 z-50 flex max-h-(--radix-popover-content-available-height) w-72 origin-(--radix-popover-content-transform-origin) flex-col gap-4 overflow-y-auto rounded-lg p-4 text-sm shadow-md ring-1 outline-hidden",
+            "bg-popover text-popover-foreground border-border/85 z-50 flex max-h-(--radix-popover-content-available-height) w-72 origin-(--radix-popover-content-transform-origin) flex-col gap-3.5 overflow-y-auto rounded-xl border p-4 text-sm shadow-lifted outline-hidden",
             className
           )}
         >

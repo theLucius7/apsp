@@ -16,9 +16,9 @@
 - `pack <source-lock.json> <ordinary-source-directory>` 从本地材料输出来源包。
 - `materialize <source-bundle.json> <new-private-directory>` 写入新的独立来源目录。
 
-最小 Debian 输入可以按 [ADR 0069](../../docs/adr/0069-ipquality-derived-debian-inputs.md) 从重新认证的完整固定缓存显式派生。派生只读借用原正文、以隔离离线 APT 选择精确子闭包，另存父收据、profile、缓存身份和资源证据；不是一次新的 HTTP 收集，也不批准 builder。对应源包必须携带 `ipquality-inputs.py` 和容量辅助程序的真实源码，后续 prepare 的独立复制仍须准入。
+最小 Debian 输入可以按 [ADR 0069](../../../../docs/adr/0069-ipquality-derived-debian-inputs.md) 从重新认证的完整固定缓存显式派生。派生只读借用原正文、以隔离离线 APT 选择精确子闭包，另存父收据、profile、缓存身份和资源证据；不是一次新的 HTTP 收集，也不批准 builder。对应源包必须携带 `ipquality-inputs.py` 和容量辅助程序的真实源码，后续 prepare 的独立复制仍须准入。
 
-开发树可以按既有固定 SHA256 从 `plugins/nodequality/` 读取九份纯源码转换策略。发布的源码包在 `plugins/ipquality/policies/` 保存它们的独立精确副本。运行根文件系统只需要已派生脚本和传输守卫，不需要 NodeQuality 的其他代码、固定来源包或商业工具。
+开发树可以按既有固定 SHA256 从 `crates/observability/upstream/nodequality/` 读取九份纯源码转换策略。发布的源码包仍按制品格式在 `plugins/ipquality/policies/` 保存它们的独立精确副本。运行根文件系统只需要已派生脚本和传输守卫，不需要 NodeQuality 的其他代码、固定来源包或商业工具。
 
 运行时固定路径为 `/usr/local/lib/apsp-ipquality/patched-ip.sh`、`transport.py`、`ip-iso3166.json`、`ip-dnsbl.list`。`/usr/local/bin/curl` 只调用这份固定 `transport.py`；真正 HTTP 客户端固定为 `/usr/bin/curl`，避免递归或宿主 PATH 注入。工具来自独立离线 Debian 12 闭包：Bash、Python 3、curl、jq、coreutils、grep、sed、gawk、bc、CA 证书及其依赖。不得在执行时安装依赖或降级到宿主工具。
 

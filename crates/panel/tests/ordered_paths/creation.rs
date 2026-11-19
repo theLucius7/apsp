@@ -272,10 +272,30 @@ async fn loop_duplicate_endpoint_and_unsupported_agent_never_create_partial_reso
         assert!(response.status().is_client_error());
         assert_eq!(counts(&fixture).await?, before);
     }
-    sqlx::query("UPDATE servers SET capabilities='[]' WHERE id=$1")
-        .bind(fixture.servers[2])
-        .execute(&fixture.panel.state.pool)
-        .await?;
+    let cred_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO credential_entries(id,name,kind,key_id,nonce,ciphertext,created_at,updated_at) VALUES($1,'TEST_ONLY nexus','external-api','test',$2,$3,1,1)",
+    )
+    .bind(cred_id)
+    .bind(vec![0u8; 12])
+    .bind(vec![1u8; 16])
+    .execute(&fixture.panel.state.pool)
+    .await?;
+    sqlx::query(
+        "INSERT INTO singbox_nexus_node_imports(source_id,digest,infrastructure_digest,exported_at,imported_at,node_count) VALUES('nexus-test',$1,$2,1,1,1)",
+    )
+    .bind("a".repeat(64))
+    .bind("b".repeat(64))
+    .execute(&fixture.panel.state.pool)
+    .await?;
+    sqlx::query(
+        "INSERT INTO singbox_nexus_runtime_hosts(server_id,source_id,credential_id,digest,state,created_at) VALUES($1,'nexus-test',$2,$3,'active',1)",
+    )
+    .bind(fixture.servers[2])
+    .bind(cred_id)
+    .bind("a".repeat(64))
+    .execute(&fixture.panel.state.pool)
+    .await?;
     let before = counts(&fixture).await?;
     api(
         &fixture.panel,
@@ -287,6 +307,35 @@ async fn loop_duplicate_endpoint_and_unsupported_agent_never_create_partial_reso
     )
     .await?;
     assert_eq!(counts(&fixture).await?, before);
+    sqlx::query("DELETE FROM singbox_nexus_runtime_hosts WHERE server_id=$1")
+        .bind(fixture.servers[2])
+        .execute(&fixture.panel.state.pool)
+        .await?;
+
+    // Legacy or capability-missing Agents no longer block saving desired service config;
+    // the chain saves cleanly and stays blocked in preparation until Agent upgrade.
+    sqlx::query("UPDATE servers SET capabilities='[]' WHERE id=$1")
+        .bind(fixture.servers[2])
+        .execute(&fixture.panel.state.pool)
+        .await?;
+    let queued = chain(&create(&fixture, "pinned", false).await?)?;
+    let user = authorize(&fixture, queued).await?;
+    fixture.panel.publish_now().await?;
+    confirm_devices(&fixture.panel.state).await?;
+    apsp_traffic::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
+    let (queued_phase, queued_route, queued_error): (String, bool, Option<String>) =
+        sqlx::query_as("SELECT phase,route_enabled,last_error FROM singbox_chains WHERE id=$1")
+            .bind(queued)
+            .fetch_one(&fixture.panel.state.pool)
+            .await?;
+    assert_eq!(queued_phase, "preparing_dependencies");
+    assert!(!queued_route);
+    assert!(
+        queued_error
+            .as_deref()
+            .is_some_and(|text| text.contains("upgrade_required"))
+    );
+    assert!(subscription_nodes(&subscription(&fixture, &user).await?).is_empty());
     Ok(())
 }
 
@@ -405,5 +454,157 @@ async fn resource_mutations_use_revision_cas_and_exact_immutable_receipts(
     assert_eq!(view["settings_revision"], 2);
     assert_eq!(view["path_state"]["desired_generation"], 1);
     no_secrets(&view);
+    Ok(())
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn unconfigured_and_legacy_servers_queue_chains_while_strong_identity_guards_activation(
+    pool: PgPool,
+) -> Result<()> {
+    let fixture = fixture(pool.clone()).await?;
+    let entry_server = fixture
+        .panel
+        .create_server(&fixture.cookie, "Pure monitor entry")
+        .await?;
+    let hop_server = fixture
+        .panel
+        .create_server(&fixture.cookie, "Legacy hop")
+        .await?;
+    sqlx::query(
+        "UPDATE servers SET device_public_key='TEST_ONLY-legacy',last_seen=$2,capabilities=$3,static_info=$4 WHERE id=$1",
+    )
+    .bind(hop_server)
+    .bind(now_timestamp())
+    .bind(json!(["singbox"]))
+    .bind(json!({"os": "linux", "arch": apsp_protocol::release::native_arch()?, "libc": "musl"}))
+    .execute(&pool)
+    .await?;
+
+    let initial_entry = api(
+        &fixture.panel,
+        &fixture.cookie,
+        Method::GET,
+        &format!("/servers/{entry_server}"),
+        None,
+        StatusCode::OK,
+    )
+    .await?;
+    assert_eq!(initial_entry["configured"], false);
+    assert_eq!(initial_entry["status"]["state"], "unconfigured");
+
+    let hop_node = id(&api(
+        &fixture.panel,
+        &fixture.cookie,
+        Method::POST,
+        "/nodes",
+        Some(json!({
+            "name": "Hop",
+            "server_id": hop_server,
+            "public_host": "hop.example.net",
+            "sni": "www.example.com",
+        })),
+        StatusCode::CREATED,
+    )
+    .await?)?;
+    let created = api(
+        &fixture.panel,
+        &fixture.cookie,
+        Method::POST,
+        "/chains/ordered-batch",
+        Some(json!({
+            "request_id": Uuid::new_v4(),
+            "items": [{
+                "name": "Queued chain",
+                "entry": {
+                    "mode": "new",
+                    "server_id": entry_server,
+                    "public_host": "queued-entry.example.net",
+                    "sni": "www.example.com",
+                },
+                "hops": [
+                    {"kind": "managed", "node_id": hop_node},
+                    {
+                        "kind": "subscription",
+                        "source_id": fixture.source,
+                        "external_node_id": fixture.external["id"],
+                        "node_version_id": fixture.external["version_id"],
+                        "update_mode": "pinned",
+                    },
+                ],
+            }],
+        })),
+        StatusCode::CREATED,
+    )
+    .await?;
+    let chain = chain(&created)?;
+
+    let entry_after = api(
+        &fixture.panel,
+        &fixture.cookie,
+        Method::GET,
+        &format!("/servers/{entry_server}"),
+        None,
+        StatusCode::OK,
+    )
+    .await?;
+    let hop_after = api(
+        &fixture.panel,
+        &fixture.cookie,
+        Method::GET,
+        &format!("/servers/{hop_server}"),
+        None,
+        StatusCode::OK,
+    )
+    .await?;
+    assert_eq!(entry_after["configured"], true);
+    assert_eq!(entry_after["status"]["state"], "waiting_agent");
+    assert_eq!(hop_after["configured"], true);
+    assert_eq!(hop_after["status"]["state"], "upgrade_required");
+
+    let view = resource(&fixture, chain).await?;
+    assert_eq!(view["available"], true);
+    assert!(view["entry"].get("runtime_enabled").is_none());
+
+    let user = authorize(&fixture, chain).await?;
+    fixture.panel.publish_now().await?;
+    apsp_traffic::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
+    assert_eq!(phase(&fixture, chain).await?, "preparing_dependencies");
+
+    // A forged/unsigned Agent digest cannot certify stage checkpoints even when checkpoints arrive.
+    mark_verified_self_contained_agent(
+        &pool,
+        entry_server,
+        &fixture.agent_sha,
+        &fixture.singbox_sha,
+    )
+    .await?;
+    mark_verified_self_contained_agent(&pool, hop_server, &"f".repeat(64), &fixture.singbox_sha)
+        .await?;
+    confirm_devices(&fixture.panel.state).await?;
+    apsp_traffic::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
+    assert_eq!(phase(&fixture, chain).await?, "preparing_dependencies");
+    assert!(subscription_nodes(&subscription(&fixture, &user).await?).is_empty());
+
+    // Genuine signed running component identity allows full checkpoint/probe/barrier completion.
+    mark_verified_self_contained_agent(&pool, hop_server, &fixture.agent_sha, &fixture.singbox_sha)
+        .await?;
+    advance(&fixture, chain, "applied").await?;
+    let (applied_route, applied_error): (bool, Option<String>) =
+        sqlx::query_as("SELECT route_enabled,last_error FROM singbox_chains WHERE id=$1")
+            .bind(chain)
+            .fetch_one(&pool)
+            .await?;
+    assert!(applied_route);
+    assert!(applied_error.is_none());
+
+    // Temporary heartbeat silence does not erase an already certified path from subscriptions.
+    sqlx::query("UPDATE servers SET last_seen=1 WHERE id=ANY($1)")
+        .bind(vec![entry_server, hop_server])
+        .execute(&pool)
+        .await?;
+    assert_eq!(
+        subscription_nodes(&subscription(&fixture, &user).await?).len(),
+        1
+    );
     Ok(())
 }

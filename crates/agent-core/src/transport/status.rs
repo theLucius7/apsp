@@ -104,6 +104,7 @@ mod tests {
             connected: Arc::new(AtomicBool::new(true)),
             public_ips: Arc::new(vec![]),
             agent_version: "fixture-agent",
+            bundle: Default::default(),
             retirement: None,
             cancellation: None,
             runtime_control: None,
@@ -125,8 +126,21 @@ mod tests {
         assert!(bind(&socket).await.is_err());
         let mut tasks = JoinSet::new();
         tasks.spawn(serve(bound, runtime.clone()));
+        runtime
+            .bundle
+            .ready
+            .store(false, std::sync::atomic::Ordering::Release);
+        let unready = status(&socket).await?;
+        assert!(unready["agent_version"].is_null());
+        assert!(unready["pid"].is_null());
+        assert_eq!(unready["bundle_ready"], false);
+        runtime
+            .bundle
+            .ready
+            .store(true, std::sync::atomic::Ordering::Release);
         let value = status(&socket).await?;
         assert_eq!(value["agent_version"], "fixture-agent");
+        assert_eq!(value["bundle_ready"], true);
         assert_eq!(value["connected"], true);
         assert_eq!(value["applied"], json!({}));
         assert_eq!(value["pending_batches"], 0);

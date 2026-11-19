@@ -2,7 +2,7 @@
 import hashlib
 
 MAX_SOURCE = 2 * 1024 * 1024
-SOURCES = {'ip.sh': {'source_sha256': '00d6b1a19c74bcfd720796b56985db10175fc99860447ffc38b301e10246e1cb', 'patched_sha256': '66c7f3c662f24bdccbd142acf25d2a176fbe72ff417848ef977aa755d6d38c8e'}}
+SOURCES = {'ip.sh': {'source_sha256': '2a6b99247ea3b9ad8b897945186739495f6d6c17c1f8f2f5ba8d9cde51f11728', 'patched_sha256': 'cb194ca6e2441ef73d8d2ffd348407e6081442ee3513d4fc8c850335b2bab089'}}
 
 HELPERS = r'''# Apsp modification (2026-10-01): a failed request is unknown, never unlocked.
 apsp_netflix_unknown(){

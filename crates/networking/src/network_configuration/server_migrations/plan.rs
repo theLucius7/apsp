@@ -103,7 +103,8 @@ pub(super) async fn build(
             config,
             Configuration::Domain { .. } | Configuration::Certificate { .. }
         ) {
-            notes.push("DDNS规则、DNS账号和签发凭据保持原引用；DNS地址同步另用插件迁移预览");
+            notes
+                .push("DDNS规则、DNS账号和签发凭据保持原引用；DNS地址同步另用名称与证书的迁移预览");
         }
         if let Configuration::Endpoint {
             public_address: Some(_),

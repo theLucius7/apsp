@@ -1,4 +1,3 @@
-mod cache;
 mod cancellation;
 mod github;
 use crate::config::validate_panel_url;
@@ -7,8 +6,7 @@ mod preflight;
 mod tests;
 mod verification;
 use anyhow::{Context, Result, ensure};
-use apsp_adapter_sdk::{Descriptor, Privileged};
-use apsp_protocol::release::{ReleaseError, ReleaseProof, TrustedKeys, VerifiedArtifact};
+use apsp_protocol::release::{ReleaseError, ReleaseProof, TrustedKeys};
 use apsp_protocol::{
     Artifact, Bundle, DiagnosticJob, DiagnosticSectionUpdate, DiagnosticUpdate, Manifest,
 };
@@ -18,14 +16,15 @@ use reqwest::{Client, Url, redirect::Policy};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
-    path::{Component, Path, PathBuf},
+    path::{Component, Path},
     time::Duration,
 };
-use uuid::Uuid;
-pub(crate) use verification::{installed_descriptor, verify_expected};
+pub(crate) use verification::{
+    installed_descriptor, verify_expected, verify_file_digest, verify_installed_bundle,
+    verify_local_cached_artifact,
+};
 pub use verification::{verify_installed_binary, verify_release_directory};
 
-const MAX_DOWNLOAD: usize = 512 * 1024 * 1024;
 const MAX_JSON: usize = 32 * 1024 * 1024;
 const MARKER: &str = ".artifact.json";
 
@@ -112,6 +111,8 @@ impl PanelClient {
         ensure!(
             verified.metadata().format == "raw"
                 && verified.metadata().binary_name == crate::system::deploy::executable_name()
+                && verified.metadata().archive_size <= apsp_protocol::release::MAX_AGENT_RAW_BYTES
+                && verified.metadata().binary_size <= apsp_protocol::release::MAX_AGENT_RAW_BYTES
                 && artifact.url == expected,
             "Agent update identity differs from signed release"
         );
@@ -248,46 +249,6 @@ impl PanelClient {
         self.keys
             .as_ref()
             .map_err(|error| anyhow::anyhow!(error.to_string()))
-    }
-
-    pub(crate) fn runtime_descriptor(
-        &self,
-        artifact: &Artifact,
-        version: &str,
-        adapter: &dyn apsp_adapter_sdk::Adapter,
-    ) -> Result<Descriptor> {
-        verification::runtime_descriptor(
-            adapter,
-            version,
-            artifact
-                .proof
-                .as_ref()
-                .context("artifact has no signed release proof")?,
-            self.keys()?,
-        )
-    }
-
-    pub(crate) fn verify_artifact(
-        &self,
-        artifact: &Artifact,
-        version: &str,
-        descriptor: &Descriptor,
-    ) -> Result<VerifiedArtifact> {
-        let url = self.validate_url(&artifact.url)?;
-        let proof = artifact
-            .proof
-            .as_ref()
-            .context("artifact has no signed release proof")?;
-        let verified = verification::signed_artifact(proof, descriptor, version, self.keys()?)?;
-        ensure!(
-            url.path() == format!("/api/agent/v1/artifacts/{}", verified.path()),
-            "artifact URL differs from signed identity"
-        );
-        ensure!(
-            normalized_hash(&artifact.sha256)? == verified.sha256(),
-            "artifact digest differs from signed release"
-        );
-        Ok(verified)
     }
 
     fn validate_url(&self, value: &str) -> Result<Url> {
@@ -446,11 +407,11 @@ impl PanelClient {
     }
 }
 
-async fn ensure_ordinary_directory_if_present(path: &Path) -> Result<()> {
+pub(crate) async fn ensure_ordinary_directory_if_present(path: &Path) -> Result<()> {
     match tokio::fs::symlink_metadata(path).await {
         Ok(metadata) => ensure!(
             metadata.is_dir(),
-            "artifact plugin path is not an ordinary directory"
+            "artifact cache path is not an ordinary directory"
         ),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => return Err(error.into()),
@@ -475,5 +436,5 @@ pub(crate) async fn verify_expected_agent(
             == Some(version),
         "Agent update version directory mismatch"
     );
-    verification::verify_binary_with_keys(binary, "agent", "raw", keys).await
+    verification::verify_binary_with_keys(binary, "agent", "raw", keys, None).await
 }

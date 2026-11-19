@@ -1,14 +1,36 @@
 use base64::{Engine, engine::general_purpose::STANDARD};
 use minisign_verify::{PublicKey, Signature};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt::Write as _,
+};
 use thiserror::Error;
 
 pub const RELEASE_SCHEMA: u32 = 1;
 pub const RELEASE_SOURCE_REPO: &str = "theLucius7/apsp";
 pub const VERSIONED_RUNTIME_FILES_CAPABILITY: &str = "artifact:versioned-runtime-files-v1";
 pub const ARTIFACT_SIGNATURE_CAPABILITY: &str = "artifact:minisign-v1";
+pub const SELF_CONTAINED_AGENT_CAPABILITY: &str = "agent:self-contained:v1";
+pub const MAX_AGENT_RAW_BYTES: u64 = 128 * 1024 * 1024;
+
+pub fn is_valid_agent_release_entry(entry: &ReleaseArtifact) -> bool {
+    let expected_binary = if entry.arch.starts_with("windows-") {
+        "apsp-agent.exe"
+    } else {
+        "apsp-agent"
+    };
+    entry.name == "agent"
+        && entry.format == "raw"
+        && entry.binary_name == expected_binary
+        && entry.auxiliary_files.is_empty()
+        && entry.archive_size == entry.binary_size
+        && (1..=MAX_AGENT_RAW_BYTES).contains(&entry.binary_size)
+        && valid_digest(&entry.binary_sha256)
+        && crate::upgrade::release_version(&entry.version).is_some()
+        && crate::platform::ARTIFACT_TARGETS.contains(&entry.arch.as_str())
+        && canonical_asset_name(entry).is_ok_and(|expected| expected == entry.asset_name)
+}
 pub const MAX_CHECKSUMS_BYTES: usize = 8 * 1024;
 pub const MAX_METADATA_BYTES: usize = 32 * 1024;
 pub const MAX_SIGNATURE_BYTES: usize = 16 * 1024;
@@ -412,5 +434,10 @@ fn valid_digest(value: &str) -> bool {
 }
 
 fn digest(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
+    let digest = ring::digest::digest(&ring::digest::SHA256, bytes);
+    let mut encoded = String::with_capacity(64);
+    for byte in digest.as_ref() {
+        write!(&mut encoded, "{byte:02x}").expect("write digest to String");
+    }
+    encoded
 }

@@ -19,8 +19,9 @@ import urllib.request
 
 from legacy_agent_checkpoint import preflight as legacy_checkpoint_preflight
 
-from release import (REPOSITORY, VERSION, digest, ensure, load_roots, read_regular,
-                     require_protected_file, validate_manifest, verify_manifest)
+from release import (MAX_AGENT_RAW, REPOSITORY, VERSION, digest, ensure, load_roots,
+                     read_regular, require_protected_file, validate_manifest,
+                     verify_manifest)
 
 GITHUB_DOWNLOAD_HOSTS = frozenset(("github.com", "release-assets.githubusercontent.com",
                                     "objects.githubusercontent.com"))
@@ -341,7 +342,8 @@ def select_artifact(metadata, version, actual, requested="auto"):
             ensure(len(matches) == 1, "签名发布重复了本机 Agent 身份")
             item = matches[0]
             ensure(item["format"] == "raw" and item["binary_name"] == "apsp-agent"
-                   and item["archive_size"] == item["binary_size"], "签名 Agent 格式不匹配")
+                   and item["archive_size"] == item["binary_size"]
+                   and 0 < item["archive_size"] <= MAX_AGENT_RAW, "签名 Agent 格式不匹配")
             return item
     raise IncompatibleRelease(f"签名发布 {version} 没有本机 {actual} 可运行的 Agent")
 
@@ -350,7 +352,7 @@ def download_agent(item, destination, mirror="", release_dir=None):
     """Fetch only the signed raw asset from its official GitHub tag, never the panel."""
     expected_size = item["archive_size"]
     name = item["asset_name"]
-    ensure(type(expected_size) is int and 0 < expected_size <= 256 * 1024 * 1024
+    ensure(type(expected_size) is int and 0 < expected_size <= MAX_AGENT_RAW
            and item["format"] == "raw" and item["binary_size"] == expected_size,
            "已签 Agent 大小或格式无效")
     ensure(VERSION.fullmatch(item["version"]) and Path(name).name == name

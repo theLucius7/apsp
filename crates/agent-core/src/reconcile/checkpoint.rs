@@ -15,7 +15,15 @@ pub(super) struct Activation {
     activation_id: Uuid,
     revision: u64,
     pub(super) bundle_sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) binary_sha256: Option<String>,
     instance: RuntimeInstance,
+}
+
+impl Activation {
+    pub(super) fn instance_snapshot(&self) -> RuntimeInstance {
+        self.instance.clone()
+    }
 }
 
 impl Reconciler {
@@ -43,6 +51,35 @@ impl Reconciler {
             .map(Option::flatten)
     }
 
+    pub(super) async fn runtime_binary_sha256(&self, runtime: &Prepared) -> Result<String> {
+        use sha2::{Digest, Sha256};
+        use tokio::io::AsyncReadExt;
+
+        if let Some(directory) = runtime.spec.binary_path.parent()
+            && let Some(manifest) = crate::bundled::read_bundled_manifest(directory).await?
+        {
+            self.verify_runtime_inventory(&runtime.spec.binary_path, &manifest)
+                .await?;
+            return Ok(manifest.binary_sha256);
+        }
+        let metadata = tokio::fs::symlink_metadata(&runtime.spec.binary_path).await?;
+        ensure!(
+            metadata.is_file() && !metadata.file_type().is_symlink(),
+            "runtime executable must be an ordinary file"
+        );
+        let mut file = tokio::fs::File::open(&runtime.spec.binary_path).await?;
+        let mut hash = Sha256::new();
+        let mut buffer = vec![0_u8; 256 * 1024];
+        loop {
+            let count = file.read(&mut buffer).await?;
+            if count == 0 {
+                break;
+            }
+            hash.update(&buffer[..count]);
+        }
+        Ok(format!("{:x}", hash.finalize()))
+    }
+
     pub(super) async fn validate_activation(
         &self,
         runtime: &Prepared,
@@ -55,6 +92,21 @@ impl Reconciler {
                     && activation.bundle_sha256 == runtime.spec.config_hash,
                 "certified activation does not identify the applied revision"
             );
+            if self.bundled.is_some() {
+                let expected_sha = activation
+                    .binary_sha256
+                    .as_deref()
+                    .context("certified activation lacks executable digest for built-in runtime")?;
+                ensure!(
+                    self.runtime_binary_sha256(runtime).await? == expected_sha,
+                    "certified activation binary digest differs from applied executable"
+                );
+            } else if let Some(expected_sha) = &activation.binary_sha256 {
+                ensure!(
+                    self.runtime_binary_sha256(runtime).await? == *expected_sha,
+                    "certified activation binary digest differs from applied executable"
+                );
+            }
             ensure!(
                 self.inspect_runtime(runtime).await? == activation.instance,
                 "controlled runtime instance differs from the successfully applied activation"
@@ -80,10 +132,15 @@ impl Reconciler {
             return Ok(None);
         }
         let instance = self.inspect_runtime(runtime).await?;
+        let binary_sha256 = self.runtime_binary_sha256(runtime).await?;
         if let Some(preserved) = preserved {
             ensure!(
                 preserved.bundle_sha256 == runtime.spec.config_hash
-                    && preserved.instance == instance,
+                    && preserved.instance == instance
+                    && preserved
+                        .binary_sha256
+                        .as_deref()
+                        .is_none_or(|old| old == binary_sha256),
                 "unchanged deployment cannot certify a different configuration or process instance"
             );
         }
@@ -93,6 +150,7 @@ impl Reconciler {
                 .unwrap_or_else(Uuid::new_v4),
             revision: runtime.spec.revision,
             bundle_sha256: runtime.spec.config_hash.clone(),
+            binary_sha256: Some(binary_sha256),
             instance,
         }))
     }

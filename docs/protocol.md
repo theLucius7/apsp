@@ -66,7 +66,7 @@ Linux 宿主 ABI 与 Agent 编译 ABI 不同时，运行时先保留旧的编译
 
 - `GET /api/agent/v1/manifest` → `{rev,modules:{module:{kernel_version,artifact:{url,sha256,proof},config_rev,bundle_url,bundle_sha256,stats_listen}}}`。
 - 配置包 URL → `{files:{"config.json":"配置文件文本"}}`。sha256 是 HTTP 响应原始 UTF-8 字节的 SHA-256 小写十六进制，不是重新序列化的摘要。
-- `GET /api/agent/v1/artifacts/{name}/{version}/{arch}` → 制品原始字节。路径段限定安全字符；`arch` 是完整平台标识（例如 `linux-gnu-amd64`、`linux-musl-arm64`），或旧发布的 `amd64` / `arm64` 兼容键。所有下载均校验已签清单中的 SHA-256。
+- `GET /api/agent/v1/artifacts/{name}/{version}/{arch}` → 制品原始字节。路径段限定安全字符；内部适配器描述使用 `artifact_name`，设备 URL、已签制品路径与本机目录保持原契约（ADR 0140）；`arch` 是完整平台标识（例如 `linux-gnu-amd64`、`linux-musl-arm64`），或旧发布的 `amd64` / `arm64` 兼容键。所有下载均校验已签清单中的 SHA-256。
 
 `proof` 为 `{metadata_json,checksums,signature}`；`signature` 保留完整四行 `SHA256SUMS.minisig`，正文是 `checksums` 原始 UTF-8 字节。已签清单绑定 metadata 原始摘要、制品路径与压缩包摘要，metadata 进一步绑定仓库、发布 tag、协议范围、版本、架构、格式、安装后二进制摘要和大小。新 Agent 在应用、缓存命中、恢复、回滚及诊断执行前都以构建时固定的多个公钥验证证明与实际内容，不能把本地 marker 中的未签摘要当作可信值。格式与信任根轮换见 [ADR 0017](adr/0017-signed-release-artifacts.md)。
 
@@ -90,23 +90,23 @@ Linux 宿主 ABI 与 Agent 编译 ABI 不同时，运行时先保留旧的编译
 
 统计用户名格式为 `u{user_id}_n{node_id}`，用于唯一定位用户与节点，不应从入站标签猜测归属。
 
-## 一次性诊断外插
+## 一次性诊断任务
 
-新增内容保持协议主版本 1。旧 Agent 不发送 `ip_addresses` 时按空数组处理，不声明诊断能力时面板不下发新任务。新 Agent 在 hello 的 capabilities 中声明 `diagnostic:nodequality`，仍独立声明已有运行时模块。
+新增内容保持协议主版本 1。旧 Agent 不发送 `ip_addresses` 时按空数组处理，不声明诊断能力时面板不下发新任务。新 Agent 在 hello 的 capabilities 中按适配器 `artifact_name` 声明 `diagnostic:nodequality` 等能力，仍独立声明已有运行时模块。
 
-设备接口继续使用绑定服务器身份的 Bearer session：
+设备接口继续使用绑定服务器身份的 Bearer session（内部 Rust 模型字段为 `tool`，设备 wire JSON、数据库任务记录与本地检查点通过 `#[serde(rename = "plugin")]` 保留已发布 Agent 的 `plugin` 键，控制台呈现边界则投影为 `ReportRecord.job.tool`）：
 
-- `GET /api/agent/v1/diagnostics` 返回该设备尚未终止的任务数组，每个为 `{id,plugin,version,artifact:{url,sha256,proof},timeout_secs,expires_at?,options}`。
-- `POST /api/agent/v1/diagnostics/{id}` 提交 `{id,status,report?,error?}`。设备可提交的 status 是 `running`、`succeeded`、`failed`，最终报告为 `{text,report_url?}`。数据库持久化后返回 204；其他设备不能更新该任务，过期会话不能取回任务。
+- `GET /api/agent/v1/diagnostics` 返回该设备尚未终止的任务数组，每个 wire JSON 为 `{id,plugin,version,artifact:{url,sha256,proof},timeout_secs,expires_at?,resource_budget?,options}`。
+- `POST /api/agent/v1/diagnostics/{id}` 提交 `{id,status,report?,error?}`。设备可提交的 status 是 `running`、`cleaning`、`succeeded`、`failed`，最终报告为 `{text,report_url?}`。数据库持久化后返回 204；其他设备不能更新该任务，过期会话不能取回任务。
 
-确认式取消是独立扩展，能力为 `diagnostic:confirmed-cancel`。管理员取消接口先持久保存 `cancel_requested` 再发送 `diagnostic.cancel.request={server_id,job}`，其中 job 是该服务器已有任务；协议不接受任意单元名。设备先保存取消意图、停止绑定单元并核实进程与挂载都已清理，再发送 `diagnostic.cancel.result={server_id,id,plugin,confirmed,report?,error?}`。只有经设备身份认证的 `confirmed=true` 使任务进入 `cancelled`；普通 `DiagnosticUpdate` 不能提交取消状态。
+确认式取消是独立扩展，能力为 `diagnostic:confirmed-cancel`。管理员取消接口先持久保存 `cancel_requested` 再发送 `diagnostic.cancel.request={server_id,job}`，其中 job 是该服务器已有任务；协议不接受任意单元名。设备先保存取消意图、停止绑定单元并核实进程与挂载都已清理，再发送 `diagnostic.cancel.result={server_id,id,plugin,confirmed,report?,error?}`（内部字段为 `tool`，wire JSON 键为 `plugin`）。只有经设备身份认证的 `confirmed=true` 使任务进入 `cancelled`；普通 `DiagnosticUpdate` 不能提交取消状态。
 
 `GET /api/agent/v1/diagnostics/cancellations` 返回当前设备的待取消请求（最多 64 条），`POST /api/agent/v1/diagnostics/{id}/cancel-confirmation` 持久保存取消结果并返回 204。HTTP pending 与 Agent SQLite outbox 恢复断连和重启。确认前界面显示“等待设备确认取消”；负确认、过期或末尾自然报告不结束该状态，已有报告保留。重复请求和确认幂等，已自然完成任务拒绝新取消。缺少能力的旧 Agent / 服务后端明确不支持。具体清理证据与并发边界见 [ADR 0026](adr/0026-confirmed-diagnostic-cancellation.md)。
 
-NodeQuality 的 plugin 标识为 `nodequality`，version 为固定上游提交加包装器版本（当前为 `a92fca6c0067df29ddd03fdc2fee6f3000f64545-r5`），制品同源、校验后安装。新任务 options 允许 `mode=daily|full`、`ip_version=both|ipv4|ipv6`、`network_mode=low|normal`、`upload_report=true|false`、固定 `environment_section=true`，日常另带来自该服务器已启用 TCP 拨测的白名单 `daily_targets`（最多4个、8KiB）。日常只接受 low/false，不执行硬件或上游脚本。`upload_report` 在管理员创建任务的 HTTP 请求中为布尔值，缺省 `false`；在公共任务中为固定字符串，缺少时新 Agent 按关闭处理。旧 Agent 拒绝新版本和未知选项，不通过忽略隐私选项继续运行旧包。升级必须先准备 r5 包；新面板只向已识别 Linux、声明 `diagnostic:report-sections` 和 `diagnostic:nodequality-modes` 的 Agent 创建 r5 任务。新 Agent 保留 r2/r3/r4/r5 已有 Started checkpoint 的收集与取消，旧报告内容保留。任务不携带任意命令、程序地址或自由 shell 参数。
+NodeQuality 的工具标识为 `nodequality`，version 为固定上游提交加包装器版本（当前源码默认 `TOOL_VERSION` 为 `a92fca6c0067df29ddd03fdc2fee6f3000f64545-r22`），制品同源、校验后安装。新任务 options 允许 `mode=daily|full`、`ip_version=both|ipv4|ipv6`、`network_mode=low|normal`、`upload_report=true|false`、固定 `environment_section=true`，日常另带来自该服务器已启用 TCP 拨测的白名单 `daily_targets`（最多4个、8KiB）。日常只接受 low/false，不执行硬件或上游脚本。`upload_report` 在管理员创建任务的 HTTP 请求中为布尔值，缺省 `false`；在公共任务中为固定字符串，缺少时新 Agent 按关闭处理。旧 Agent 拒绝新版本和未知选项，不通过忽略隐私选项继续运行旧包。新面板只向已识别 Linux、声明 `diagnostic:report-sections` 和 `diagnostic:nodequality-modes` 的 Agent 创建对应任务。新 Agent 保留历史已有 Started checkpoint 的收集与取消，旧报告内容保留。任务不携带任意命令、程序地址或自由 shell 参数。
 
 
-临时安全门禁不修改上述任务序列化格式：新完整任务在两种创建入口都返回 409。NodeQuality 视图另返回 `full_ready=false` 与 `full_reason`；`plugin_ready` 只表示日常插件就绪。旧排队完整任务保存失败原因且保留 `agent_completed=false`，可接收迟到章节/报告及取消；旧运行任务仅向声明 `diagnostic:nodequality-full-start-gate` 的 Agent 重发，升级后的适配器拒绝 Preparing 完整任务的新执行，已有 Started 不重跑。门禁前已领取任务的旧 Agent 须升级或确认取消，面板不能撤回已返回的 HTTP。历史 `upload_report=false` 只关闭顶层公开上传，不能证明内层没有外发；见 [ADR0031](adr/0031-nodequality-full-start-gate.md)。
+临时安全门禁不修改上述任务序列化格式：新完整任务在两种创建入口都返回 409。NodeQuality 视图另返回 `full_ready=false` 与 `full_reason`；`tool_ready`（及 `tool_reason`）只表示日常诊断工具就绪。旧排队完整任务保存失败原因且保留 `agent_completed=false`，可接收迟到章节/报告及取消；旧运行任务仅向声明 `diagnostic:nodequality-full-start-gate` 的 Agent 重发，升级后的适配器拒绝 Preparing 完整任务的新执行，已有 Started 不重跑。门禁前已领取任务的旧 Agent 须升级或确认取消，面板不能撤回已返回的 HTTP。历史 `upload_report=false` 只关闭顶层公开上传，不能证明内层没有外发；见 [ADR0031](adr/0031-nodequality-full-start-gate.md)。
 
 
 任务 ID 同时用于设备持久 checkpoint、独立服务及面板去重。先记录启动意图再创建 systemd 服务；Agent 重启检查已有服务并继续观察，不自动重复运行。启动边界状态不明或服务消失时回报失败，管理员可另发新任务。结果确认前保存并重传；终态不能被晚到的 running 覆盖。每台设备最多一个活跃任务。代理配置版本与用户流量周期不会因诊断任务变化。
@@ -131,6 +131,6 @@ Agent 收到请求后持久阻止新的受管操作，停止运行时与诊断�
 
 ## 共用诊断任务服务
 
-管理员用 `GET /api/servers/{id}/diagnostics` 查看登记插件就绪状态及最近任务，`POST /api/servers/{id}/diagnostics/{plugin}` 提交插件参数。只允许已登记插件，所有创建入口共享服务器锁；旧 NodeQuality 路由保留。Agent 结果、章节、待取消及确认接口维持原设备范围认证。
+管理员用 `GET /api/servers/{id}/diagnostics`（返回 `{cancel_supported,tools,reports}`）查看已登记诊断工具就绪状态及最近任务，`POST /api/servers/{id}/diagnostics/{tool}` 提交工具参数。只允许已登记诊断工具，所有创建入口共享服务器锁；既有 NodeQuality 路由保留。Agent 结果、章节、待取消及确认接口维持原设备范围认证与 wire `plugin` 键。
 
 `DiagnosticJob` 增量字段 `resource_budget` 为对象，包含 `memory_max`（字节）、`tasks_max`、`cpu_weight`、`io_weight`、`oom_score_adjust`。新任务需 `diagnostic:job-service`；旧字段缺失代表适配器原预算。Agent 在预检前验证并应用，只可收紧适配器准备的限制。任务 JSON 与历史表不迁移，旧设备回报的历史任务及章节仍可接收。

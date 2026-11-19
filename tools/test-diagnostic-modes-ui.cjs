@@ -14,16 +14,16 @@ async function main() {
     await page.route('**/api/**', async route => {
       const request = route.request(), path = new URL(request.url()).pathname
       let data = []
-      if (path === '/api/me') data = {}
+      if (path === '/api/dashboard/access') data = { authenticated: true, public_dashboard: false }
       else if (path === '/api/servers/1') data = {
         id: 1, name: '检查入口验收夹具', device_public_key: 'TEST_ONLY', static_info: {},
         latest_metrics: {}, manifest_rev: 0, capabilities: [], online: true, last_seen: 1700000000,
       }
-      else if (path === '/api/traffic/servers/1') data = { id: 1, name: '检查入口验收夹具', enabled: false, source: null, read_only: false, online: true, agent_supported: false }
+      else if (path === '/api/traffic/servers/1') data = { id: 1, name: '检查入口验收夹具', configured: false, online: true, agent_supported: true, read_only: false, source: null, runtime_version: null, status: { state: 'unconfigured', reason: '', target_rev: 0, applied_rev: 0, current_healthy: false } }
       else if (path.endsWith('/deployments')) data = { status: null, history: [] }
       else if (path.endsWith('/agent-settings')) data = { sample_interval_secs: 1, upload_interval_secs: 3, auto_update: false, discover_public_ips: false }
       else if (path.endsWith('/node-quality/reports') && request.method() === 'GET') data = {
-        plugin_ready: ready, cancel_supported: true, plugin_reason: ready ? null : '请升级支持日常检查入口的 Linux Agent', reports,
+        tool_ready: ready, full_ready: ready, full_reason: null, cancel_supported: true, tool_reason: ready ? null : '请升级支持日常检查入口的 Linux Agent', reports,
         proxy_activity: { state: activity, reason: activity === 'active' ? '最近一分钟记录到代理流量，完整验机会影响连接。' : '代理流量状态未知，不能确认当前无活跃连接。', checked_at: 1700000000, last_positive_at: null },
       }
       else if (path.endsWith('/node-quality/reports') && request.method() === 'POST') {
@@ -36,6 +36,10 @@ async function main() {
       }
       await route.fulfill({ json: data })
     })
+    const { pathToFileURL } = require('node:url')
+    const { resolve } = require('node:path')
+    const { installControlCenterFixtures } = await import(pathToFileURL(resolve(__dirname, '../web/tests/control-center-fixtures.mjs')).href)
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/servers/1/node-quality`)
     const full = page.getByRole('button', { name: '完整验机', exact: true })
     await full.waitFor()
@@ -70,7 +74,7 @@ async function main() {
     assert(await full.isDisabled())
     ready = true
     reports = [{ id: 'TEST_ONLY_CANCEL', status: 'cancel_requested', agent_completed: false,
-      cancel_requested_at: 1700000000, cancel_error: null, job: { plugin: 'nodequality', options: { mode: 'daily', ip_version: 'ipv4', network_mode: 'low', upload_report: 'false' } },
+      cancel_requested_at: 1700000000, cancel_error: null, job: { tool: 'nodequality', options: { mode: 'daily', ip_version: 'ipv4', network_mode: 'low', upload_report: 'false' } },
       report: null, error: null, created_at: 1700000000, updated_at: 1700000000, expires_at: 1700000090,
       expected_sections: ['environment', 'net_quality'], report_completeness: 'partial', sections: [
         { name: 'environment', text: 'MemoryMax: 67108864; load_one: 0.750', complete: true, revision: 1, collected_at: 1700000000 },

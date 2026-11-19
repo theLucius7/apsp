@@ -56,7 +56,7 @@ function DialogOverlay({
       <m.div
         {...fadeMotion}
         exit={reduce ? undefined : fadeMotion.exit}
-        className={cn("bg-[color-mix(in_oklch,var(--foreground)_16%,transparent)] supports-backdrop-filter:backdrop-blur-[2px] fixed inset-0 isolate z-50 data-[state=closed]:pointer-events-none!", className)}
+        className={cn("bg-overlay supports-backdrop-filter:backdrop-blur-[2px] fixed inset-0 isolate z-50 data-[state=closed]:pointer-events-none!", className)}
       />
     </DialogPrimitive.Overlay>
   )
@@ -104,8 +104,8 @@ function DialogContent({
               data-placement={placement}
               className={cn(
                 placement === "bottom"
-                  ? "bg-popover text-popover-foreground ring-foreground/10 grid max-h-[85dvh] gap-4 overflow-y-auto rounded-t-2xl p-4 pb-[max(1rem,env(safe-area-inset-bottom))] text-sm ring-1 shadow-lg fixed inset-x-0 bottom-0 z-50 w-full outline-none"
-                  : "bg-popover text-popover-foreground ring-foreground/10 grid max-w-[calc(100%-2rem)] gap-4 rounded-2xl p-5 text-sm ring-1 shadow-lifted sm:max-w-sm fixed top-1/2 left-1/2 z-50 w-full -translate-x-1/2 -translate-y-1/2 outline-none",
+                  ? "bg-popover text-popover-foreground border-border/85 grid max-h-[85dvh] gap-4 overflow-y-auto rounded-t-2xl border-t p-4 pb-[max(1rem,env(safe-area-inset-bottom))] text-sm shadow-lifted fixed inset-x-0 bottom-0 z-50 w-full outline-none"
+                  : "bg-popover text-popover-foreground border-border/85 grid max-w-[calc(100%-2rem)] gap-4 rounded-2xl border p-5 text-sm shadow-lifted sm:max-w-sm fixed top-1/2 left-1/2 z-50 w-full -translate-x-1/2 -translate-y-1/2 outline-none",
                 className
               )}
             >
@@ -147,7 +147,7 @@ function DialogFooter({
     <div
       data-slot="dialog-footer"
       className={cn(
-        "bg-muted/50 -mx-4 -mb-4 rounded-b-xl border-t p-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end",
+        "bg-muted/45 -mx-5 -mb-5 rounded-b-2xl border-t px-5 py-3.5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end",
         className
       )}
       {...props}
@@ -169,7 +169,7 @@ function DialogTitle({
   return (
     <DialogPrimitive.Title
       data-slot="dialog-title"
-      className={cn("text-base leading-none font-medium", className)}
+      className={cn("text-base leading-snug font-semibold tracking-[-0.01em]", className)}
       {...props}
     />
   )
@@ -182,7 +182,7 @@ function DialogDescription({
   return (
     <DialogPrimitive.Description
       data-slot="dialog-description"
-      className={cn("text-muted-foreground *:[a]:hover:text-foreground text-sm *:[a]:underline *:[a]:underline-offset-3", className)}
+      className={cn("text-muted-foreground *:[a]:hover:text-foreground text-sm leading-relaxed *:[a]:underline *:[a]:underline-offset-3", className)}
       {...props}
     />
   )

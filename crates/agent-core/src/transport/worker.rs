@@ -2,7 +2,7 @@ use super::Runtime;
 use crate::state::Locked;
 use crate::{artifacts::PanelClient, reconcile::Reconciler, state::StorageRetry};
 use anyhow::Result;
-use apsp_protocol::{ApplyResult, ApplyStatus, Envelope};
+use apsp_protocol::{ApplyResult, ApplyStatus, Envelope, Heartbeat};
 use std::{sync::Arc, time::Duration};
 use tokio::sync::{mpsc, watch};
 use uuid::Uuid;
@@ -20,6 +20,12 @@ pub(super) async fn run(
     operations.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     sample.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut legacy_trial = reconcilers
+        .first()
+        .map(|(_, r)| r.legacy_trial())
+        .transpose()?
+        .flatten()
+        .is_some();
     let mut reported = apsp_protocol::AppliedRevisions::new();
     let mut cleanup_storage = StorageRetry::default();
     loop {
@@ -29,6 +35,12 @@ pub(super) async fn run(
                     Some(retirement.gate.read().await)
                 } else { None };
                 if runtime.retirement.as_ref().is_some_and(|retirement| retirement.requested()) { continue; }
+                if legacy_trial && reconcilers[0].1.legacy_trial()?.is_none() {
+                    for (_, reconciler) in &reconcilers {
+                        reconciler.finish_confirmed_trial().await?;
+                    }
+                    legacy_trial = false;
+                }
                 let active_client = { client.borrow().clone() };
                 if let Some(active_client) = active_client
                 {
@@ -92,8 +104,42 @@ pub(super) async fn run(
                 continue;
             }
         };
+        let mut startup_failure: Option<String> = None;
         for (module, reconciler) in &reconcilers {
             let Some(target) = manifest.modules.get(module) else {
+                match reconciler.deactivate_if_active().await {
+                    Ok(true) => {
+                        let current = runtime.applied()?;
+                        let uptime = runtime
+                            .telemetry
+                            .borrow()
+                            .sample
+                            .as_ref()
+                            .and_then(|sample| sample.metrics.uptime_secs)
+                            .unwrap_or(0);
+                        let _ = outgoing.try_send(Envelope::new(
+                            "heartbeat",
+                            Heartbeat {
+                                applied: current.clone(),
+                                uptime_secs: uptime,
+                            },
+                        )?);
+                        if let Some(info) = runtime.static_info()?
+                            && outgoing
+                                .try_send(Envelope::new("telemetry.static", info)?)
+                                .is_ok()
+                        {
+                            reported = current;
+                        }
+                    }
+                    Ok(false) => {}
+                    Err(error) => {
+                        tracing::warn!(%module, %error, "failed to stop unconfigured runtime");
+                        if startup_failure.is_none() {
+                            startup_failure = Some(format!("{error:#}"));
+                        }
+                    }
+                }
                 continue;
             };
             let result = match reconciler.reconcile(target, &active_client).await {
@@ -109,6 +155,12 @@ pub(super) async fn run(
             };
             // Results can be reconstructed on the next reconciliation if disconnected.
             let applied = result.status == ApplyStatus::Applied;
+            if !applied && startup_failure.is_none() {
+                startup_failure =
+                    Some(result.error.clone().unwrap_or_else(|| {
+                        format!("module {module} failed initial reconciliation")
+                    }));
+            }
             let _ = outgoing.try_send(Envelope::new("apply.result", result)?);
             if applied {
                 let current = runtime.applied()?;
@@ -120,6 +172,37 @@ pub(super) async fn run(
                 {
                     reported = current;
                 }
+            }
+        }
+        if !runtime
+            .bundle
+            .ready
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            if let Some(error_text) = startup_failure {
+                if let Ok(mut slot) = runtime.bundle.error.lock() {
+                    *slot = Some(error_text.clone());
+                }
+                tokio::time::sleep(Duration::from_millis(250)).await;
+                anyhow::bail!(
+                    "initial runtime reconciliation failed during startup gate: {error_text}"
+                );
+            }
+            let mut all_ready = true;
+            for (_, reconciler) in &reconcilers {
+                if !reconciler.satisfies_trial_readiness().await? {
+                    all_ready = false;
+                    break;
+                }
+            }
+            if all_ready {
+                if let Ok(mut slot) = runtime.bundle.error.lock() {
+                    *slot = None;
+                }
+                runtime
+                    .bundle
+                    .ready
+                    .store(true, std::sync::atomic::Ordering::Release);
             }
         }
     }

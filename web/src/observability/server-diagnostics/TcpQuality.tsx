@@ -77,16 +77,16 @@ export default function TcpQuality({ serverId }: { serverId: number }) {
   const [count, setCount] = useState(4)
   const [concurrency, setConcurrency] = useState(1)
   const data = diagnostics.data
-  const readiness = diagnostics.error ? undefined : data?.plugins.find(tool => tool.plugin === 'tcpquality')
+  const readiness = diagnostics.error ? undefined : data?.tools.find(tool => tool.tool === 'tcpquality')
   const active = data?.reports.some(diagnosticActive)
   const currentTargets = targets.error ? undefined : targets.data
   const selected = currentTargets?.filter(target => region === 'configured' || target.region === region)
-  const reports = data?.reports.filter(record => record.job.plugin === 'tcpquality') ?? []
+  const reports = data?.reports.filter(record => record.job.tool === 'tcpquality') ?? []
   const cancelError = (id: string) => resourceWriteError(diagnostics) || diagnosticCancelError(diagnostics.getCurrent(), id)
   const createError = () => {
     const stale = resourceWriteError(diagnostics, targets)
     if (stale) return stale
-    const current = diagnostics.getCurrent()!, readiness = current.plugins.find(tool => tool.plugin === 'tcpquality')
+    const current = diagnostics.getCurrent()!, readiness = current.tools.find(tool => tool.tool === 'tcpquality')
     if (!readiness?.ready) return readiness?.reason || '当前设备尚不能执行 TCP 诊断，请刷新后确认。'
     if (current.reports.some(diagnosticActive)) return '此服务器已有诊断任务或正在等待设备确认清理，请等待设备完成。'
     const selected = targets.getCurrent()?.filter(target => region === 'configured' || target.region === region)

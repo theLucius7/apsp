@@ -153,7 +153,7 @@ pub(super) async fn privacy(
             .await?;
     tx.commit().await?;
     Ok(Json(
-        json!({"policy":policy,"captured_fields":["主体编号","对象编号","动作","脱敏影响与结果","时间"],"not_captured":["订阅令牌","连接密钥","原始客户端地址","完整终端正文"],"usage_ledger_retention":"历史计量账本保留，审计清理不删除账本","central_policy_rule":"实际保留时间取插件分类策略与系统 audit/proxy-access 分类策略较短值，后台每三十秒执行清理；中心 proxy-access=0 停记订阅访问"}),
+        json!({"policy":policy,"captured_fields":["主体编号","对象编号","动作","脱敏影响与结果","时间"],"not_captured":["订阅令牌","连接密钥","原始客户端地址","完整终端正文"],"usage_ledger_retention":"历史计量账本保留，审计清理不删除账本","central_policy_rule":"实际保留时间取服务权益分类保留策略与系统 audit/proxy-access 分类策略较短值，后台每三十秒执行清理；中心 proxy-access=0 停记订阅访问"}),
     ))
 }
 

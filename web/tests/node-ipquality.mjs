@@ -18,7 +18,7 @@ const failed = { database: 'Netflix', label: 'Netflix', provider: 'ipquality-nod
   attempted_at: now, elapsed_ms: 3, last_attempt_at: now, last_success_at: now - 60,
   fresh_until: now + 3600, last_error: { kind: 'http_403', message: '来源拒绝请求（HTTP 403），本次状态未知', http_status: 403, attempted_at: now, elapsed_ms: 3 }, historical: true, available: true }
 const record = { id, status: 'running', agent_completed: false, cancel_requested_at: null, cancel_error: null,
-  job: { plugin: 'ipquality', version, options: { ip_version: '6' } }, report: null, error: null,
+  job: { tool: 'ipquality', version, options: { ip_version: '6' } }, report: null, error: null,
   created_at: now, updated_at: now, expires_at: now + 600, expected_sections: ['ipquality_result', 'environment'], report_completeness: 'partial',
   sections: [{ name: 'ipquality_result', revision: 2, complete: false, collected_at: now,
     text: JSON.stringify({ schema: 1, plugin: 'ipquality', version, job_id: id, ip_version: '6', started_at: now, finished_at: null, egress_ip: ip, upstream: null,
@@ -92,10 +92,10 @@ try {
     assert.equal(await page.getByRole('button', { name: '请求取消节点自查', exact: true }).count(), 0)
     assert.match(await page.locator('[data-slot=node-ip-quality]').innerText(), /部分结果/)
     view.node_quality.ready = false
-    view.node_quality.reason = '匹配的签名制品尚未准备'
+    view.node_quality.reason = '请升级至自带诊断能力的当前 Agent 版本'
     view.node_quality.reports = []
     await page.reload()
-    await page.getByText('匹配的签名制品尚未准备', { exact: true }).waitFor()
+    await page.getByText('请升级至自带诊断能力的当前 Agent 版本', { exact: true }).waitFor()
     assert(await page.getByRole('button', { name: '运行节点出口自查', exact: true }).isDisabled())
     view.node_quality.ready = true
     view.node_quality.reason = null
@@ -117,7 +117,7 @@ try {
   }
   assert.equal(writes.filter(value => value.path.endsWith('/ipquality')).length, 2)
   assert.equal(writes.filter(value => value.path.endsWith('/cancel')).length, 2)
-  console.log(JSON.stringify({ passed: true, widths: [1440, 390], cases: ['node-egress-independent-from-nic', 'failed-provider-preserves-history', 'single-family-create', 'duplicate-disabled', 'confirmed-cancel-pending', 'partial-report', 'missing-signed-artifact', 'stale-read-guard'], requests: writes.length }))
+  console.log(JSON.stringify({ passed: true, widths: [1440, 390], cases: ['node-egress-independent-from-nic', 'failed-provider-preserves-history', 'single-family-create', 'duplicate-disabled', 'confirmed-cancel-pending', 'partial-report', 'agent-capability-gate', 'stale-read-guard'], requests: writes.length }))
 } finally {
   await browser.close()
   await new Promise(resolve => server.close(resolve))

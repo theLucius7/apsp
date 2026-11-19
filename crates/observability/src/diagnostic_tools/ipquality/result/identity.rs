@@ -1,18 +1,47 @@
 use super::{Envelope, invalid, receipts::canonical};
 use crate::{
     diagnostic_tools::ipquality::{SOURCE_COMMIT, SOURCE_SHA256, TOOL_VERSION},
-    diagnostics::service::SectionContext,
+    diagnostics::service::{FrozenComponentIdentity, SectionContext},
     error::ApiResult,
 };
-use apsp_protocol::DiagnosticSectionUpdate;
+use apsp_protocol::{DiagnosticSectionUpdate, bundled::valid_sha256};
 
 pub(super) fn validate(
     context: &SectionContext<'_>,
     update: &DiagnosticSectionUpdate,
     envelope: &Envelope,
 ) -> ApiResult<Option<String>> {
+    let frozen = FrozenComponentIdentity::from_job(context.job)
+        .map_err(|_| invalid("派单冻结的签名组件身份格式无效"))?;
+    let expected_sha256 = if let Some(frozen) = &frozen {
+        if !context.live_verified
+            || frozen.component != "ipquality"
+            || frozen.component_version != TOOL_VERSION
+            || context.job["options"]["expected_component_sha256"].as_str()
+                != Some(frozen.component_sha256.as_str())
+        {
+            return Err(invalid("任务身份、固定来源、冻结签名组件或执行窗口不一致"));
+        }
+        frozen.component_sha256.as_str()
+    } else {
+        let Some(legacy_sha256) = context.job["artifact"]["sha256"]
+            .as_str()
+            .filter(|sha| valid_sha256(sha))
+        else {
+            return Err(invalid("任务缺少派单冻结的签名组件或历史证明"));
+        };
+        if context.live_verified
+            || !context.job["artifact"]["proof"].is_object()
+            || context.job["options"]
+                .get("expected_component_sha256")
+                .is_some()
+        {
+            return Err(invalid("历史证明收据格式无效或与当前签名组件契约混淆"));
+        }
+        legacy_sha256
+    };
     if envelope.schema != 1
-        || envelope.plugin != "ipquality"
+        || envelope.tool != "ipquality"
         || envelope.version != TOOL_VERSION
         || envelope.job_id != update.id
         || context.job["id"].as_str() != Some(update.id.to_string().as_str())
@@ -23,13 +52,8 @@ pub(super) fn validate(
         || context.job["timeout_secs"].as_u64() != Some(300)
         || envelope.source_commit != SOURCE_COMMIT
         || envelope.source_sha256 != SOURCE_SHA256
-        || envelope.artifact_sha256.len() != 64
-        || !envelope
-            .artifact_sha256
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-        || context.job["artifact"]["sha256"].as_str() != Some(envelope.artifact_sha256.as_str())
-        || context.job["artifact"]["proof"].is_null()
+        || !valid_sha256(&envelope.artifact_sha256)
+        || envelope.artifact_sha256 != expected_sha256
         || envelope.started_at < context.created_at.saturating_sub(300)
         || envelope.started_at > context.expires_at
         || update.collected_at < envelope.started_at
@@ -47,7 +71,7 @@ pub(super) fn validate(
         || (update.complete && envelope.finished_at.is_none())
         || envelope.attempts.len() > 64
     {
-        return Err(invalid("任务身份、固定来源、签名制品或执行窗口不一致"));
+        return Err(invalid("任务身份、固定来源、冻结签名组件或执行窗口不一致"));
     }
     let canonical_ip = envelope
         .egress_ip

@@ -48,6 +48,9 @@ export type PageEntry = {
   render?: () => ReactNode
 }
 
+/** A sidebar page with its workspace's name, and whether the workspace shows that name as a heading. */
+export type NavigationItem = PageEntry & { group: string; heading: boolean }
+
 export type LazyPage<P extends object> = ComponentType<P> & { preload: () => void }
 
 const preloads: (() => void)[] = []

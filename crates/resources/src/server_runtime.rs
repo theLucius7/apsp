@@ -17,8 +17,8 @@ use crate::{
 /// Traffic's state on one server that a collection migration does not move.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RuntimeReferences {
-    /// The runtimes enabled on the server, by the names the console shows ("sing-box").
-    pub enabled: Vec<String>,
+    /// The runtimes configured on the server, by the names the console shows ("sing-box").
+    pub configured: Vec<String>,
     /// The deployment state of each module: its target and applied revision and health.
     pub deployments: Vec<Value>,
 }
@@ -32,7 +32,7 @@ pub trait ServerRuntime: Send + Sync {
         servers: &'a [i64],
     ) -> BoxFuture<'a, ApiResult<HashMap<i64, i64>>>;
 
-    /// The runtimes enabled on `server` and the state of their deployments.
+    /// The runtimes configured on `server` and the state of their deployments.
     fn references<'a>(
         &'a self,
         pool: &'a PgPool,

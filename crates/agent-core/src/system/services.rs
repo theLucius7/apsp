@@ -223,6 +223,17 @@ impl SystemServiceManager {
 }
 
 impl ServiceManager for SystemServiceManager {
+    fn ensure_runtime_service<'a>(
+        &'a self,
+        spec: &'a apsp_adapter_sdk::RuntimeServiceSpec,
+    ) -> BoxFuture<'a, ()> {
+        Box::pin(super::deploy::ensure_runtime_registered(
+            self.privileged.as_ref(),
+            self.backend,
+            spec,
+        ))
+    }
+
     fn retire_interactive_sessions(&self) -> BoxFuture<'_, ()> {
         Box::pin(terminals::retire(self))
     }

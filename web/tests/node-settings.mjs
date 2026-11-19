@@ -5,7 +5,7 @@ import { createServer } from 'node:http'
 import { readFile, mkdir } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { resolve, extname, sep } from 'node:path'
-import { proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
+import { proxyResourceFixtures, runtimeServerFixture } from './proxy-resource-fixtures.mjs'
 
 // Shipped dist with controlled API responses; PostgreSQL verifies migration/data.
 const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
@@ -33,7 +33,7 @@ try {
     page.on('pageerror', error => errors.push(error.message))
     let rejected = false
     const progress = { pending:true, enabled_nodes:1, authorized_nodes:0, status:null, history:[] }
-    const runtimeServers = [{ id:1, name:'测试服务器', enabled:true, online:false, agent_supported:true, read_only:false }]
+    const runtimeServers = [runtimeServerFixture(1, { name: '测试服务器', configured: false, online: false })]
     await page.route('**/api/**', async route => {
       const path = new URL(route.request().url()).pathname, method = route.request().method()
       let value
@@ -49,6 +49,7 @@ try {
         const body = route.request().postDataJSON(); writes.push(body)
         value = { ...body,id:1,protocol:body.protocol_config.type,port:body.port ?? 20000 }
         nodes.push(value)
+        Object.assign(runtimeServers[0], runtimeServerFixture(1, { name: '测试服务器', configured: true, online: false, status: { state: 'offline', reason: '设备离线，恢复连接后自动同步应用', target_rev: 1, applied_rev: 0, current_healthy: false } }))
       } else if (path === '/api/traffic/nodes/1' && method === 'PATCH') {
         const body = route.request().postDataJSON(); writes.push(body)
         if (rejected) { await route.fulfill({status:400,json:{error:'夹具：参数无效'}}); return }
@@ -56,10 +57,10 @@ try {
       } else if (method === 'GET' && !new URL(route.request().url()).search && path === '/api/traffic/servers/1/operations-view') value = operationsViewFixture
       // A server's deployment lives in its network services tab.
       else if (path === '/api/servers/1') value = { id:1, name:'测试服务器', online:false, device_public_key:'TEST_ONLY', capabilities:[], static_info:{}, latest_metrics:{}, manifest_rev:0 }
-      else if (path === '/api/traffic/servers/1') value = { ...runtimeServers[0], source:'administrator', installation:{ state:'offline', reason:'设备离线，恢复连接后继续部署', target_rev:0, applied_rev:0 } }
+      else if (path === '/api/traffic/servers/1') value = runtimeServers[0]
       else if (path === '/api/traffic/servers/1/profile') value = { definition:{ outbounds:[], endpoints:[], services:[], cloudflared:[], dns:null, route:null }, revision:0 }
       else if (path.endsWith('/deployments')) value = progress
-      else if (path.endsWith('/deployments/check')) value = { ready:false,checks:[{name:'设备在线',passed:false,detail:'设备离线，配置将在重新连接后下发'},{name:'签名运行时',passed:true,detail:'已验证匹配的制品'}] }
+      else if (path.endsWith('/deployments/check')) value = { ready:false,checks:[{name:'Agent 接入',passed:true,detail:'设备已登记'},{name:'设备在线',passed:false,detail:'设备离线，配置将在重新连接后下发'},{name:'内置运行时能力',passed:true,detail:'已声明一体化运行时能力'}] }
       else if (path.endsWith('/runtime-operations')) value = { supported:false,online:false,retiring:false,operations:[] }
       else { errors.push(`Unexpected ${method}: ${path}`); return route.fulfill({status:404,json:{}}) }
       await route.fulfill({json:value})
@@ -94,12 +95,12 @@ try {
     const currentRow = page.locator(width < 768 ? '[data-slot=catalog-card][data-resource-key="direct:1"]' : '[data-slot=catalog-table] [data-resource-key="direct:1"]')
     await currentRow.getByText('proxy.example.com:443',{exact:true}).waitFor()
     // The saved node's deployment opens in its server's network services tab.
-    await page.getByRole('button',{name:/^查看(差异、完整预检与发布状态|部署状态)$/}).click()
+    await page.getByRole('button',{name:'查看部署状态',exact:true}).click()
     await page.waitForURL(/#\/servers\/1\/services$/)
     const services = page.locator('section').filter({ has: page.getByRole('heading', { name: /^sing-box/ }) })
     await services.getByText('还没有发布记录。',{exact:false}).waitFor()
-    await services.getByRole('button',{name:'检查安装条件',exact:true}).click()
-    await services.getByText('已验证匹配的制品',{exact:true}).waitFor()
+    await services.getByRole('button',{name:'检查运行条件',exact:true}).click()
+    await services.getByText('已声明一体化运行时能力',{exact:true}).waitFor()
     Object.assign(progress,{pending:false,status:{target_rev:2,applied_rev:1,last_result_rev:2,healthy:true,last_error:'测试校验失败',updated_at:1}})
     await services.getByRole('button',{name:'刷新',exact:true}).click()
     await services.getByText('最近一次部署失败',{exact:true}).waitFor()

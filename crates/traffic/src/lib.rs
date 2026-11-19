@@ -38,7 +38,7 @@ pub mod users;
 
 pub use activity::{ActivityEvidence, runtime_activity_on};
 
-pub(crate) use apsp_governance::{artifacts, auth, control_center, releases};
+pub(crate) use apsp_governance::{auth, control_center, releases};
 #[cfg(test)]
 pub(crate) use apsp_panel_host::config;
 pub(crate) use apsp_panel_host::{AppState, device_work, digest, error};
@@ -96,7 +96,6 @@ fn management() -> Router<AppState> {
         )
         .route("/api/traffic/servers", get(settings::list))
         .route("/api/traffic/servers/{id}", get(settings::get))
-        .route("/api/traffic/servers/{id}/enable", post(settings::enable))
         .route(
             "/api/traffic/servers/{id}/deployments",
             get(deployments::get),

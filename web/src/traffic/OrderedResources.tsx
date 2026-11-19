@@ -11,7 +11,7 @@ import { filterProxyResources, proxyResourceKey, publicPathText, validProxyResou
 import { validatedSnapshot } from '@/lib/resource-snapshot'
 import type { ProxyResource, ProxyResourceServerRole, ResourceEndpoint } from '../access/groupTypes'
 import { nodeHash } from './nodeRoute'
-import { installationView } from './Runtimes'
+import { canConfigureServer, runtimeStatusView } from './Runtimes'
 import ChainLifecycle from './ChainLifecycle'
 import ChainResourceEditor from './ChainResourceEditor'
 import ChainVersionEditor from './ChainVersionEditor'
@@ -42,15 +42,15 @@ function address(endpoint: ResourceEndpoint) {
   return `${host}:${endpoint.public_port}`
 }
 function applicationView(endpoint: ResourceEndpoint, server?: RuntimeServer, fresh = false) {
-  if (!fresh || !server?.installation) return { label: '应用状态待确认', tone: 'neutral' as const, reason: '尚未取得最新设备应用状态，请查看服务器详情。' }
-  const view = installationView(server)
-  if (server.installation.state === 'ready') {
-    if (!endpoint.server_deleted && endpoint.plugin_enabled && endpoint.online && endpoint.desired_revision !== null && endpoint.desired_revision > 0
-      && endpoint.applied_revision === endpoint.desired_revision && endpoint.applied_observed_at !== null && server.enabled && server.online
-      && server.installation.target_rev === endpoint.desired_revision && server.installation.applied_rev === endpoint.applied_revision) return { ...view, label: '目标配置已应用' }
+  if (!fresh || !server) return { label: '应用状态待确认', tone: 'neutral' as const, reason: '尚未取得最新设备应用状态，请查看服务器详情。' }
+  const view = runtimeStatusView(server)
+  if (server.configured && server.status?.state === 'ready') {
+    if (!endpoint.server_deleted && endpoint.online && endpoint.desired_revision !== null && endpoint.desired_revision > 0
+      && endpoint.applied_revision === endpoint.desired_revision && endpoint.applied_observed_at !== null && server.online
+      && server.status.target_rev === endpoint.desired_revision && server.status.applied_rev === endpoint.applied_revision) return { ...view, label: '目标配置已应用' }
     return { label: '应用状态待确认', tone: 'warm' as const, reason: '设备状态与目标版本尚未确认一致，请查看服务器详情。' }
   }
-  return { ...view, label: server.installation.state === 'queued' ? '等待生成配置' : view.label }
+  return view
 }
 function EndpointView({ endpoint, server, node, fresh }: { endpoint: ResourceEndpoint; server?: RuntimeServer; node?: Node; fresh: boolean }) {
   const application = applicationView(endpoint, server, fresh)
@@ -133,7 +133,7 @@ export default function OrderedResources({ resourcesQuery, nodesQuery, serversQu
   const visible = filterProxyResources(all, kind, filter ? Number(filter) : undefined, serverRole)
   // Managed nodes that chains use, listed under the table so their references stay one click away.
   const referenced = all.filter(resource => resource.kind === 'direct' && resource.chain_refs.length)
-  const enabledServers = servers.data?.filter(server => server.enabled) ?? []
+  const configurableServers = servers.data?.filter(canConfigureServer) ?? []
   const filterServer = servers.data?.find(server => server.id === Number(filter))
   const writeError = proxyWriteError(snapshot)
   const deleteError = deleting ? proxyDeleteError(resources, deleting) : ''
@@ -158,7 +158,7 @@ export default function OrderedResources({ resourcesQuery, nodesQuery, serversQu
         </p>
         {writeError && <p role="status">{writeError} 已取得的列表保留供查看，资源状态等待确认。</p>}
       </div>
-      {resourcesQuery.loading && !resources.data ? <Loading variant="table" /> : !visible.length ? <Empty icon={WaypointsIcon} title={filter ? '此服务器暂无已确认关联的链路' : '尚未创建链路'} description={enabledServers.length ? '选择一个模板，从入口依次连到落地节点。创建后加入策略组并授权给代理用户，等待设备成功应用配置，才能连接。' : '先为服务器安装运行时，再创建代理节点。'}>{enabledServers.length ? <Button disabled={Boolean(writeError)} onClick={() => setEmptyCreate(value => value + 1)}>创建链路</Button> : <a className={buttonVariants()} href="#/nodes?view=runtimes">查看运行时</a>}</Empty> : <div className="@container/resources max-w-full min-w-0"><Table data-slot="proxy-resource-table" role="table" className={stacked.table}><TableHeader role="rowgroup" className={stacked.head}><TableRow role="row"><TableHead role="columnheader">资源</TableHead><TableHead role="columnheader">入口或直连监听</TableHead><TableHead role="columnheader">出口</TableHead><TableHead role="columnheader">资源与授权</TableHead><TableHead role="columnheader">累计流量</TableHead><TableHead role="columnheader" className="text-right">操作</TableHead></TableRow></TableHeader><TableBody role="rowgroup" className={stacked.body}>{visible.map(resource => {
+      {resourcesQuery.loading && !resources.data ? <Loading variant="table" /> : !visible.length ? <Empty icon={WaypointsIcon} title={filter ? '此服务器暂无已确认关联的链路' : '尚未创建链路'} description={configurableServers.length ? '选择一个模板，从入口依次连到落地节点。创建后加入策略组并授权给代理用户，等待设备成功应用配置，才能连接。' : '先添加可配置代理服务的普通服务器，再创建代理节点与链路。'}>{configurableServers.length ? <Button disabled={Boolean(writeError)} onClick={() => setEmptyCreate(value => value + 1)}>创建链路</Button> : <a className={buttonVariants()} href="#/servers">前往服务器</a>}</Empty> : <div className="@container/resources max-w-full min-w-0"><Table data-slot="proxy-resource-table" role="table" className={stacked.table}><TableHeader role="rowgroup" className={stacked.head}><TableRow role="row"><TableHead role="columnheader">资源</TableHead><TableHead role="columnheader">入口或直连监听</TableHead><TableHead role="columnheader">出口</TableHead><TableHead role="columnheader">资源与授权</TableHead><TableHead role="columnheader">累计流量</TableHead><TableHead role="columnheader" className="text-right">操作</TableHead></TableRow></TableHeader><TableBody role="rowgroup" className={stacked.body}>{visible.map(resource => {
         const node = nodes.data?.find(node => node.id === resource.entry.id)
         const record = usage.data?.by_node.find(record => record.node_id === resource.entry.id)
         const unavailable = Boolean(proxyDeleteError(resources, resource))

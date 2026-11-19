@@ -1,12 +1,12 @@
 # 真实 Reality 验收驱动
 
-`scripts/e2e-driver.py` 通过真实面板 API 创建一套专用服务器、节点、用户和授权，记录健康部署及精确用量。操作者负责准备 Linux/systemd 设备、通过独立可信的 bootstrap 安装、启动独立客户端、产生流量，以及重启或重载服务。完整人工验收边界仍见 `bash scripts/e2e-real.sh guide`。
+`scripts/e2e-driver.py` 通过真实面板 API 驱动单文件一体化 Agent 的完整验收旅程：先创建纯监控服务器并完成接入核验（确认绝不误启用或误启动 `sing-box`），再保存首个有效节点、专用用户与策略组授权以触发自动发布，最后核对可追踪部署证据、受控客户端双向流量与精确账本。操作者负责准备 Linux/systemd 设备、通过独立可信的 `apsp-bootstrap` 安装、启动独立客户端、产生流量，以及重启或重载服务。完整人工验收边界仍见 `bash scripts/e2e-real.sh guide`。
 
-驱动仅创建本次随机名称对应的资源，不修改或删除已有业务对象。每个创建步骤立即保存编号；若请求已提交但响应丢失，使用相同私有 state 重试可以按本次唯一名称恢复。不要删除 state 后在同一设备重新开始，也不要同时运行两个使用相同 state 的驱动。
+驱动仅创建本次随机名称对应的资源，不修改或删除已有业务对象，并拒绝向只读 Nexus 兼容主机（`read_only=true` / `source=nexus`）写入新节点配置。每个创建步骤立即保存编号；若请求已提交但响应丢失，使用相同私有 state 重试可以按本次唯一名称恢复。不要删除 state 后在同一设备重新开始，也不要同时运行两个使用相同 state 的驱动。
 
-## 准备与安装
+## 准备纯监控服务器与安装一体化 Agent
 
-需要 Python 3.9 或以上，无第三方 Python 依赖。Linux 和 macOS 可以驱动面板，受管设备仍必须是 Linux/systemd。先按[部署文档](deploy.md)独立配置可信 bootstrap 与发布公钥，并在面板导入协议兼容的已签名 Release。将面板地址、节点地址和伪装域名放在当前 shell 的私有环境变量中，真实地址、密码、脚本和证据均不得提交。
+需要 Python 3.9 或以上，无第三方 Python 依赖。Linux 和 macOS 可以驱动面板，受管设备仍必须是 Linux/systemd。先按[部署文档](deploy.md)独立配置可信 `apsp-bootstrap` 与发布公钥，并在面板系统设置导入协议兼容的已签名单文件 Agent Release（`/api/system/agent-releases/import`）。`sing-box`（`1.14.4-apsp.2`）及受控诊断能力已随单文件 `apsp-agent` 内嵌，无需单独导入运行时制品，也不要把一次性 CI 测试宿主专用的 Docker、Go、OpenSSL 夹具或本地策略文件当成用户每台服务器的安装要求。将面板地址、节点地址和伪装域名放在当前 shell 的私有环境变量中，真实地址、密码、脚本和证据均不得提交。
 
 ```sh
 E2E_PRIVATE=$(mktemp -d)
@@ -15,22 +15,23 @@ export APSP_E2E_ADMIN_PASSWORD_FILE="$E2E_PRIVATE/admin-password"
 # 使用安全编辑器写入管理员密码，再执行 chmod 600 "$APSP_E2E_ADMIN_PASSWORD_FILE"。
 # 设置 PANEL_ORIGIN、NODE_PUBLIC_HOST、REALITY_SNI 为本次环境值。
 python3 scripts/e2e-driver.py --state "$E2E_PRIVATE/state.json" prepare \
-  --origin "$PANEL_ORIGIN" --public-host "$NODE_PUBLIC_HOST" --sni "$REALITY_SNI"
+  --origin "$PANEL_ORIGIN" --public-host "$NODE_PUBLIC_HOST" --sni "$REALITY_SNI" \
+  --server-only
 ```
 
 密码也可通过 `APSP_E2E_ADMIN_PASSWORD` 提供，缺省则隐藏输入。密码和 Cookie 不写入 state、不打印；state、安装描述、客户端凭据和阶段证据以 0600 保存，所在目录必须是仓库外的 0700 私有目录。
 
 管理员已启用 TOTP 时，在驱动命令的阶段名之前加 `--totp`，例如 `python3 scripts/e2e-driver.py --state "$E2E_PRIVATE/state.json" --totp ready`，登录时会隐藏输入一次性验证码。非交互单次认证可通过 `APSP_E2E_TOTP_CODE` 提供验证码；`e2e-real.sh snapshot` 可设置 `APSP_E2E_TOTP=1` 隐藏输入，也支持同一验证码环境变量。每个命令都会重新登录，必须使用新时间步的验证码；同一 30 秒时间步不能重放，连续命令需等待下一步。验证码和种子不保存到 state 或证据中，验收无需关闭 TOTP；默认 CI 使用新建管理员，不启用 TOTP。
 
-`prepare --port 443` 可显式指定节点监听端口，范围为 1–65535，保留统计接口 18085；省略时由面板在 20000–29999 分配。选择会在创建资源前保存，重试必须使用相同参数，旧版未记录显式端口的 state 仍可按自动分配模式恢复。已创建节点若被改端口，驱动会拒绝继续，避免把另一个配置当成本次验收。
+`prepare --port 443` 可显式指定后续节点的监听端口，范围为 1–65535，保留统计接口 18085；省略时由面板在 20000–29999 分配。选择会在创建资源前保存，重试必须使用相同参数，旧版未记录显式端口的 state 仍可按自动分配模式恢复。已创建节点若被改端口，驱动会拒绝继续，避免把另一个配置当成本次验收。
 
-`prepare` 在私有目录保存 `enrollment.json`，包含一次性令牌、面板来源、服务器编号及独立选择的 Agent 版本和标签；按凭据保管并安全传到专用设备。自动选择描述为 `version=latest`、`tag=null`，安装器识别目标设备后才选择最新兼容稳定版本；这两个字段不是已经安装的版本证据。面板不再提供可直接执行的安装脚本。令牌过期或准备升级时，重新签发安装描述；需要可复现的跨版本验收时明确指定真实已签版本：
+`prepare --server-only` 仅创建服务器并在私有目录保存 `enrollment.json`（包含一次性令牌、面板来源、服务器编号及独立选择的 Agent 版本和标签），按凭据保管并安全传到专用设备；省略 `--server-only` 则可一次性预建服务器、节点、用户与策略组（在设备接入前处于 `waiting_agent`）。自动选择描述为 `version=latest`、`tag=null`，安装器识别目标设备后才选择最新兼容稳定版本；这两个字段不是已经安装的版本证据。面板不提供可直接执行的安装脚本。令牌过期或准备升级时，重新签发安装描述；需要可复现的跨版本验收时明确指定真实已签版本：
 
 ```sh
-python3 scripts/e2e-driver.py --state "$E2E_PRIVATE/state.json" install --refresh --agent-version 0.3.0
+python3 scripts/e2e-driver.py --state "$E2E_PRIVATE/state.json" install --refresh --agent-version 0.4.0
 ```
 
-在已独立配置可信 bootstrap 的设备执行以下命令，令牌通过子进程环境传递，不打印到终端。`E2E_PRIVATE` 指向安全传入的私有目录：
+在已独立配置可信 `apsp-bootstrap` 的设备执行以下命令，令牌通过子进程环境传递，不打印到终端。`E2E_PRIVATE` 指向安全传入的私有目录：
 
 ```sh
 sudo python3 - "$E2E_PRIVATE/enrollment.json" <<'PY'
@@ -42,32 +43,40 @@ subprocess.run(["/usr/local/bin/apsp-bootstrap", "--version", descriptor["versio
 PY
 ```
 
-Agent 与面板产品版本独立；接入选定版本必须已导入且协议兼容。已有未签名安装先按[发布文档](release.md)迁移验证缓存。历史 0.1.0→0.2.0 真机验收保留在 `PROGRESS.md`；当前签名流程及同版本重装不能替代那次跨版本验收。
+Agent 与面板产品版本独立；接入选定版本必须已导入且协议兼容。跨版本升级专项先导入旧版和目标版的已签名 Agent Release，在同一个 state、服务器编号和设备身份上核对实际旧版与基线后，执行 `install --refresh --agent-version <目标版本>` 并以新令牌运行可信安装器（或验证面板自动下发的 supervisor trial 升级与失败回退）。注意：未声明 `agent:self-contained:v1` 的历史已签旧版 Agent（如 `0.3.x`）不含内嵌运行时，不能冒充新自带能力；在已保存节点配置的服务器上连接旧版 Agent 时，面板如实报告 `upgrade_required`，驱动亦立即拒绝将其记为就绪。升级前后保存设备公钥、身份文件摘要、账本、已应用配置、运行时 PID 与持续双向流量结果；两台新设备上的不同版本不能作为原地升级证据。
 
-跨版本升级专项先导入旧版和目标版的完整签名 Release，使用 `install --refresh --agent-version <旧版本>` 在专用设备接入；已发布的未签 0.1.0/0.2.0 不能通过改写摘要变成已签版本。核对实际旧版和基线后，在同一个 state、服务器编号和设备身份上执行 `install --refresh --agent-version <目标版本>`，以新的令牌重新运行上述可信安装器。升级前后保存设备公钥、身份文件摘要、账本、已应用配置、运行时 PID 与持续双向流量结果；两台新设备上的不同版本不能作为原地升级证据。缺少已签版本、协议不兼容和目标平台没有可安装制品现在分别报告原因。
+## 纯监控核验与首个有效节点自动发布
 
-## 部署预检
-
-面板只在确认只读运行时预检后发布业务节点。先在设备上以 `0600` 写入 `/etc/apsp/fleet-policy.json`（至少含 `{"runtime_inspection":true}`）并重启 Agent，再执行：
+设备完成首次安装后，先核验其处于纯监控模式且绝不误启动 `sing-box`：
 
 ```sh
-python3 scripts/e2e-driver.py --state "$E2E_PRIVATE/state.json" preflight --timeout 600
+export APSP_E2E_STATUS_COMMAND='sudo apsp-agent status'
+python3 scripts/e2e-driver.py --state "$E2E_PRIVATE/state.json" monitor \
+  --agent-version 0.4.0 --timeout 120
 ```
 
-`preflight` 为本服务器开启面板侧只读运行时检查，等待 Agent 声明该能力后采集预检；尚无部署时先确认首次空运行时安装，等待版本已应用，或者 Agent 已回答该版本的核对请求（业务待确认期间面板不会认定空版本已应用），再重新采集，最后确认预检恢复发布。首次空安装和确认前各重新验证一次管理员密码（启用 TOTP 时需新验证码）。失败只报告阻塞项名称与操作状态，不输出证据内容。
+`monitor` 连续跨越发布周期采样两次，要求服务器在线、已声明 `agent:self-contained:v1` 并上报内置 `sing-box` 组件版本，同时核对 `/api/traffic/servers/{id}` 的 `configured=false`、`status.state=unconfigured`、`/deployments` 无部署记录，且本地 `apsp-agent status` 已连接但未应用或启动 `singbox`。通过后写入 `monitor.json`。
 
-## 健康部署与独立客户端
+随后在同一服务器上保存首个有效节点、专用用户与策略组授权：
+
+```sh
+python3 scripts/e2e-driver.py --state "$E2E_PRIVATE/state.json" configure
+```
+
+面板在有效节点与授权保存后直接自动编译并下发配置，不再需要调用手动启用接口、写入 `/etc/apsp/fleet-policy.json`、首次安装空运行时或人工确认预检。
+
+## 健康部署、可追踪证据与独立客户端
 
 ```sh
 python3 scripts/e2e-driver.py --state "$E2E_PRIVATE/state.json" ready \
-  --agent-version 0.3.0 --timeout 600
+  --agent-version 0.4.0 --timeout 600
 ```
 
-`ready` 要求设备在线、目标版本等于已应用版本、健康为真且无部署错误，可同时核对 Agent 版本。只导出本次专用节点的 `client.json`，本地混合入口固定为 `127.0.0.1:2080`；初次成功保存 `ready` 用量基线，重复执行保留原基线。
+`ready` 要求设备在线、`configured=true`、`status.state=ready`、目标版本等于已应用版本、健康为真且无部署错误，同时核对部署历史中的已应用配置包 `bundle_sha256` 以及 `operations-view` 中设备已完成实际配置文件、受管进程与内置运行时身份核对（`checkpoint=verified`）。成功后只导出本次专用节点的 `client.json`，本地混合入口固定为 `127.0.0.1:2080`；初次成功保存 `ready` 用量基线，重复执行保留原基线。
 
 如受管设备在容器中监听 20000、宿主将其映射到 28000，使用 `ready --client-port 28000`。这仅修改私有客户端 JSON 的目标端口，保留面板的原始端口，并在 state 记录本次客户端端口。公开地址必须可由独立客户端直达该端口；不要依赖仅代理 HTTPS 的反代来转发 Reality。
 
-在独立客户端使用上游 sing-box 启动此 JSON，经 SOCKS 访问测试端点；同时完成可识别的下载和上传，再等待真实面板入账。自建测试端点应记录客户端实际完成字节数，避免把只有下行增长当作双向验收。
+在独立客户端使用 `sing-box` 启动此 JSON，经 SOCKS 访问受控测试端点；同时完成可识别的下载和上传，再等待真实面板入账。自建测试端点应记录客户端实际完成字节数，避免把只有下行增长当作双向验收。
 
 ```sh
 curl --fail --proxy socks5h://127.0.0.1:2080 https://example.com/
@@ -93,7 +102,7 @@ python3 scripts/e2e-driver.py --state "$E2E_PRIVATE/state.json" traffic \
 
 [Issue #6](https://github.com/theLucius7/apsp/issues/6) 还包含固定 90 秒下的间歇失败和同源码一次重跑成功，根因尚未确定。现有取证和本节步骤没有修复其根因；回环 CI 的某次成功也不证明公网持续传输全部通过。
 
-## 暂停、重启和重载
+## 暂停、重启、重载与同配置一致性
 
 停止独立客户端，关闭本次用户的全部连接。显式设置只读 Agent 状态命令；命令按 `shlex` 分词后直接执行，不经过驱动端 shell。操作者负责命令仅进行只读查询，下面使用本机设备示例：
 
@@ -118,7 +127,7 @@ python3 scripts/e2e-driver.py --state "$E2E_PRIVATE/state.json" verify \
   --label after-runtime --unchanged-from before
 ```
 
-`--unchanged-from` 在每次采样立即断言已确认上下行与总量原封不动、设备公钥保持不变。仍有连接、重复入账、历史丢失或身份变化都会失败，不能等待这些差异消失后再宣称通过。外部重载时必须保持客户端暂停，避免非托管 HUP 的终值采样窗口影响结论。
+`--unchanged-from` 在每次采样立即断言已确认上下行与总量、`target_rev`/`applied_rev`、已应用配置包 `bundle_sha256`、内置运行时版本、服务器编号与设备公钥全部原封不动。仍有连接、重复入账、历史丢失、配置漂移或身份变化都会失败，不能等待这些差异消失后再宣称通过。外部重载时必须保持客户端暂停，避免非托管 HUP 的终值采样窗口影响结论。
 
 恢复同一独立客户端，完成第二批上传和下载：
 
@@ -127,11 +136,13 @@ python3 scripts/e2e-driver.py --state "$E2E_PRIVATE/state.json" traffic \
   --label resumed --after after-runtime --timeout 180
 ```
 
-升级后可重新执行 `ready --agent-version 0.3.0`（改为实际选择的版本），再用原稳定基线验证身份与已确认用量。设备身份文件、账本和运行时连续性仍应由操作者记录，不由面板公钥相等推断全部已通过。
+升级后重新执行 `ready --agent-version 0.4.0`（改为实际选择的版本），再用 `--unchanged-from`（跨版本进程替换加 `--agent-restarted`）验证设备身份、同配置一致性与已确认用量。设备身份文件、账本和运行时连续性仍应由操作者记录，不由面板公钥相等推断全部已通过。
 
-## CI 中的在线退役
+## CI 中的全链路验收与在线退役
 
-`scripts/ci-real-e2e.sh` 显式创建监听 443 的节点，独立客户端实际通过该端口完成双向 Reality 流量。TLS 伪装夹具在本次 Compose 网络的独立容器内监听 443，不发布宿主端口，使宿主 443 专用于受管运行时；夹具复用本次面板镜像中的 OpenSSL，证书仅以只读方式挂载。CI 在签名缓存拒绝、Reality 流量、重启、重载及同版本重装检查全部完成后，调用 `scripts/ci-retirement.py` 做最后一项验收。它要求 root、Linux、显式的一次性环境标志，以及固定的回环 CI 面板；使用本次私有 state 中的随机名称核对服务器，确认设备在线、Agent 版本一致且支持退役后，才发送一次删除请求。管理员密码通过继承的环境变量提供，不进入命令参数。此辅助脚本需要 Python 3.11 或以上，人工 `e2e-driver.py` 的操作范围保持不变。
+`scripts/ci-real-e2e.sh` 在自有一次性 Linux/systemd 宿主上跑通完整真实入口：常规 CI 通过统一供应脚本 `tools/prepare-agent-linux-inputs.py prepare-bundled-tools` 准备公开可校验的 `nodequality`（`-r22`）与 `network-workbench` 载荷并内嵌真实 `sing-box` 与 `tcpquality`；因普通 PR 不具备受控的 `IPQuality` 独立许可与已批构建镜像变量，`scripts/ci-signed-release.py` 走仓库专用 `TEST_ONLY` 签名夹具路径（`tools/ci-release-fixture.py`）而非正式发布专用的 `tools/release.py assemble`（正式发布强制完整四归档 + 内建 `tcpquality` 闭环，拒绝轻包通过）。脚本传入的 `--client-runtime-root`（兼容旧名 `--runtime-root`）仅提取给 `127.0.0.1:2080` 的独立客户端夹具进程使用，先完成服务器纯监控接入、核对设备严格按实际内嵌组件上报 `components` 与 `diagnostic:*` 能力（绝不虚报未内嵌能力）并断言 `apsp-singbox@main.service` 未激活且无配置文件生成，再执行 `configure` 保存监听 443 的首个节点并等待自动发布与 `.bundled.json` 提取就绪。TLS 伪装夹具在本次 Compose 网络的独立容器内监听 443，不发布宿主端口，使宿主 443 专用于受管运行时；夹具复用本次面板镜像中的 OpenSSL，证书仅以只读方式挂载。
+
+CI 在纯监控核验、自动发布、双向 Reality 流量、Agent 重启、运行时重载、篡改已提取二进制/`.bundled.json`/伪造未签 `.artifact.json` 的缓存预检拒绝（`scripts/ci-signed-preflight.py`）及同版本重装连续性检查全部完成后，调用 `scripts/ci-retirement.py` 做最后一项验收。它要求 root、Linux、显式的一次性环境标志，以及固定的回环 CI 面板；使用本次私有 state 中的随机名称核对服务器，确认设备在线、Agent 版本一致且支持退役后，才发送一次删除请求。管理员密码通过继承的环境变量提供，不进入命令参数。
 
 退役阶段检查：
 
@@ -140,10 +151,10 @@ python3 scripts/e2e-driver.py --state "$E2E_PRIVATE/state.json" traffic \
 - 使用账本文件保留，已确认的上下行基准和序列不变、outbox 没有未确认批次，面板的用户及节点历史用量仍等于 `after-reinstall`。允许末次采样推进时间，以及既有逻辑清理已确认的 outbox 行。
 - Agent 以 78 正常退出且不自动重启，独立运行时不再运行。显式再次启动 Agent 仍退出 78，凭证不会重新生成；显式启动运行时则在配置文件预检处被拒绝。
 
-成功结果写入私有临时目录的 `retirement.json`。总 CI 摘要仅收录白名单布尔检查和精确用量，不包含请求编号、回执签名、设备公钥、地址或令牌。辅助脚本本身不执行环境清理；主 CI 脚本最终统一清理本次创建的 Compose、服务和目录。实际 Linux/systemd 通过状态以对应提交的 Actions 结果为准。
+成功结果写入私有临时目录的 `retirement.json`。总 CI 摘要仅收录白名单布尔检查、阶段名和精确用量，不包含请求编号、回执签名、设备公钥、地址或令牌。主 CI 脚本最终统一清理本次创建的 Compose、服务和目录。实际 Linux/systemd 通过状态以对应提交的验证结果为准。
 
 ## 证据与失败处理
 
-每个通过的阶段将证据写入同名 JSON，并保存在 state 的 `checkpoints` 中。证据包括筛选用量、部署版本、设备公钥与版本，以及稳定阶段的本地 outbox 状态；真实证据保持私有。超时或断言失败返回非零，不写通过记录，不自动回滚、删除资源或操作账本。
+每个通过的阶段将证据写入同名 JSON，并保存在 state 的 `checkpoints` 中。证据包括纯监控采样、筛选用量、部署版本与配置包摘要、设备公钥与版本，以及稳定阶段的本地 outbox 状态；真实证据保持私有。超时或断言失败返回非零，不写通过记录，不自动回滚、删除资源或操作账本。
 
-`python3 scripts/test-e2e-driver.py` 覆盖创建响应丢失后的恢复、不重复创建或修改其他对象、双向增长、重复入账、身份变化、outbox 未清空及两个采样间隔的失败边界。此契约验证不能代替实际 Reality、systemd、升级与客户端流量验收。
+`python3 scripts/test-e2e-driver.py` 覆盖纯监控未启用保证、只读 Nexus 拒绝、旧版非一体化 Agent 拒绝冒充、首个节点自动发布与可追踪核对证据、创建响应丢失后的恢复、不重复创建或修改其他对象、双向增长、重复入账、同配置一致性、身份变化、outbox 未清空、真实 phase 失败摘要及两个采样间隔的失败边界。此契约验证不能代替实际 Reality、systemd、升级与客户端流量验收。

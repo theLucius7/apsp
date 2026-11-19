@@ -1,41 +1,94 @@
 //! What a deployment-automation step may do with the proxy runtime: the step's requirement,
 //! the fixed failed deployment it retries (the candidate), and whether a saved candidate, the
 //! device's checkpoints and the read-only check of an unknown result still match the current
-//! target. Operations runs the step and records it (its runtime operations and job history);
-//! these functions answer whether a step is legal and what it targets.
+//! target and the running self-contained Agent bundle. Operations runs the step and records it
+//! (its runtime operations and job history); these functions answer whether a step is legal and
+//! what it targets.
 
 use crate::{
     AppState,
     error::{ApiError, ApiResult},
 };
 use apsp_protocol::{
-    Artifact, RuntimeBinding, RuntimeCheckpointRequest, RuntimeOperation, RuntimeOperationRequest,
+    RuntimeBinding, RuntimeCheckpointRequest, RuntimeOperation, RuntimeOperationRequest,
     now_timestamp,
 };
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sqlx::{Postgres, Row, Transaction};
 use uuid::Uuid;
 
 const VERSION: &str = crate::RUNTIME_VERSION;
 const MODULE: &str = "singbox";
-/// What the Agent supports before it retries a fixed deployment and proves the result.
-const RETRY_CAPABILITIES: [&str; 3] = [
+const COMPONENT: &str = "sing-box";
+const STATIC_INFO_MAX_AGE_SECS: i64 = 600;
+
+/// Capabilities required beyond self-contained sing-box support before retrying a fixed
+/// failed deployment and proving the result.
+const RETRY_CAPABILITIES: [&str; 2] = [
     apsp_protocol::RUNTIME_OPERATIONS_CAPABILITY,
     apsp_protocol::RUNTIME_CHECKPOINT_CAPABILITY,
-    apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY,
 ];
 
-/// Runtime version and capability that an operations step on this runtime requires.
+/// Capability that an operations step on this runtime requires.
 pub struct RuntimeStepRequirement {
-    pub version: &'static str,
     pub capability: &'static str,
 }
 
 pub fn runtime_step_policy(kind: &str) -> Option<RuntimeStepRequirement> {
     (kind == "singbox_retry_deployment").then_some(RuntimeStepRequirement {
-        version: VERSION,
         capability: "proxy:write",
     })
+}
+
+/// Verified running Agent package and embedded sing-box identity frozen into a retry candidate.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FrozenAgentBundle {
+    pub agent_version: String,
+    pub release_tag: String,
+    pub target: String,
+    pub source_repo: String,
+    pub agent_sha256: String,
+    pub agent_bytes: u64,
+    pub component: String,
+    pub component_version: String,
+    pub component_sha256: String,
+}
+
+impl From<crate::releases::VerifiedRunningComponent> for FrozenAgentBundle {
+    fn from(verified: crate::releases::VerifiedRunningComponent) -> Self {
+        Self {
+            agent_version: verified.agent_version,
+            release_tag: verified.release_tag,
+            target: verified.target,
+            source_repo: verified.source_repo,
+            agent_sha256: verified.agent_sha256,
+            agent_bytes: verified.agent_bytes,
+            component: verified.component,
+            component_version: verified.component_version,
+            component_sha256: verified.component_sha256,
+        }
+    }
+}
+
+impl FrozenAgentBundle {
+    fn valid(&self) -> bool {
+        !self.agent_version.is_empty()
+            && self.release_tag == format!("agent-v{}", self.agent_version)
+            && apsp_protocol::platform::ARTIFACT_TARGETS.contains(&self.target.as_str())
+            && self.source_repo == apsp_protocol::release::RELEASE_SOURCE_REPO
+            && apsp_protocol::bundled::valid_sha256(&self.agent_sha256)
+            && self.agent_bytes > 0
+            && self.component == COMPONENT
+            && self.component_version == VERSION
+            && apsp_protocol::bundled::valid_sha256(&self.component_sha256)
+    }
+}
+
+/// Whether `candidate` uses the retired pre-consolidation standalone artifact format.
+pub fn is_legacy_candidate(candidate: &Value) -> bool {
+    candidate.get("artifact").is_some() || candidate.get("runtime_version").is_some()
 }
 
 fn conflict(message: &str) -> ApiError {
@@ -43,11 +96,102 @@ fn conflict(message: &str) -> ApiError {
 }
 
 fn retry_capable(capabilities: &Value) -> bool {
-    capabilities.as_array().is_some_and(|values| {
-        RETRY_CAPABILITIES
-            .iter()
-            .all(|required| values.iter().any(|value| value.as_str() == Some(*required)))
-    })
+    crate::agent::supports_self_contained_singbox(capabilities)
+        && capabilities.as_array().is_some_and(|values| {
+            RETRY_CAPABILITIES
+                .iter()
+                .all(|required| values.iter().any(|value| value.as_str() == Some(*required)))
+        })
+}
+
+fn non_empty_str<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
+    value[key].as_str().filter(|entry| !entry.is_empty())
+}
+
+fn frozen_bundle(candidate: &Value) -> Option<FrozenAgentBundle> {
+    if is_legacy_candidate(candidate) {
+        return None;
+    }
+    let bundle: FrozenAgentBundle =
+        serde_json::from_value(candidate.get("agent_bundle")?.clone()).ok()?;
+    bundle.valid().then_some(bundle)
+}
+
+async fn device_matches_frozen_bundle(
+    tx: &mut Transaction<'_, Postgres>,
+    server: i64,
+    expected: &FrozenAgentBundle,
+    now: i64,
+) -> ApiResult<bool> {
+    if !expected.valid() {
+        return Ok(false);
+    }
+    let Some(row) = sqlx::query(
+        "SELECT static_info,static_info_received_at,capabilities,last_seen FROM servers WHERE id=$1 AND deleted_at IS NULL",
+    )
+    .bind(server)
+    .fetch_optional(&mut **tx)
+    .await?
+    else {
+        return Ok(false);
+    };
+    let capabilities: Value = row.get("capabilities");
+    let last_seen: Option<i64> = row.get("last_seen");
+    let received_at: Option<i64> = row.get("static_info_received_at");
+    if !retry_capable(&capabilities)
+        || !last_seen.is_some_and(|seen| seen <= now + 60 && now.saturating_sub(seen) <= 60)
+        || !received_at.is_some_and(|at| {
+            at > 0 && at <= now + 60 && now.saturating_sub(at) <= STATIC_INFO_MAX_AGE_SECS
+        })
+    {
+        return Ok(false);
+    }
+    let info: Value = row.get("static_info");
+    let matches = info["agent_version"].as_str() == Some(expected.agent_version.as_str())
+        && crate::releases::reported_agent_sha256(&info) == Some(expected.agent_sha256.as_str())
+        && info["components"][COMPONENT].as_str() == Some(expected.component_version.as_str())
+        && info["component_digests"][COMPONENT].as_str()
+            == Some(expected.component_sha256.as_str())
+        && crate::releases::agent_targets(&info).contains(&expected.target);
+    Ok(matches)
+}
+
+async fn verified_current_bundle(
+    state: &AppState,
+    tx: &mut Transaction<'_, Postgres>,
+    server: i64,
+    now: i64,
+) -> ApiResult<FrozenAgentBundle> {
+    if !crate::settings::is_configured(tx, server).await? {
+        return Err(conflict("当前服务器未配置受管流量服务，不能核对解锁原部署"));
+    }
+    let row = sqlx::query(
+        "SELECT static_info,static_info_received_at,capabilities,last_seen FROM servers WHERE id=$1 AND deleted_at IS NULL",
+    )
+    .bind(server)
+    .fetch_optional(&mut **tx)
+    .await?
+    .ok_or(ApiError::NotFound)?;
+    let capabilities: Value = row.get("capabilities");
+    if !retry_capable(&capabilities) {
+        return Err(conflict(
+            "当前设备缺少一体化 Agent、内置 sing-box、运行时运维或实际配置核对能力",
+        ));
+    }
+    let static_info: Value = row.get("static_info");
+    let static_info_received_at: Option<i64> = row.get("static_info_received_at");
+    let last_seen: Option<i64> = row.get("last_seen");
+    let verified = crate::releases::verify_running_component(
+        state,
+        &static_info,
+        static_info_received_at,
+        last_seen,
+        now,
+        COMPONENT,
+        VERSION,
+    )
+    .await?;
+    Ok(FrozenAgentBundle::from(verified))
 }
 
 async fn fixed_binding(
@@ -77,50 +221,22 @@ async fn fixed_binding(
     Ok(binding)
 }
 
-fn artifact_identity(state: &AppState, artifact: &Artifact) -> ApiResult<Value> {
-    let proof = artifact
-        .proof
-        .as_ref()
-        .ok_or_else(|| conflict("运行时缺少独立签名证明"))?;
-    let keys = state
-        .release_keys
-        .as_deref()
-        .ok_or_else(|| conflict("面板缺少可信发布公钥"))?;
-    let verified = apsp_protocol::release::verify_release(proof, keys)
-        .map_err(|_| conflict("运行时签名证明校验失败"))?;
-    let arch = artifact
-        .url
-        .rsplit('/')
-        .next()
-        .ok_or_else(|| conflict("签名制品平台无效"))?;
-    let entry = verified
-        .artifact("sing-box", VERSION, arch)
-        .map_err(|_| conflict("签名运行时版本或平台不匹配"))?;
-    if entry.sha256() != artifact.sha256 {
-        return Err(conflict("运行时制品摘要与签名发布不匹配"));
-    }
-    Ok(
-        json!({"sha256":artifact.sha256,"arch":arch,"bytes":entry.metadata().archive_size.to_string(),"version":VERSION,"signature_verified":true,"payload_verified":true,"source_repo":verified.metadata().source_repo,"release_tag":verified.metadata().tag}),
-    )
-}
-
 pub async fn automation_candidate(
     state: &AppState,
     tx: &mut Transaction<'_, Postgres>,
     server: i64,
 ) -> ApiResult<Value> {
     crate::servers::lock(tx, server).await?;
-    crate::settings::require_enabled(tx, server).await?;
-    let row = sqlx::query(&format!("SELECT s.static_info,s.capabilities,s.last_seen,{} AS pending,m.target_rev,m.last_result_rev,m.last_error,m.healthy,m.updated_at,d.bundle,d.bundle_sha256,(SELECT MAX(rev) FROM deployments WHERE server_id=$1 AND module='singbox') AS latest_rev FROM servers s JOIN server_module_status m ON m.server_id=s.id AND m.module='singbox' JOIN deployments d ON d.server_id=s.id AND d.module=m.module AND d.rev=m.target_rev WHERE s.id=$1 FOR UPDATE OF m", crate::publications::pending_sql("s.id")))
+    crate::settings::require_configured(tx, server).await?;
+    let row = sqlx::query(&format!("SELECT s.static_info,s.static_info_received_at,s.capabilities,s.last_seen,{} AS pending,m.target_rev,m.last_result_rev,m.last_error,m.healthy,m.updated_at,d.bundle,d.bundle_sha256,(SELECT MAX(rev) FROM deployments WHERE server_id=$1 AND module='singbox') AS latest_rev FROM servers s JOIN server_module_status m ON m.server_id=s.id AND m.module='singbox' JOIN deployments d ON d.server_id=s.id AND d.module=m.module AND d.rev=m.target_rev WHERE s.id=$1 AND s.deleted_at IS NULL FOR UPDATE OF m", crate::publications::pending_sql("s.id")))
         .bind(server).fetch_optional(&mut **tx).await?.ok_or_else(|| conflict("尚无已发布且失败的 sing-box 部署"))?;
     let now = now_timestamp();
+    let last_seen: Option<i64> = row.get("last_seen");
     if !retry_capable(&row.get::<Value, _>("capabilities"))
-        || !row
-            .get::<Option<i64>, _>("last_seen")
-            .is_some_and(|seen| (0..=60).contains(&now.saturating_sub(seen)))
+        || !last_seen.is_some_and(|seen| seen <= now + 60 && now.saturating_sub(seen) <= 60)
     {
         return Err(conflict(
-            "此步骤需要在线 Agent、运行时运维、实际配置核对及制品验签能力",
+            "此步骤需要在线的一体化 Agent、内置 sing-box、运行时运维及实际配置核对能力",
         ));
     }
     let revision: i64 = row.get("target_rev");
@@ -141,30 +257,34 @@ pub async fn automation_candidate(
     if crate::auth::hash_token(&row.get::<String, _>("bundle")) != hash {
         return Err(conflict("已发布配置包完整性校验失败"));
     }
-    let artifact =
-        crate::agent::runtime_artifact(state, &row.get::<Value, _>("static_info")).await?;
-    let identity = artifact_identity(state, &artifact)?;
-    let pinned: Vec<Value> = sqlx::query_scalar("SELECT DISTINCT r.artifact FROM singbox_path_deployment_dependencies d JOIN singbox_chain_runtime_requirements r ON r.chain_id=d.chain_id AND r.generation=d.generation AND r.server_id=d.server_id WHERE d.server_id=$1 AND d.module='singbox' AND d.revision=$2")
-        .bind(server).bind(revision).fetch_all(&mut **tx).await?;
-    if pinned
-        .iter()
-        .any(|pin| pin["sha256"].as_str() != Some(artifact.sha256.as_str()))
-    {
-        return Err(conflict(
-            "路径依赖与当前签名制品不一致，不能变更已有部署的运行时身份",
-        ));
-    }
-    sqlx::query("INSERT INTO singbox_runtime_manifest_facts(server_id,module,revision,runtime_version,artifact_sha256,artifact) VALUES($1,'singbox',$2,$3,$4,$5) ON CONFLICT DO NOTHING")
-        .bind(server).bind(revision).bind(VERSION).bind(&artifact.sha256).bind(serde_json::to_value(&artifact).map_err(anyhow::Error::from)?).execute(&mut **tx).await?;
-    let same: bool = sqlx::query_scalar("SELECT runtime_version=$3 AND artifact_sha256=$4 FROM singbox_runtime_manifest_facts WHERE server_id=$1 AND module='singbox' AND revision=$2")
-        .bind(server).bind(revision).bind(VERSION).bind(&artifact.sha256).fetch_one(&mut **tx).await?;
-    if !same {
-        return Err(conflict("此部署已固定另一运行时制品，不能覆盖原始事实"));
-    }
-    let binding = fixed_binding(tx, server, revision, &hash).await?;
-    Ok(
-        json!({"kind":"singbox_retry_deployment","module":MODULE,"runtime_version":VERSION,"binding":binding,"artifact":identity,"expected_failure_revision":revision,"target_status_updated_at":row.get::<i64, _>("updated_at"),"changes_business_configuration":false,"retry_unknown_result":false}),
+    let static_info: Value = row.get("static_info");
+    let static_info_received_at: Option<i64> = row.get("static_info_received_at");
+    let verified = crate::releases::verify_running_component(
+        state,
+        &static_info,
+        static_info_received_at,
+        last_seen,
+        now,
+        COMPONENT,
+        VERSION,
     )
+    .await?;
+    let agent_bundle = FrozenAgentBundle::from(verified);
+    let observed_agent_version = non_empty_str(&static_info, "agent_version");
+    let observed_runtime_version = crate::agent::reported_runtime_version(&static_info);
+    let binding = fixed_binding(tx, server, revision, &hash).await?;
+    Ok(json!({
+        "kind": "singbox_retry_deployment",
+        "module": MODULE,
+        "binding": binding,
+        "expected_failure_revision": revision,
+        "target_status_updated_at": row.get::<i64, _>("updated_at"),
+        "observed_agent_version": observed_agent_version,
+        "observed_runtime_version": observed_runtime_version,
+        "changes_business_configuration": false,
+        "retry_unknown_result": false,
+        "agent_bundle": agent_bundle,
+    }))
 }
 
 /// The runtime operation that retries the candidate's fixed deployment, valid until
@@ -174,6 +294,9 @@ pub fn retry_request(
     now: i64,
     expires: i64,
 ) -> ApiResult<RuntimeOperationRequest> {
+    if frozen_bundle(candidate).is_none() {
+        return Err(conflict("固定失败部署缺少有效的一体化 Agent 整包身份"));
+    }
     let binding: RuntimeBinding =
         serde_json::from_value(candidate["binding"].clone()).map_err(anyhow::Error::from)?;
     let request = RuntimeOperationRequest {
@@ -205,45 +328,51 @@ pub async fn checkpoint_verified_since(
         .bind(server).bind(since).fetch_one(&mut **tx).await?)
 }
 
-/// Whether a queued retry may go to the server now: the runtime is enabled there and the
-/// Agent supports runtime operations, checkpoints and signed artifacts.
+/// Whether a queued retry may go to the server now: the runtime is configured there and the
+/// Agent supports self-contained sing-box, runtime operations, checkpoints and release proofs.
 pub async fn retry_target_ready(
     tx: &mut Transaction<'_, Postgres>,
     server: i64,
 ) -> ApiResult<bool> {
-    if !crate::settings::is_enabled(tx, server).await? {
+    if !crate::settings::is_configured(tx, server).await? {
         return Ok(false);
     }
-    let caps: Value =
+    let Some(caps): Option<Value> =
         sqlx::query_scalar("SELECT capabilities FROM servers WHERE id=$1 AND deleted_at IS NULL")
             .bind(server)
-            .fetch_one(&mut **tx)
-            .await?;
+            .fetch_optional(&mut **tx)
+            .await?
+    else {
+        return Ok(false);
+    };
     Ok(retry_capable(&caps))
 }
 
-/// Whether a saved candidate still names the server's current target and its fixed signed
-/// artifact.
+/// Whether a saved candidate still names the server's current target and its frozen
+/// verified Agent bundle and embedded sing-box component identity.
 pub async fn candidate_is_current(
     tx: &mut Transaction<'_, Postgres>,
     server: i64,
     candidate: &Value,
 ) -> ApiResult<bool> {
-    let binding: RuntimeBinding =
-        serde_json::from_value(candidate["binding"].clone()).map_err(anyhow::Error::from)?;
+    let Some(bundle) = frozen_bundle(candidate) else {
+        return Ok(false);
+    };
+    let Ok(binding) = serde_json::from_value::<RuntimeBinding>(candidate["binding"].clone()) else {
+        return Ok(false);
+    };
     if !binding.valid()
         || binding.module != MODULE
         || !crate::runtime_control::target_is_current(tx, server, &binding).await?
     {
         return Ok(false);
     }
-    Ok(sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_runtime_manifest_facts WHERE server_id=$1 AND module='singbox' AND revision=$2 AND runtime_version='1.14.4-apsp.2' AND artifact_sha256=$3)")
-        .bind(server).bind(binding.revision as i64).bind(candidate["artifact"]["sha256"].as_str().unwrap_or("")).fetch_one(&mut **tx).await?)
+    device_matches_frozen_bundle(tx, server, &bundle, now_timestamp()).await
 }
 
 /// What the device confirmed about a retry it reported finished without error.
 pub enum RetryConfirmation {
-    /// The saved candidate, the current target or its fixed artifact no longer match the
+    /// The saved candidate, the current target or its frozen Agent bundle no longer match the
     /// request; the result stays uncertain.
     Mismatch,
     /// A fresh verified checkpoint shows the retried binding applied and healthy.
@@ -252,8 +381,8 @@ pub enum RetryConfirmation {
     Unconfirmed(RuntimeBinding),
 }
 
-/// Compares a retry the device finished without error with the current target and the
-/// device's checkpoints since `dispatched_at`.
+/// Compares a retry the device finished without error with the current target, the frozen
+/// Agent bundle and the device's checkpoints since `dispatched_at`.
 pub async fn retry_confirmation(
     tx: &mut Transaction<'_, Postgres>,
     server: i64,
@@ -262,15 +391,19 @@ pub async fn retry_confirmation(
     dispatched_at: i64,
     now: i64,
 ) -> ApiResult<RetryConfirmation> {
-    let binding: RuntimeBinding =
-        serde_json::from_value(candidate["binding"].clone()).map_err(anyhow::Error::from)?;
+    let Some(bundle) = frozen_bundle(candidate) else {
+        return Ok(RetryConfirmation::Mismatch);
+    };
+    let Ok(binding) = serde_json::from_value::<RuntimeBinding>(candidate["binding"].clone()) else {
+        return Ok(RetryConfirmation::Mismatch);
+    };
     let current = crate::runtime_control::target_is_current(tx, server, &binding).await?;
-    let facts: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_runtime_manifest_facts WHERE server_id=$1 AND module='singbox' AND revision=$2 AND runtime_version='1.14.4-apsp.2' AND artifact_sha256=$3)")
-        .bind(server).bind(binding.revision as i64).bind(candidate["artifact"]["sha256"].as_str().unwrap_or("")).fetch_one(&mut **tx).await?;
+    let bundle_matches = crate::settings::is_configured(tx, server).await?
+        && device_matches_frozen_bundle(tx, server, &bundle, now).await?;
     let matching_request = binding.valid()
         && binding.module == request.module
         && Some(binding.revision) == request.expected_revision;
-    if !(current && facts && matching_request) {
+    if !(current && bundle_matches && matching_request) {
         return Ok(RetryConfirmation::Mismatch);
     }
     let confirmed: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM runtime_module_checkpoints c JOIN runtime_control_receipts r ON r.request_id=c.checkpoint_request_id JOIN server_module_status m ON m.server_id=c.server_id AND m.module=c.module WHERE c.server_id=$1 AND c.module='singbox' AND c.verified_at>=$2 AND c.verified_at>$3-300 AND r.outcome='verified' AND c.checkpoint_json->'healthy'='true'::jsonb AND c.checkpoint_json->'binding'=$4 AND m.target_rev=$5 AND m.applied_rev=$5 AND m.healthy)")
@@ -315,27 +448,34 @@ pub async fn retry_checkpoint(
     Ok(Some(checkpoint.request_id))
 }
 
-/// The fixed deployment of a dispatched retry whose result is unknown.
+/// The fixed deployment and verified running Agent bundle inspected for a dispatched retry
+/// whose result is unknown.
 pub struct FixedDeployment {
     pub binding: RuntimeBinding,
-    pub artifact_sha256: String,
+    pub inspected_agent_bundle: FrozenAgentBundle,
+    pub legacy_candidate: bool,
 }
 
-/// The fixed deployment a saved candidate names for a retry whose result is unknown, while
-/// it is still the server's current target with its fixed signed artifact; only then can a
-/// read-only check reconcile the result.
+/// The fixed deployment a saved candidate names for an already-dispatched retry whose result
+/// is unknown, while it is still the server's current target and the server is running a
+/// verified signed self-contained Agent bundle. New candidates must still match their frozen
+/// Agent bundle; already-dispatched pre-consolidation candidates retain read-only checkpoint
+/// reconciliation without converting or replaying the original mutation.
 pub async fn unknown_retry_target(
+    state: &AppState,
     tx: &mut Transaction<'_, Postgres>,
     server: i64,
     candidate: &Value,
     request: &RuntimeOperationRequest,
+    now: i64,
 ) -> ApiResult<FixedDeployment> {
-    let binding: RuntimeBinding =
-        serde_json::from_value(candidate["binding"].clone()).map_err(anyhow::Error::from)?;
-    let sha = candidate["artifact"]["sha256"]
-        .as_str()
-        .ok_or_else(|| conflict("原签名制品摘要缺失"))?
-        .to_owned();
+    if candidate["kind"].as_str() != Some("singbox_retry_deployment")
+        || candidate["module"].as_str() != Some(MODULE)
+    {
+        return Err(conflict("原部署候选类型或模块无效，不能核对解锁"));
+    }
+    let binding: RuntimeBinding = serde_json::from_value(candidate["binding"].clone())
+        .map_err(|_| conflict("原部署的固定配置身份缺失或无效，不能核对解锁"))?;
     if !binding.valid()
         || binding.module != MODULE
         || Some(binding.revision) != request.expected_revision
@@ -345,13 +485,32 @@ pub async fn unknown_retry_target(
             "当前目标已不匹配原固定部署，需要受控恢复，不能用其他版本证明原请求已恢复",
         ));
     }
-    let same: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_runtime_manifest_facts WHERE server_id=$1 AND module='singbox' AND revision=$2 AND runtime_version='1.14.4-apsp.2' AND artifact_sha256=$3)").bind(server).bind(binding.revision as i64).bind(&sha).fetch_one(&mut **tx).await?;
-    if !same {
-        return Err(conflict("原固定签名制品身份已变化，不能核对解锁"));
+    if is_legacy_candidate(candidate) {
+        if !candidate["artifact"]["sha256"]
+            .as_str()
+            .is_some_and(apsp_protocol::bundled::valid_sha256)
+        {
+            return Err(conflict("原旧版部署候选缺少有效制品摘要，不能核对解锁"));
+        }
+        let inspected_agent_bundle = verified_current_bundle(state, tx, server, now).await?;
+        return Ok(FixedDeployment {
+            binding,
+            inspected_agent_bundle,
+            legacy_candidate: true,
+        });
+    }
+    let original = frozen_bundle(candidate)
+        .ok_or_else(|| conflict("原固定可信 Agent 整包身份缺失或无效，不能核对解锁"))?;
+    let inspected_agent_bundle = verified_current_bundle(state, tx, server, now).await?;
+    if inspected_agent_bundle != original {
+        return Err(conflict(
+            "原固定可信 Agent 整包或内置运行时身份已变化，不能核对解锁",
+        ));
     }
     Ok(FixedDeployment {
         binding,
-        artifact_sha256: sha,
+        inspected_agent_bundle,
+        legacy_candidate: false,
     })
 }
 

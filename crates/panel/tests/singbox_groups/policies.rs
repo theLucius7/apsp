@@ -252,7 +252,6 @@ async fn modern_group_credentials_survive_group_overlap_and_obey_quota(pool: PgP
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let server = panel.create_server(&cookie, "Modern policy").await?;
-    panel.enable_runtime(&cookie, server).await?;
     let node = id(&call(
         &panel,
         &cookie,

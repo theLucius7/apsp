@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { resolve, extname, sep } from 'node:path'
 import { installControlCenterFixtures } from './control-center-fixtures.mjs'
-import { proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
+import { proxyResourceFixtures, runtimeServerFixture } from './proxy-resource-fixtures.mjs'
 import { chooseLanguage, openPage } from './shell-navigation.mjs'
 
 // TEST_ONLY: after rebuilding web/dist, run `node web/tests/shell-continuity.mjs`.
@@ -41,7 +41,7 @@ const serverFixture = id => {
 // Proxy users render their detail beside the list through the shared list/detail layout.
 const user = { id: 1, name: 'TEST_ONLY 代理用户', subscription_token: 'TEST_ONLY', subscription_url: 'http://127.0.0.1/s/TEST_ONLY' }
 const node = { enabled: true, id: 1, name: 'TEST_ONLY 节点', server_id: 1, protocol: 'vless-reality', public_host: '127.0.0.1', port: 24443, sni: 'localhost', public_key: 'TEST_ONLY', short_id: '0123abcd' }
-const runtimeServers = [{ id: 1, name: 'TEST_ONLY 服务器', enabled: true, online: true, read_only: false }]
+const runtimeServers = [runtimeServerFixture(1, { name: 'TEST_ONLY 服务器' })]
 const proxyReads = {
   [`${accessApi}/policy-groups`]: [], [`${accessApi}/package-groups`]: [], [`${trafficApi}/nodes`]: [node], [`${accessApi}/users`]: [user],
   [`${trafficApi}/ordered-proxy-resources`]: proxyResourceFixtures([node], runtimeServers),

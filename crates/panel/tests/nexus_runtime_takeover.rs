@@ -10,7 +10,7 @@ use apsp_governance::control_center::credentials;
 use apsp_panel::publisher;
 use apsp_protocol::{UsageBatch, UsageRecord, now_timestamp};
 use base64::{Engine, engine::general_purpose::STANDARD};
-use business_support::{TestPanel, release_fixture};
+use business_support::TestPanel;
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 use sqlx::PgPool;
@@ -214,20 +214,13 @@ async fn preserved_runtime_requires_explicit_handoff_and_replays_usage_once(
         .status(),
         StatusCode::CONFLICT
     );
-    // Synthetic signed runtime is confined to this temporary TestPanel.
-    let binary = b"TEST_ONLY signed runtime";
-    let archive = release_fixture::archive("sing-box", binary)?;
-    release_fixture::write(
-        &panel.state.config.data_dir,
-        "sing-box",
-        "1.14.4-apsp.2",
-        "sing-box",
-        &archive,
-        binary,
-        "tar.gz",
-    )?;
-    sqlx::query("UPDATE servers SET device_public_key='TEST_ONLY',last_seen=$2,static_info=$3,capabilities=$4 WHERE id=$1").bind(server).bind(now_timestamp())
-        .bind(json!({"arch":"amd64","os":"linux","libc":"gnu","agent_version":"0.3.4"})).bind(json!(["singbox",apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY])).execute(&pool).await?;
+    sqlx::query("UPDATE servers SET device_public_key='TEST_ONLY',last_seen=$2,static_info=$3,capabilities=$4 WHERE id=$1")
+        .bind(server)
+        .bind(now_timestamp())
+        .bind(json!({"arch":"amd64","os":"linux","libc":"gnu","agent_version":"0.3.4","components":{"sing-box":apsp_traffic::RUNTIME_VERSION}}))
+        .bind(json!([apsp_protocol::SELF_CONTAINED_AGENT_CAPABILITY,"singbox",apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY]))
+        .execute(&pool)
+        .await?;
     // Without device limits from the bridge the handoff waits.
     assert_eq!(
         post(
@@ -651,25 +644,15 @@ async fn device_limits_need_session_control_and_are_shared_with_legacy_nodes(
     )
     .await?)
     .await?;
-    let binary = b"TEST_ONLY signed runtime";
-    let archive = release_fixture::archive("sing-box", binary)?;
-    release_fixture::write(
-        &panel.state.config.data_dir,
-        "sing-box",
-        "1.14.4-apsp.2",
-        "sing-box",
-        &archive,
-        binary,
-        "tar.gz",
-    )?;
     let online = |capabilities: Value| {
         sqlx::query("UPDATE servers SET device_public_key='TEST_ONLY',last_seen=$2,static_info=$3,capabilities=$4 WHERE id=$1")
             .bind(server).bind(now_timestamp())
-            .bind(json!({"arch":"amd64","os":"linux","libc":"gnu","agent_version":"0.3.4"}))
+            .bind(json!({"arch":"amd64","os":"linux","libc":"gnu","agent_version":"0.3.4","components":{"sing-box":apsp_traffic::RUNTIME_VERSION}}))
             .bind(capabilities)
             .execute(&pool)
     };
     let basic = json!([
+        apsp_protocol::SELF_CONTAINED_AGENT_CAPABILITY,
         "singbox",
         apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY
     ]);
@@ -1037,19 +1020,13 @@ async fn native_users_are_served_on_a_running_host_by_apsp(pool: PgPool) -> Resu
         .await?;
     assert_eq!(members, 0, "the member keeps their original identity");
     // Hand the host over, as covered above.
-    let binary = b"TEST_ONLY signed runtime";
-    let archive = release_fixture::archive("sing-box", binary)?;
-    release_fixture::write(
-        &panel.state.config.data_dir,
-        "sing-box",
-        "1.14.4-apsp.2",
-        "sing-box",
-        &archive,
-        binary,
-        "tar.gz",
-    )?;
-    sqlx::query("UPDATE servers SET device_public_key='TEST_ONLY',last_seen=$2,static_info=$3,capabilities=$4 WHERE id=$1").bind(server).bind(now_timestamp())
-        .bind(json!({"arch":"amd64","os":"linux","libc":"gnu","agent_version":"0.3.4"})).bind(json!(["singbox",apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY])).execute(&pool).await?;
+    sqlx::query("UPDATE servers SET device_public_key='TEST_ONLY',last_seen=$2,static_info=$3,capabilities=$4 WHERE id=$1")
+        .bind(server)
+        .bind(now_timestamp())
+        .bind(json!({"arch":"amd64","os":"linux","libc":"gnu","agent_version":"0.3.4","components":{"sing-box":apsp_traffic::RUNTIME_VERSION}}))
+        .bind(json!([apsp_protocol::SELF_CONTAINED_AGENT_CAPABILITY,"singbox",apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY]))
+        .execute(&pool)
+        .await?;
     bridge_devices(&pool, json!({}), json!({})).await?;
     let candidate = ok(post(
         &panel,
@@ -1113,11 +1090,15 @@ async fn native_users_are_served_on_a_running_host_by_apsp(pool: PgPool) -> Resu
         accounting,
         vec![format!("u{member}_n{line}"), format!("u{native}_n{line}")]
     );
-    // apsp's subscription source lists the line with the ordinary credential only.
+    // The applied source can shadow-compile the original identity too; switching
+    // its renderer still requires a separate, checked native-adoption operation.
     assert_eq!(source["public_nodes"][0]["id"], line);
     assert_eq!(
         source["public_nodes"][0]["users"],
-        json!([{"user_id":native,"uuid":uuid,"credential":credential}])
+        json!([
+            {"user_id":member,"uuid":"12345678-1234-4234-8234-123456789abc","credential":STANDARD.encode(b"12345678-1234-42")},
+            {"user_id":native,"uuid":uuid,"credential":credential}
+        ])
     );
     // Both users' traffic is accepted; only the member's goes to the bridge.
     let batch = UsageBatch {
@@ -1385,10 +1366,6 @@ async fn retired_line_leaves_the_running_host_and_the_bridge(pool: PgPool) -> Re
     .await?;
     // The handoff itself is covered above; here the host simply runs.
     sqlx::query("UPDATE singbox_nexus_runtime_hosts SET state='active',activated_at=1,last_activated_at=1 WHERE server_id=$1")
-        .bind(server)
-        .execute(&pool)
-        .await?;
-    sqlx::query("UPDATE runtime_enablements SET enabled=TRUE WHERE server_id=$1")
         .bind(server)
         .execute(&pool)
         .await?;
@@ -1940,10 +1917,6 @@ async fn redeploy_repeats_a_running_hosts_bundle_as_a_higher_revision(pool: PgPo
         .bind(server)
         .execute(&pool)
         .await?;
-    sqlx::query("UPDATE runtime_enablements SET enabled=TRUE WHERE server_id=$1")
-        .bind(server)
-        .execute(&pool)
-        .await?;
     apsp_traffic::publisher::publish_due(&panel.state, None).await?;
     sqlx::query("INSERT INTO runtime_publications(server_id,dirty_at) SELECT id,0 FROM servers ON CONFLICT(server_id) DO UPDATE SET dirty_at=0")
         .execute(&pool)
@@ -2131,5 +2104,588 @@ async fn a_revised_reality_target_reaches_the_node_model(pool: PgPool) -> Result
         ),
         (json!("edge.example.org"), json!(8443))
     );
+    Ok(())
+}
+
+/// A known applied preserved runtime; the test adopts the control plane rather
+/// than re-testing the independent runtime-activation preflight here.
+async fn adoption_fixture(panel: &TestPanel, cookie: &str) -> Result<(i64, i64, i64)> {
+    let (server, payload, user) = fixture(panel).await?;
+    let preview = ok(post(panel, cookie, "/preview", json!({"payload":payload})).await?).await?;
+    ok(post(
+        panel,
+        cookie,
+        "/prepare",
+        json!({"payload":payload,"expected_digest":preview["digest"]}),
+    )
+    .await?)
+    .await?;
+    let now = now_timestamp();
+    sqlx::query("UPDATE singbox_nexus_bridge SET native_control_ready=TRUE")
+        .execute(&panel.state.pool)
+        .await?;
+    sqlx::query("UPDATE servers SET device_public_key='TEST_ONLY',last_seen=$2,static_info=$3,capabilities=$4 WHERE id=$1")
+        .bind(server)
+        .bind(now)
+        .bind(json!({"arch":"amd64","os":"linux","libc":"gnu","agent_version":"0.3.9","components":{"sing-box":apsp_traffic::RUNTIME_VERSION}}))
+        .bind(json!([apsp_protocol::SELF_CONTAINED_AGENT_CAPABILITY,"singbox"]))
+        .execute(&panel.state.pool)
+        .await?;
+    sqlx::query("UPDATE singbox_nexus_runtime_hosts SET state='active',activated_at=$2,last_activated_at=$2 WHERE server_id=$1")
+        .bind(server).bind(now).execute(&panel.state.pool).await?;
+    sqlx::query("INSERT INTO singbox_nexus_metering(user_id,upload,download,last_reset_at,next_reset_at,observed_at) VALUES($1,100,200,$2,$3,$4)")
+        .bind(user).bind(now-86400).bind(now+86400).bind(now).execute(&panel.state.pool).await?;
+    publish(panel).await?;
+    sqlx::query(
+        "UPDATE server_module_status SET applied_rev=target_rev,healthy=TRUE WHERE server_id=$1",
+    )
+    .bind(server)
+    .execute(&panel.state.pool)
+    .await?;
+    let line =
+        sqlx::query_scalar("SELECT node_id FROM singbox_nexus_runtime_nodes WHERE server_id=$1")
+            .bind(server)
+            .fetch_one(&panel.state.pool)
+            .await?;
+    Ok((server, user, line))
+}
+
+async fn native_adoption_preview(panel: &TestPanel, cookie: &str, user: i64) -> Result<Value> {
+    ok(panel
+        .admin(
+            Method::POST,
+            &format!("/api/access/users/{user}/native-adoption/preview"),
+            cookie,
+            None,
+        )
+        .await?)
+    .await
+}
+
+fn adoption_request(preview: &Value) -> Value {
+    json!({"expected_digest":preview["digest"],"compared_formats":if preview["blocked"]==true {json!(["blocked"])} else {json!(["singbox"])},"comparison_confirmed":true,"old_subscription_route_ready":true})
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn native_adoption_keeps_identity_cycle_and_exactly_once_usage(pool: PgPool) -> Result<()> {
+    let panel = TestPanel::start_with_localhost(pool.clone()).await?;
+    let cookie = panel.admin_cookie().await?;
+    let (server, user, line) = adoption_fixture(&panel, &cookie).await?;
+    let before:(String,Option<i64>,Option<i64>,String,bool)=sqlx::query_as("SELECT used_bytes,cycle_start,next_reset,status,allowed FROM singbox_entitlements($1) WHERE user_id=$2")
+        .bind(now_timestamp()).bind(user).fetch_one(&pool).await?;
+    let preview = native_adoption_preview(&panel, &cookie, user).await?;
+    assert_eq!(preview["blockers"], json!([]));
+    assert!(preview["formats"]["singbox"].as_str().is_some());
+    assert!(apsp_access::subscription_hosts::is_bridged(&pool, user).await?);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM accesses WHERE user_id=$1")
+            .bind(user)
+            .fetch_one(&pool)
+            .await?,
+        0,
+        "shadow output never materializes a grant"
+    );
+    let endpoint = format!("/api/access/users/{user}/native-adoption/adopt");
+    let request = adoption_request(&preview);
+    let (first, replay) = tokio::join!(
+        panel.admin(Method::POST, &endpoint, &cookie, Some(request.clone())),
+        panel.admin(Method::POST, &endpoint, &cookie, Some(request))
+    );
+    let first = ok(first?).await?;
+    let replay = ok(replay?).await?;
+    assert_ne!(first["already_applied"], replay["already_applied"]);
+    let after:(String,Option<i64>,Option<i64>,String,bool)=sqlx::query_as("SELECT used_bytes,cycle_start,next_reset,status,allowed FROM singbox_entitlements($1) WHERE user_id=$2")
+        .bind(now_timestamp()).bind(user).fetch_one(&pool).await?;
+    assert_eq!(before, after);
+    assert!(!apsp_access::subscription_hosts::is_bridged(&pool, user).await?);
+    let access: (Uuid, String) =
+        sqlx::query_as("SELECT uuid,credential FROM accesses WHERE user_id=$1 AND node_id=$2")
+            .bind(user)
+            .bind(line)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(
+        access,
+        (
+            Uuid::parse_str("12345678-1234-4234-8234-123456789abc")?,
+            STANDARD.encode(b"12345678-1234-42")
+        )
+    );
+    let batch = UsageBatch {
+        epoch: Uuid::new_v4(),
+        seq: 1,
+        period_start: now_timestamp() - 2,
+        period_end: now_timestamp(),
+        records: vec![UsageRecord {
+            stat_name: apsp_compiler::stat_name(user, line),
+            uplink: 10,
+            downlink: 20,
+        }],
+    };
+    usage::ingest(&panel.state, server, batch.clone()).await?;
+    usage::ingest(&panel.state, server, batch).await?;
+    let used: String =
+        sqlx::query_scalar("SELECT used_bytes FROM singbox_entitlements($1) WHERE user_id=$2")
+            .bind(now_timestamp())
+            .bind(user)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(
+        used, "375",
+        "old meter 300 plus exactly one 30-byte sample at 2.5x"
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM singbox_nexus_usage_deliveries WHERE user_id=$1"
+        )
+        .bind(user)
+        .fetch_one(&pool)
+        .await?,
+        0
+    );
+    // Same issued path and token, including the valid same-host query form.
+    sqlx::query("UPDATE singbox_nexus_bridge SET subscription_base=$1")
+        .bind(format!(
+            "{}/api/v1/client/subscribe?token=",
+            panel.state.config.public_url
+        ))
+        .execute(&pool)
+        .await?;
+    let response = panel
+        .client
+        .get(format!("{}/api/v1/client/subscribe", panel.base))
+        .header(
+            "host",
+            format!(
+                "localhost:{}",
+                reqwest::Url::parse(&panel.base)?.port().unwrap()
+            ),
+        )
+        .query(&[
+            ("token", "TEST_ONLY unchanged token"),
+            ("format", "singbox"),
+        ])
+        .send()
+        .await?;
+    let served: Value = response.error_for_status()?.json().await?;
+    assert!(
+        served["outbounds"]
+            .as_array()
+            .is_some_and(|v| v.iter().any(|out| out["type"] == "shadowsocks"))
+    );
+    let retire = panel
+        .admin(
+            Method::POST,
+            "/api/access/native-adoption/retire",
+            &cookie,
+            None,
+        )
+        .await?;
+    assert_eq!(
+        retire.status(),
+        StatusCode::CONFLICT,
+        "the last adoption has not yet been acknowledged by the old control plane"
+    );
+    let import: Uuid = sqlx::query_scalar("SELECT import_id FROM singbox_nexus_bridge")
+        .fetch_one(&pool)
+        .await?;
+    let result:Value=sqlx::query_scalar("SELECT singbox_nexus_bridge_exchange($1)").bind(json!({"import_id":import,"observed_at":now_timestamp(),"members":[{"id":user,"upload":"99999","download":"99999","last_reset_at":0,"next_reset_at":253402300799_i64}]})).fetch_one(&pool).await?;
+    assert_eq!(result["retired_members"], json!([user]));
+    let meter: (String, String) = sqlx::query_as(
+        "SELECT upload::text,download::text FROM singbox_nexus_metering WHERE user_id=$1",
+    )
+    .bind(user)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(
+        meter,
+        ("100".into(), "200".into()),
+        "retired legacy counters cannot overwrite native usage"
+    );
+    sqlx::query("UPDATE singbox_native_adoptions SET legacy_retired_at=$1 WHERE user_id=$2")
+        .bind(now_timestamp())
+        .bind(user)
+        .execute(&pool)
+        .await?;
+    sqlx::query("UPDATE singbox_nexus_bridge SET pending_generation=NULL")
+        .execute(&pool)
+        .await?;
+    ok(panel
+        .admin(
+            Method::POST,
+            "/api/access/native-adoption/retire",
+            &cookie,
+            None,
+        )
+        .await?)
+    .await?;
+    assert!(
+        !sqlx::query_scalar::<_, bool>("SELECT enabled FROM singbox_nexus_bridge")
+            .fetch_one(&pool)
+            .await?
+    );
+    let next_cycle: String =
+        sqlx::query_scalar("SELECT used_bytes FROM singbox_entitlements($1) WHERE user_id=$2")
+            .bind(before.2.unwrap() + 1)
+            .bind(user)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(
+        next_cycle, "75",
+        "the first reset retires the adoption anchor without rewriting the ledger"
+    );
+    // A later package assignment discards the old cycle anchor, not the raw ledger.
+    let next=sqlx::query_scalar::<_,i64>("INSERT INTO singbox_package_assignments(user_id,request_id,package_group_id,package_name,monthly_bytes,reset_day,reset_hour,reset_minute,timezone,starts_at,expires_at) SELECT user_id,$2,package_group_id,package_name,monthly_bytes,reset_day,reset_hour,reset_minute,timezone,starts_at,expires_at FROM singbox_package_assignments WHERE id=(SELECT assignment_id FROM singbox_user_packages WHERE user_id=$1) RETURNING id").bind(user).bind(Uuid::new_v4()).fetch_one(&pool).await?;
+    sqlx::query("UPDATE singbox_user_packages SET assignment_id=$2 WHERE user_id=$1")
+        .bind(user)
+        .bind(next)
+        .execute(&pool)
+        .await?;
+    let used: String =
+        sqlx::query_scalar("SELECT used_bytes FROM singbox_entitlements($1) WHERE user_id=$2")
+            .bind(now_timestamp())
+            .bind(user)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(used, "75");
+    Ok(())
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn native_adoption_preserves_excess_credits_and_blocked_users(pool: PgPool) -> Result<()> {
+    let panel = TestPanel::start_with_localhost(pool.clone()).await?;
+    let cookie = panel.admin_cookie().await?;
+    let (server, user, line) = adoption_fixture(&panel, &cookie).await?;
+    let (start, end): (i64, i64) = sqlx::query_as(
+        "SELECT cycle_start,next_reset FROM singbox_entitlements($1) WHERE user_id=$2",
+    )
+    .bind(now_timestamp())
+    .bind(user)
+    .fetch_one(&pool)
+    .await?;
+    sqlx::query("INSERT INTO singbox_quota_credits(id,user_id,cycle_start,next_reset,bytes,created_at,administrator_id) VALUES($1,$2,$3,$4,500,$5,1)").bind(Uuid::new_v4()).bind(user).bind(start).bind(end).bind(now_timestamp()).execute(&pool).await?;
+    sqlx::query("INSERT INTO singbox_user_controls(user_id,paused,updated_at) VALUES($1,TRUE,$2)")
+        .bind(user)
+        .bind(now_timestamp())
+        .execute(&pool)
+        .await?;
+    let preview = native_adoption_preview(&panel, &cookie, user).await?;
+    assert_eq!(preview["blockers"], json!([]));
+    assert_eq!(preview["blocked"], true);
+    assert_eq!(preview["entitlement"]["status"], "paused");
+    ok(panel
+        .admin(
+            Method::POST,
+            &format!("/api/access/users/{user}/native-adoption/adopt"),
+            &cookie,
+            Some(adoption_request(&preview)),
+        )
+        .await?)
+    .await?;
+    usage::ingest(
+        &panel.state,
+        server,
+        UsageBatch {
+            epoch: Uuid::new_v4(),
+            seq: 1,
+            period_start: now_timestamp() - 2,
+            period_end: now_timestamp(),
+            records: vec![UsageRecord {
+                stat_name: apsp_compiler::stat_name(user, line),
+                uplink: 20,
+                downlink: 20,
+            }],
+        },
+    )
+    .await?;
+    let after: (String, String, bool) = sqlx::query_as(
+        "SELECT used_bytes,status,allowed FROM singbox_entitlements($1) WHERE user_id=$2",
+    )
+    .bind(now_timestamp())
+    .bind(user)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(
+        after,
+        ("0".into(), "paused".into(), false),
+        "the unused part of an excess quota credit is retained after adoption"
+    );
+    let raw: String = sqlx::query_scalar(
+        "SELECT used_bytes::text FROM singbox_native_adoptions WHERE user_id=$1",
+    )
+    .bind(user)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(raw, "300");
+    Ok(())
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn native_adoption_keeps_no_package_unavailable_and_rejects_stale_comparison(
+    pool: PgPool,
+) -> Result<()> {
+    let panel = TestPanel::start_with_localhost(pool.clone()).await?;
+    let cookie = panel.admin_cookie().await?;
+    let (_, user, _) = adoption_fixture(&panel, &cookie).await?;
+    let preview = native_adoption_preview(&panel, &cookie, user).await?;
+    sqlx::query("DELETE FROM singbox_user_packages WHERE user_id=$1")
+        .bind(user)
+        .execute(&pool)
+        .await?;
+    let refused = panel
+        .admin(
+            Method::POST,
+            &format!("/api/access/users/{user}/native-adoption/adopt"),
+            &cookie,
+            Some(adoption_request(&preview)),
+        )
+        .await?;
+    assert_eq!(refused.status(), StatusCode::CONFLICT);
+    let preview = native_adoption_preview(&panel, &cookie, user).await?;
+    assert_eq!(preview["entitlement"]["status"], "no_package");
+    assert_eq!(preview["blockers"], json!([]));
+    ok(panel
+        .admin(
+            Method::POST,
+            &format!("/api/access/users/{user}/native-adoption/adopt"),
+            &cookie,
+            Some(adoption_request(&preview)),
+        )
+        .await?)
+    .await?;
+    let after: (String, bool) =
+        sqlx::query_as("SELECT status,allowed FROM singbox_entitlements($1) WHERE user_id=$2")
+            .bind(now_timestamp())
+            .bind(user)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(
+        after,
+        ("no_package".into(), false),
+        "retiring the bridge must never turn a missing package into unmetered access"
+    );
+    Ok(())
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn native_adoption_waits_for_the_complete_bridge_cycle_and_reuses_generation(
+    pool: PgPool,
+) -> Result<()> {
+    let panel = TestPanel::start_with_localhost(pool.clone()).await?;
+    let cookie = panel.admin_cookie().await?;
+    let (_, user, _) = adoption_fixture(&panel, &cookie).await?;
+    let import: Uuid = sqlx::query_scalar("SELECT import_id FROM singbox_nexus_bridge")
+        .fetch_one(&pool)
+        .await?;
+    sqlx::query("SELECT singbox_nexus_bridge_begin($1)")
+        .bind(import)
+        .execute(&pool)
+        .await?;
+    let generation: Uuid =
+        sqlx::query_scalar("SELECT pending_generation FROM singbox_nexus_bridge")
+            .fetch_one(&pool)
+            .await?;
+    // A delivery can have committed in SQLite and its outbox acknowledgment can
+    // have returned; the old meter is still not a complete snapshot of that cycle.
+    let preview = native_adoption_preview(&panel, &cookie, user).await?;
+    assert!(
+        preview["blockers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|reason| reason.as_str().is_some_and(|s| s.contains("未确认")))
+    );
+    let refused = panel
+        .admin(
+            Method::POST,
+            &format!("/api/access/users/{user}/native-adoption/adopt"),
+            &cookie,
+            Some(adoption_request(&preview)),
+        )
+        .await?;
+    assert_eq!(refused.status(), StatusCode::CONFLICT);
+    // A process/network failure leaves the marker in place. Its retry resumes
+    // the same generation; delivery receipts independently deduplicate usage.
+    sqlx::query("SELECT singbox_nexus_bridge_begin($1)")
+        .bind(import)
+        .execute(&pool)
+        .await?;
+    assert_eq!(
+        sqlx::query_scalar::<_, Uuid>("SELECT pending_generation FROM singbox_nexus_bridge")
+            .fetch_one(&pool)
+            .await?,
+        generation
+    );
+    let result:Value=sqlx::query_scalar("SELECT singbox_nexus_bridge_exchange($1)").bind(json!({"import_id":import,"observed_at":now_timestamp(),"members":[{"id":user,"upload":"150","download":"200","last_reset_at":now_timestamp()-86400,"next_reset_at":now_timestamp()+86400}]})).fetch_one(&pool).await?;
+    assert_eq!(result["generation"], json!(generation));
+    let preview = native_adoption_preview(&panel, &cookie, user).await?;
+    assert!(
+        !preview["blockers"].as_array().unwrap().is_empty(),
+        "meter arrived, but legacy member application has not yet been acknowledged"
+    );
+    sqlx::query("UPDATE singbox_nexus_bridge SET pending_generation=NULL,last_sync_at=$1 WHERE pending_generation=$2").bind(now_timestamp()).bind(generation).execute(&pool).await?;
+    assert_eq!(
+        native_adoption_preview(&panel, &cookie, user).await?["blockers"],
+        json!([])
+    );
+    Ok(())
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn native_adoption_keeps_expired_members_and_their_closed_cycle_blocked(
+    pool: PgPool,
+) -> Result<()> {
+    let panel = TestPanel::start_with_localhost(pool.clone()).await?;
+    let cookie = panel.admin_cookie().await?;
+    let (_, user, _) = adoption_fixture(&panel, &cookie).await?;
+    sqlx::query("UPDATE singbox_package_assignments SET expires_at=$2 WHERE id=(SELECT assignment_id FROM singbox_user_packages WHERE user_id=$1)")
+        .bind(user).bind(now_timestamp()-10).execute(&pool).await?;
+    sqlx::query("UPDATE singbox_nexus_metering SET next_reset_at=$2 WHERE user_id=$1")
+        .bind(user)
+        .bind(now_timestamp() - 1)
+        .execute(&pool)
+        .await?;
+    let before:(String,String,Option<i64>,Option<i64>,bool)=sqlx::query_as("SELECT status,used_bytes,cycle_start,next_reset,allowed FROM singbox_entitlements($1) WHERE user_id=$2").bind(now_timestamp()).bind(user).fetch_one(&pool).await?;
+    assert_eq!(before.0, "expired");
+    let preview = native_adoption_preview(&panel, &cookie, user).await?;
+    assert_eq!(preview["blockers"], json!([]));
+    ok(panel
+        .admin(
+            Method::POST,
+            &format!("/api/access/users/{user}/native-adoption/adopt"),
+            &cookie,
+            Some(adoption_request(&preview)),
+        )
+        .await?)
+    .await?;
+    let after:(String,String,Option<i64>,Option<i64>,bool)=sqlx::query_as("SELECT status,used_bytes,cycle_start,next_reset,allowed FROM singbox_entitlements($1) WHERE user_id=$2").bind(now_timestamp()).bind(user).fetch_one(&pool).await?;
+    assert_eq!(before, after);
+    Ok(())
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn native_adoption_never_resurrects_legacy_uuid_and_rejects_unbracketed_bridge_sync(
+    pool: PgPool,
+) -> Result<()> {
+    let panel = TestPanel::start_with_localhost(pool.clone()).await?;
+    let cookie = panel.admin_cookie().await?;
+    let (server, user, line) = adoption_fixture(&panel, &cookie).await?;
+    let import: Uuid = sqlx::query_scalar("SELECT import_id FROM singbox_nexus_bridge")
+        .fetch_one(&pool)
+        .await?;
+    // An older bridge daemon that calls exchange directly without begin clears native_control_ready,
+    // so adoption cannot run against a process that skips the pre-delivery generation lock.
+    let legacy_sync:Value=sqlx::query_scalar("SELECT singbox_nexus_bridge_exchange($1)")
+        .bind(json!({"import_id":import,"observed_at":now_timestamp(),"members":[{"id":user,"upload":"100","download":"200","last_reset_at":now_timestamp()-86400,"next_reset_at":now_timestamp()+86400}]}))
+        .fetch_one(&pool).await?;
+    sqlx::query("UPDATE singbox_nexus_bridge SET pending_generation=NULL,last_sync_at=$1 WHERE pending_generation=$2")
+        .bind(now_timestamp()).bind(Uuid::parse_str(legacy_sync["generation"].as_str().unwrap())?).execute(&pool).await?;
+    let blocked = native_adoption_preview(&panel, &cookie, user).await?;
+    assert!(
+        blocked["blockers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r.as_str().is_some_and(|s| s.contains("兼容同步工具")))
+    );
+    sqlx::query("SELECT singbox_nexus_bridge_begin($1)")
+        .bind(import)
+        .execute(&pool)
+        .await?;
+    let current_sync:Value=sqlx::query_scalar("SELECT singbox_nexus_bridge_exchange($1)")
+        .bind(json!({"import_id":import,"observed_at":now_timestamp(),"members":[{"id":user,"upload":"100","download":"200","last_reset_at":now_timestamp()-86400,"next_reset_at":now_timestamp()+86400}]}))
+        .fetch_one(&pool).await?;
+    sqlx::query("UPDATE singbox_nexus_bridge SET pending_generation=NULL,last_sync_at=$1 WHERE pending_generation=$2")
+        .bind(now_timestamp()).bind(Uuid::parse_str(current_sync["generation"].as_str().unwrap())?).execute(&pool).await?;
+
+    let preview = native_adoption_preview(&panel, &cookie, user).await?;
+    assert_eq!(preview["blockers"], json!([]));
+    ok(panel
+        .admin(
+            Method::POST,
+            &format!("/api/access/users/{user}/native-adoption/adopt"),
+            &cookie,
+            Some(adoption_request(&preview)),
+        )
+        .await?)
+    .await?;
+    let original = Uuid::parse_str("12345678-1234-4234-8234-123456789abc")?;
+
+    // Rotate -> revoke -> re-grant must issue a fresh credential and never resurrect legacy_uuid.
+    business_support::prove(&pool, &cookie).await?;
+    let rot_preview = ok(panel
+        .admin(
+            Method::POST,
+            "/api/access/operations/preview",
+            &cookie,
+            Some(json!({"operation":"rotate_node_credentials","user_id":user,"node_ids":[line]})),
+        )
+        .await?)
+    .await?;
+    ok(panel
+        .admin(
+            Method::POST,
+            &format!(
+                "/api/access/operations/{}/apply",
+                rot_preview["id"].as_str().unwrap()
+            ),
+            &cookie,
+            Some(json!({"confirm":true})),
+        )
+        .await?)
+    .await?;
+    let rotated: Uuid =
+        sqlx::query_scalar("SELECT uuid FROM accesses WHERE user_id=$1 AND node_id=$2")
+            .bind(user)
+            .bind(line)
+            .fetch_one(&pool)
+            .await?;
+    assert_ne!(rotated, original);
+    let group: i64 = sqlx::query_scalar("SELECT singbox_legacy_policy_group(1)")
+        .fetch_one(&pool)
+        .await?;
+    ok(panel
+        .admin(
+            Method::PUT,
+            &format!("/api/access/users/{user}/policy-groups"),
+            &cookie,
+            Some(json!({"group_ids":[]})),
+        )
+        .await?)
+    .await?;
+    publish(&panel).await?;
+    let revoked_bundle: String = sqlx::query_scalar(
+        "SELECT bundle FROM deployments WHERE server_id=$1 ORDER BY rev DESC LIMIT 1",
+    )
+    .bind(server)
+    .fetch_one(&pool)
+    .await?;
+    assert!(!revoked_bundle.contains(&original.to_string()));
+    assert!(!revoked_bundle.contains(&rotated.to_string()));
+    ok(panel
+        .admin(
+            Method::PUT,
+            &format!("/api/access/users/{user}/policy-groups"),
+            &cookie,
+            Some(json!({"group_ids":[group]})),
+        )
+        .await?)
+    .await?;
+    let regranted: Uuid =
+        sqlx::query_scalar("SELECT uuid FROM accesses WHERE user_id=$1 AND node_id=$2")
+            .bind(user)
+            .bind(line)
+            .fetch_one(&pool)
+            .await?;
+    assert_ne!(regranted, original);
+    assert_ne!(regranted, rotated);
+    publish(&panel).await?;
+    let regranted_bundle: String = sqlx::query_scalar(
+        "SELECT bundle FROM deployments WHERE server_id=$1 ORDER BY rev DESC LIMIT 1",
+    )
+    .bind(server)
+    .fetch_one(&pool)
+    .await?;
+    assert!(!regranted_bundle.contains(&original.to_string()));
     Ok(())
 }

@@ -29,7 +29,7 @@ impl DiagnosticAdapter for DelayedAdapter {
 
 pub(super) fn cached_job(directory: &Directory, id: Uuid) -> Result<DiagnosticJob> {
     let mut job = job(id);
-    job.artifact.url = format!(
+    job.artifact.as_mut().unwrap().url = format!(
         "http://127.0.0.1:1/api/agent/v1/artifacts/diagnostic-fixture/v1/{}",
         apsp_protocol::release::native_arch()?
     );
@@ -47,8 +47,9 @@ pub(super) fn cached_job(directory: &Directory, id: Uuid) -> Result<DiagnosticJo
         b"cached archive",
         binary,
     );
-    job.artifact.sha256 = release_support::hash(b"cached archive");
-    job.artifact.proof = Some(proof.clone());
+    let target_artifact = job.artifact.as_mut().unwrap();
+    target_artifact.sha256 = release_support::hash(b"cached archive");
+    target_artifact.proof = Some(proof.clone());
     release_support::install_proof(&artifact, &proof);
     Ok(job)
 }
@@ -232,7 +233,7 @@ async fn unsigned_resumed_jobs_are_failed_without_executing_a_service() -> Resul
     let directory = Directory::new();
     let services = Arc::new(Services::new(JobStatus::Running));
     let mut job = cached_job(&directory, Uuid::new_v4())?;
-    job.artifact.proof = None;
+    job.artifact.as_mut().unwrap().proof = None;
     let worker = worker(&directory, services.clone())?;
     worker.save(&Checkpoint::Preparing(job))?;
     let client = PanelClient::new("http://127.0.0.1:1", "test-session")?

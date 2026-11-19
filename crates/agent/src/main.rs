@@ -1,5 +1,7 @@
 #![forbid(unsafe_code)]
 
+mod embedded;
+
 use anyhow::Context;
 #[cfg(target_os = "linux")]
 use apsp_adapter_ipquality::IpQualityAdapter;
@@ -10,11 +12,14 @@ use apsp_adapter_singbox::SingboxAdapter;
 #[cfg(target_os = "linux")]
 use apsp_adapter_tcpquality::{TcpQualityAdapter, WorkbenchAdapter};
 use apsp_agent_core::{
-    Config, identity,
+    Config,
+    bundled::BundledComponents,
+    identity,
     system::{ServiceBackend, SystemOps, SystemServiceManager},
     transport,
 };
 use clap::{Parser, Subcommand};
+use std::ffi::OsString;
 use std::path::PathBuf;
 use std::{path::Path, sync::Arc};
 
@@ -67,6 +72,16 @@ enum Command {
         #[arg(long)]
         status: bool,
     },
+    #[command(
+        hide = true,
+        name = "tcp-probe",
+        disable_help_flag = true,
+        disable_version_flag = true
+    )]
+    TcpProbe {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<OsString>,
+    },
     /// Verify a cached executable using only the compiled release trust roots.
     VerifyInstalled {
         #[arg(long)]
@@ -95,7 +110,19 @@ enum Command {
 }
 
 fn main() -> anyhow::Result<()> {
+    let frame = std::hint::black_box(embedded::manifest_frame());
+    let _ = std::hint::black_box((frame.first(), frame.last()));
+    let raw_args: Vec<OsString> = std::env::args_os().collect();
+    if raw_args.get(1).and_then(|arg| arg.to_str()) == Some("tcp-probe") {
+        return apsp_tcp_probe::run_cli(raw_args.into_iter().skip(1));
+    }
     let cli = Cli::parse();
+    if let Command::TcpProbe { args } = cli.command {
+        let mut forwarded = Vec::with_capacity(args.len() + 1);
+        forwarded.push(OsString::from("tcp-probe"));
+        forwarded.extend(args);
+        return apsp_tcp_probe::run_cli(forwarded);
+    }
     #[cfg(target_os = "linux")]
     let collector = matches!(&cli.command, Command::RuntimeLog { .. });
     #[cfg(not(target_os = "linux"))]
@@ -159,21 +186,33 @@ async fn run_cli(cli: Cli) -> anyhow::Result<()> {
             } else {
                 ServiceBackend::detect()?
             };
-            let adapters: Vec<Arc<dyn Adapter>> = if monitor_only {
-                Vec::new()
+            let bundled = if monitor_only {
+                BundledComponents::default()
             } else {
-                vec![Arc::new(SingboxAdapter::new())]
+                embedded::components()
             };
+            let mut adapters: Vec<Arc<dyn Adapter>> = Vec::new();
+            if !monitor_only && bundled.runtimes.contains_key("singbox") {
+                adapters.push(Arc::new(SingboxAdapter::new()));
+            }
             #[cfg(target_os = "linux")]
             let diagnostics: Vec<Arc<dyn DiagnosticAdapter>> = if monitor_only {
                 Vec::new()
             } else {
-                vec![
-                    Arc::new(NodeQualityAdapter::new()),
-                    Arc::new(TcpQualityAdapter::new()),
-                    Arc::new(WorkbenchAdapter::new()),
-                    Arc::new(IpQualityAdapter::new()),
-                ]
+                let mut registered: Vec<Arc<dyn DiagnosticAdapter>> = Vec::new();
+                if bundled.tools.contains_key("nodequality") {
+                    registered.push(Arc::new(NodeQualityAdapter::new()));
+                }
+                if bundled.tools.contains_key("tcpquality") {
+                    registered.push(Arc::new(TcpQualityAdapter::new()));
+                }
+                if bundled.tools.contains_key("network-workbench") {
+                    registered.push(Arc::new(WorkbenchAdapter::new()));
+                }
+                if bundled.tools.contains_key("ipquality") {
+                    registered.push(Arc::new(IpQualityAdapter::new()));
+                }
+                registered
             };
             #[cfg(not(target_os = "linux"))]
             let diagnostics: Vec<Arc<dyn DiagnosticAdapter>> = Vec::new();
@@ -187,7 +226,15 @@ async fn run_cli(cli: Cli) -> anyhow::Result<()> {
                 ),
             );
             tokio::select! {
-                result = transport::run_with_diagnostics(config, adapters, diagnostics, privileged, services, env!("CARGO_PKG_VERSION")) => result,
+                result = transport::run_with_components(
+                    config,
+                    adapters,
+                    diagnostics,
+                    bundled,
+                    privileged,
+                    services,
+                    env!("CARGO_PKG_VERSION"),
+                ) => result,
                 result = shutdown() => result,
             }
         }
@@ -249,6 +296,7 @@ async fn run_cli(cli: Cli) -> anyhow::Result<()> {
                 services.start_job(&job).await
             }
         }
+        Command::TcpProbe { .. } => unreachable!("tcp-probe is dispatched before tokio runtime"),
         Command::VerifyInstalled {
             binary,
             name,
@@ -258,6 +306,7 @@ async fn run_cli(cli: Cli) -> anyhow::Result<()> {
                 &absolute_path(&binary)?,
                 &name,
                 &format,
+                Some(embedded::manifest_frame()),
             )
             .await
         }

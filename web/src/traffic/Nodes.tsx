@@ -9,7 +9,7 @@ import ProtocolFields, { protocolRequest } from './ProtocolFields'
 import { ConnectionFields, nodeSettingsRequest } from './NodeSettingsFields'
 import Sources from './Sources'
 import NodeCatalog from './NodeCatalog'
-import Runtimes from './Runtimes'
+import Runtimes, { canConfigureServer } from './Runtimes'
 import NexusNodes from './NexusNodes'
 import { validNexusNodes } from './nexusNodeTypes'
 import type { ResourceKey } from './resourceTypes'
@@ -97,18 +97,18 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
   const [sourceCreate, setSourceCreate] = useState(0)
   const [orderedCreate, setOrderedCreate] = useState(0)
 
-  const enabledServers = servers.data?.filter(server => server.enabled) ?? []
+  const configurableServers = servers.data?.filter(canConfigureServer) ?? []
   // Why creation is unavailable is only stated once the server list is confirmed.
   const serversKnown = servers.data !== undefined && !servers.error
-  const noEnabledServer = serversKnown && enabledServers.length === 0
-  const filteredServerDisabled = serversKnown && !noEnabledServer && Boolean(filter) && !enabledServers.some(server => server.id === Number(filter))
-  const createBlocked = noEnabledServer || filteredServerDisabled
+  const noConfigurableServer = serversKnown && configurableServers.length === 0
+  const filteredServerUnavailable = serversKnown && !noConfigurableServer && Boolean(filter) && !configurableServers.some(server => server.id === Number(filter))
+  const createBlocked = noConfigurableServer || filteredServerUnavailable
   const pageGuard = resourceWriteError(nodes, orderedQuery, servers)
   // Buttons disable during a refresh only after a short delay that keeps brief polls
   // from flashing; a click in that window is reported rather than silently ignored.
   const refreshNotice = useRefreshNotice()
-  const canCreate = !pageGuard && enabledServers.length > 0
-    && (!filter || enabledServers.some(server => server.id === Number(filter)))
+  const canCreate = !pageGuard && configurableServers.length > 0
+    && (!filter || configurableServers.some(server => server.id === Number(filter)))
   const all = ordered.data ?? []
   const inventoryCount = all.length
   const chainCount = ordered.data?.filter(resource => resource.kind === 'chain').length
@@ -119,8 +119,7 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
   // The chain form writes against the ordered resource snapshot; the button follows the form's own guard, so a
   // refreshing, failed or malformed read keeps it closed.
   const canCreateChain = canCreate && !resourceWriteError(nodes, orderedQuery, servers) && validProxyResources(orderedQuery.data)
-  // A node can only need a preflight once users are authorised to it, so a saved node
-  // that nobody can use yet points to authorisation instead.
+  // A saved node that nobody can use yet points to authorisation; authorised nodes automatically enter deployment.
   const savedNodeId = saved?.node ?? null
   const savedAuthorised = savedNodeId !== null
     && (ordered.data?.find(resource => resource.kind === 'direct' && resource.id === savedNodeId)?.user_count ?? 0) > 0
@@ -129,8 +128,8 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
   const routeHash = (target: NodeView) => nodeHash({ server: filter || undefined, role: initialServerRole, view: target })
 
   const creationError = () => resourceWriteError(nodes, orderedQuery, servers)
-    || (!servers.getCurrent()?.some(server => server.enabled && (!currentFilter.current || server.id === Number(currentFilter.current)))
-      ? '当前筛选中没有可用的入口服务器，请明确选择后再创建。' : '')
+    || (!servers.getCurrent()?.some(server => canConfigureServer(server) && (!currentFilter.current || server.id === Number(currentFilter.current)))
+      ? '当前筛选中没有可配置的服务器，请明确选择后再创建。' : '')
   // A managed node is written only while it is still a direct node in the confirmed resource list.
   const writeError = (id?: number) => {
     const stale = resourceWriteError(nodes, orderedQuery, servers)
@@ -142,12 +141,12 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
     && JSON.stringify(nodes.getCurrent()?.find(value => value.id === editor.id)) !== JSON.stringify(editor)
     ? '节点配置已变化，请重新打开编辑；当前草稿已保留。' : ''
   const nodeServerError = () => editor
-    && !servers.getCurrent()?.some(server => server.id === (editor === 'new' ? Number(draftServer) : editor.server_id) && server.enabled)
-    ? '已选节点所属服务器已不存在或未安装 sing-box；当前草稿已保留。' : ''
-  const newServerMissing = () => editor === 'new' && !servers.getCurrent()?.some(server => String(server.id) === draftServer && server.enabled)
+    && !servers.getCurrent()?.some(server => server.id === (editor === 'new' ? Number(draftServer) : editor.server_id) && canConfigureServer(server))
+    ? '已选节点所属服务器不存在或为只读接管服务器；当前草稿已保留。' : ''
+  const newServerMissing = () => editor === 'new' && !servers.getCurrent()?.some(server => String(server.id) === draftServer && canConfigureServer(server))
   const editorError = editor
     ? writeError(editor === 'new' ? undefined : editor.id) || nodeDraftError() || nodeServerError()
-      || (newServerMissing() ? '已选服务器已不存在或未安装 sing-box，请明确重新选择；当前草稿已保留。' : '')
+      || (newServerMissing() ? '已选服务器不存在或为只读接管服务器，请明确重新选择；当前草稿已保留。' : '')
     : ''
   const currentEditor = editor && editor !== 'new' ? nodes.data?.find(node => node.id === editor.id) : null
   const connectionLocked = Boolean(currentEditor?.configuration_locked || (editor && editor !== 'new' && editor.configuration_locked))
@@ -157,7 +156,7 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
     const error = writeError(node === 'new' ? undefined : node.id) || (node === 'new' ? creationError() : '')
     if (!refreshNotice.allows(error)) return
     action.clearError()
-    setDraftServer(currentFilter.current || String(servers.getCurrent()?.find(server => server.enabled)?.id ?? ''))
+    setDraftServer(currentFilter.current || String(servers.getCurrent()?.find(canConfigureServer)?.id ?? ''))
     setEditor(node)
   }
   // The one chain entry: it opens the chain form in the chain view.
@@ -213,10 +212,10 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
       <Refresh onClick={refresh} />
       <Button disabled={!canCreate} aria-describedby={createBlocked ? 'create-blocked-reason' : undefined} onClick={() => edit('new')}><PlusIcon aria-hidden="true" />创建节点</Button>
       <Button variant="outline" disabled={!canCreateChain} aria-describedby={createBlocked ? 'create-blocked-reason' : undefined} onClick={openChainCreate}>创建链路</Button>
-      <InfoTip label="发布规则"><p>保存后等待 5 秒合并处理。新增有效监听，或协议、TLS、服务设置变化，须先在部署进度内查看差异、采集并确认完整预检；原监听内的凭据更新、撤销和停用自动处理。</p><p>未授权给任何用户的节点不会监听端口；订阅只包含设备已成功应用的配置。</p></InfoTip>
+      <InfoTip label="发布规则"><p>保存后自动合并生成目标配置并下发，在线 Agent 会自动准备运行时、应用配置并回报健康状态；离线设备会在重连后自动同步。</p><p>未授权给任何用户的节点不会监听端口；订阅只包含设备已成功应用的配置。</p></InfoTip>
     </PageHeader>
-    {createBlocked && <Notice id="create-blocked-reason" role="status"><span>{noEnabledServer ? '还没有服务器安装 sing-box，所以暂时不能创建节点或链路。' : '当前筛选的服务器尚未安装 sing-box，所以暂时不能创建节点或链路。'}</span>
-      <a className={buttonVariants({ variant: 'outline', size: 'sm' })} href={noEnabledServer ? '#/servers' : `#/servers/${filter}/services`}>为服务器安装 sing-box</a></Notice>}
+    {createBlocked && <Notice id="create-blocked-reason" role="status"><span>{noConfigurableServer ? '当前尚无可用于配置代理服务的普通服务器，请先添加服务器。' : '当前筛选的服务器不存在或为只读接管服务器，暂时不能在此服务器下创建节点或链路。'}</span>
+      <a className={buttonVariants({ variant: 'outline', size: 'sm' })} href={noConfigurableServer ? '#/servers' : '#/nodes'}>{noConfigurableServer ? '前往服务器' : '查看全部服务器'}</a></Notice>}
     <div className="mb-4"><StatStrip label="代理资源概况" columns={4}>
       <Stat icon={WaypointsIcon} label="代理资源" loading={!(ordered.data && importedNodes) && !ordered.error} value={ordered.data && importedNodes ? inventoryCount + importedNodes.length : '—'}>{importedNodes?.length ? `受管 ${inventoryCount} · 待接管 ${importedNodes.length}` : '直连节点与独立链路入口'}</Stat>
       <Stat icon={ServerIcon} label="所在服务器" loading={!(ordered.data && importedNodes) && !ordered.error} value={ordered.data && importedNodes ? new Set([...all.map(resource => resource.entry.server_id), ...importedNodes.map(node => node.server_id)]).size : '—'} />
@@ -226,16 +225,16 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
     <ErrorNotice message={ordered.error || nodes.error || servers.error || usage.error} retry={refresh} />
     {refreshNotice.visible && <RefreshNotice />}
     {saved && <Notice role="status"><span>{savedAuthorised
-      ? '目标已保存。该节点已有授权用户：新增监听或协议、TLS 等设置变化须先完整预检确认才会发布，实际应用等待设备回执。'
+      ? '目标配置已保存并自动加入发布队列，等待目标服务器 Agent 自动应用并回报健康状态。'
       : saved.created
         ? '节点已保存为目标配置，尚未授权给任何代理用户，所以暂不会监听端口。先把它加入策略组，或直接授权给代理用户；设备应用配置后才开始监听。'
-        : '目标已保存；该节点尚未授权给任何代理用户，暂不会监听端口，实际应用等待设备回执。'}</span>
+        : '目标配置已保存；该节点尚未授权给任何代理用户，暂不会监听端口，实际应用等待设备回执。'}</span>
       <div className="flex flex-wrap items-center justify-end gap-1">
         {!savedAuthorised && <>
           <a className={buttonVariants({ variant: 'outline', size: 'sm' })} href="#/groups">加入策略组</a>
           <a className={buttonVariants({ variant: 'ghost', size: 'sm' })} href="#/users">授权给代理用户</a>
         </>}
-        <Button variant="ghost" size="sm" onClick={() => showDeployment(saved.server)}>{savedAuthorised ? '查看差异、完整预检与发布状态' : '查看部署状态'}</Button>
+        <Button variant="ghost" size="sm" onClick={() => showDeployment(saved.server)}>查看部署状态</Button>
       </div></Notice>}
     <SegmentedNav className="mt-1 mb-5" aria-label="节点视图">
       {views.map(item => <SegmentedLink key={item.key} href={routeHash(item.key)}
@@ -247,7 +246,7 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
     </SegmentedNav>
     <div hidden={activeView !== 'catalog'}>
       {owner && <NexusNodes query={nexus} server={filter} onReload={refresh} />}
-      <NodeCatalog query={catalog} nodes={nodes.data ?? []} servers={enabledServers} getServers={() => servers.getCurrent()} usage={usage.data ?? undefined}
+      <NodeCatalog query={catalog} nodes={nodes.data ?? []} servers={servers.data ?? []} getServers={() => servers.getCurrent()} usage={usage.data ?? undefined}
         server={filter} getServer={() => currentFilter.current} onServer={value => { currentFilter.current = value; setFilter(value) }}
         kind={kind} onKind={setKind}
         onChanged={refresh} managedWriteError={() => writeError() || resourceWriteError(ordered)}
@@ -269,8 +268,8 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
       <div className="grid gap-x-5 sm:grid-cols-2">
         <Field label="节点名称"><Input name="name" required maxLength={128} defaultValue={editor === 'new' ? '' : editor.name} placeholder="例如：香港 · 直连" autoComplete="off" /></Field>
         {editor === 'new' && <Field label="所属服务器"><NativeSelect className="w-full" name="server_id" required value={draftServer} onChange={event => setDraftServer(event.target.value)}>
-          {draftServer && !enabledServers.some(server => String(server.id) === draftServer) && <option value={draftServer}>已选服务器已不存在或未安装 sing-box（原选择保留）</option>}
-          {enabledServers.map(server => <option key={server.id} value={server.id}>{server.name}{server.online ? ' · 在线' : ' · 离线'}</option>)}
+          {draftServer && !configurableServers.some(server => String(server.id) === draftServer) && <option value={draftServer}>已选服务器不存在或为只读接管服务器（原选择保留）</option>}
+          {configurableServers.map(server => <option key={server.id} value={server.id}>{server.name}{server.online ? ' · 在线' : ' · 离线'}</option>)}
         </NativeSelect></Field>}
         <label className="flex items-start gap-2.5 pt-3 pb-5 text-sm"><Checkbox name="enabled" defaultChecked={editor === 'new' || editor.enabled !== false} className="mt-0.5" /><span>启用节点<small className="text-muted-foreground mt-1.5 block text-xs leading-relaxed">停用保留授权与历史流量。</small></span></label>
       </div>

@@ -30,7 +30,7 @@ pub mod telemetry;
 pub mod traffic_correction;
 
 // Platform modules and earlier domains that the code names as `crate::...`.
-pub(crate) use apsp_governance::{artifacts, auth, control_center};
+pub(crate) use apsp_governance::{auth, control_center};
 #[cfg(test)]
 pub(crate) use apsp_panel_host::config;
 use apsp_panel_host::notifications::queue::{Policy, Queue};
@@ -156,7 +156,7 @@ pub fn routes() -> Router<AppState> {
             get(diagnostics::service::get),
         )
         .route(
-            "/api/servers/{id}/diagnostics/{plugin}",
+            "/api/servers/{id}/diagnostics/{tool}",
             post(diagnostics::service::create),
         )
         .route("/api/servers/{id}/ip-quality", get(ip_quality::get))

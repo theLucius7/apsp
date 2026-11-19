@@ -58,7 +58,9 @@ struct ExecutionContext {
 #[serde(deny_unknown_fields)]
 struct BuildInfo {
     schema: u32,
-    plugin: String,
+    // This key is part of the signed upstream build manifest.
+    #[serde(rename = "plugin")]
+    tool: String,
     version: String,
     arch: String,
     profile: String,
@@ -74,11 +76,63 @@ struct BuildInfo {
     factory_provenance_sha256: String,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BundledFileEntry {
+    sha256: String,
+    size: u64,
+    executable: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BundledDirectoryManifest {
+    schema: u32,
+    #[serde(alias = "artifact_name")]
+    component_name: String,
+    binary_name: String,
+    version: String,
+    bundle_sha256: String,
+    binary_sha256: String,
+    files: BTreeMap<String, BundledFileEntry>,
+}
+
 fn digest(value: &str) -> bool {
     value.len() == 64
         && value
             .bytes()
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn matches_version_dir(dir_name: &str) -> bool {
+    if dir_name == VERSION {
+        return true;
+    }
+    dir_name
+        .strip_prefix(VERSION)
+        .and_then(|rest| rest.strip_prefix('-'))
+        .is_some_and(|suffix| {
+            suffix.len() == 12
+                && suffix
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        })
+}
+
+fn expected_component_digest(spec: &DiagnosticSpec) -> Result<Option<&str>> {
+    let primary = spec
+        .options
+        .get("expected_component_sha256")
+        .map(String::as_str);
+    let alias = spec.options.get("artifact_sha256").map(String::as_str);
+    if let (Some(a), Some(b)) = (primary, alias) {
+        ensure!(a == b, "conflicting IPQuality component digest options");
+    }
+    let chosen = primary.or(alias);
+    if let Some(hash) = chosen {
+        ensure!(digest(hash), "invalid expected IPQuality component digest");
+    }
+    Ok(chosen)
 }
 
 fn path(path: &Path) -> Result<String> {
@@ -89,10 +143,8 @@ fn path(path: &Path) -> Result<String> {
             && path
                 .components()
                 .all(|part| matches!(part, Component::RootDir | Component::Normal(_)))
-            && value
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric()
-                    || matches!(byte, b'/' | b'_' | b'.' | b'-')),
+            && value.bytes().all(|byte| byte.is_ascii_alphanumeric()
+                || matches!(byte, b'/' | b'_' | b'.' | b'+' | b'-')),
         "IPQuality paths must be private absolute paths without expansion or traversal"
     );
     Ok(value.into())
@@ -115,20 +167,21 @@ fn validate(spec: &DiagnosticSpec) -> Result<&str> {
                 .parent()
                 .and_then(Path::file_name)
                 .and_then(|name| name.to_str())
-                == Some(VERSION)
+                .is_some_and(matches_version_dir)
             && spec.job_dir.file_name().and_then(|name| name.to_str()) == Some(spec.id.as_str()),
         "IPQuality artifact or workspace path differs from its task identity"
     );
     ensure!(
-        spec.options
-            .keys()
-            .all(|key| matches!(key.as_str(), "ip_version" | "environment_section"))
-            && spec
-                .options
-                .get("environment_section")
-                .is_none_or(|value| matches!(value.as_str(), "true" | "false")),
+        spec.options.keys().all(|key| matches!(
+            key.as_str(),
+            "ip_version" | "environment_section" | "expected_component_sha256" | "artifact_sha256"
+        )) && spec
+            .options
+            .get("environment_section")
+            .is_none_or(|value| matches!(value.as_str(), "true" | "false")),
         "unsupported IPQuality option"
     );
+    let _ = expected_component_digest(spec)?;
     let ip_version = spec
         .options
         .get("ip_version")
@@ -161,51 +214,12 @@ async fn required(
         .context("required IPQuality identity file is missing")
 }
 
-async fn signed_identity(spec: &DiagnosticSpec, owner: u32, deadline: Instant) -> Result<String> {
-    let directory = spec
-        .binary_path
-        .parent()
-        .context("IPQuality artifact directory is missing")?;
-    let metadata: Value = serde_json::from_str(
-        &required(
-            &directory.join("release.json"),
-            32 * 1024,
-            owner,
-            false,
-            deadline,
-        )
-        .await?,
-    )?;
-    let arch = native_arch()?;
-    let candidates: Vec<_> = metadata
-        .get("artifacts")
-        .and_then(Value::as_array)
-        .context("signed release has no artifacts")?
-        .iter()
-        .filter(|entry| {
-            entry["name"] == BINARY && entry["version"] == VERSION && entry["arch"] == arch
-        })
-        .collect();
-    ensure!(
-        candidates.len() == 1,
-        "signed release must bind one IPQuality artifact for this architecture"
-    );
-    let entry = candidates[0];
-    ensure!(
-        entry["binary_name"] == BINARY && entry["format"] == "tar.gz",
-        "signed IPQuality binary name or format differs"
-    );
-    let auxiliary = entry
-        .get("auxiliary_files")
-        .and_then(Value::as_object)
-        .context("signed IPQuality auxiliary inventory is missing")?;
-    ensure!(
-        auxiliary.len() == AUXILIARY_FILES.len()
-            && AUXILIARY_FILES
-                .iter()
-                .all(|name| auxiliary.contains_key(*name)),
-        "signed IPQuality artifact has an incomplete or unexpected auxiliary inventory"
-    );
+async fn validate_build_info(
+    directory: &Path,
+    arch: &str,
+    owner: u32,
+    deadline: Instant,
+) -> Result<BuildInfo> {
     let build: BuildInfo = serde_json::from_str(
         &required(
             &directory.join("build-info.json"),
@@ -218,7 +232,7 @@ async fn signed_identity(spec: &DiagnosticSpec, owner: u32, deadline: Instant) -
     )?;
     ensure!(
         build.schema == 1
-            && build.plugin == BINARY
+            && build.tool == BINARY
             && build.version == VERSION
             && build.arch == arch
             && build.profile == "ipquality-node-v1"
@@ -242,40 +256,164 @@ async fn signed_identity(spec: &DiagnosticSpec, owner: u32, deadline: Instant) -
         .all(|value| digest(value)),
         "IPQuality build identity contains an invalid digest"
     );
-    for (name, expected) in [
-        ("rootfs.tar.gz", &build.rootfs_sha256),
-        ("rootfs-manifest.json", &build.rootfs_manifest_sha256),
-        ("source.tar.gz", &build.source_archive_sha256),
-    ] {
-        ensure!(
-            auxiliary[name]["sha256"].as_str() == Some(expected.as_str())
-                && auxiliary[name]["size"]
-                    .as_u64()
-                    .is_some_and(|size| size > 0),
-            "IPQuality build identity differs from its signed auxiliary file"
-        );
-    }
-    let checksums = required(
-        &directory.join("SHA256SUMS"),
-        8 * 1024,
+    Ok(build)
+}
+
+async fn signed_identity(spec: &DiagnosticSpec, owner: u32, deadline: Instant) -> Result<String> {
+    let directory = spec
+        .binary_path
+        .parent()
+        .context("IPQuality artifact directory is missing")?;
+    let arch = native_arch()?;
+    let resolved_sha256 = if let Some(bundled_raw) = files::read(
+        &directory.join(".bundled.json"),
+        64 * 1024,
         owner,
         false,
         deadline,
     )
-    .await?;
-    let mut rows = BTreeMap::new();
-    for line in checksums.lines() {
-        let (hash, name) = line
-            .split_once("  ")
-            .context("invalid signed checksum row")?;
+    .await?
+    {
+        let bundled: BundledDirectoryManifest =
+            serde_json::from_str(&bundled_raw).context("invalid IPQuality bundled manifest")?;
         ensure!(
-            digest(hash) && !name.is_empty() && rows.insert(name, hash).is_none(),
-            "invalid or repeated signed checksum identity"
+            bundled.schema == 1
+                && bundled.component_name == BINARY
+                && bundled.binary_name == BINARY
+                && bundled.version == VERSION
+                && digest(&bundled.bundle_sha256)
+                && digest(&bundled.binary_sha256),
+            "bundled IPQuality manifest identity mismatch"
+        );
+        let binary_entry = bundled
+            .files
+            .get(BINARY)
+            .context("bundled IPQuality manifest missing executable")?;
+        ensure!(
+            binary_entry.executable
+                && binary_entry.size > 0
+                && binary_entry.sha256 == bundled.binary_sha256,
+            "bundled IPQuality executable record is invalid"
+        );
+        ensure!(
+            bundled.files.len() <= 4096
+                && AUXILIARY_FILES.iter().all(|name| {
+                    bundled
+                        .files
+                        .get(*name)
+                        .is_some_and(|entry| digest(&entry.sha256) && entry.size > 0)
+                })
+                && bundled.files.iter().all(|(name, entry)| {
+                    digest(&entry.sha256)
+                        && (name == BINARY
+                            || AUXILIARY_FILES.contains(&name.as_str())
+                            || matches!(name.as_str(), "runner.py" | "runtime-manifest.json")
+                            || ["bin/", "lib/", "lib64/", "usr/", "etc/", "share/"]
+                                .iter()
+                                .any(|prefix| name.starts_with(prefix)))
+                }),
+            "bundled IPQuality manifest has an incomplete or unexpected file inventory"
+        );
+        let build = validate_build_info(directory, arch, owner, deadline).await?;
+        for (name, expected) in [
+            ("rootfs.tar.gz", &build.rootfs_sha256),
+            ("rootfs-manifest.json", &build.rootfs_manifest_sha256),
+            ("source.tar.gz", &build.source_archive_sha256),
+        ] {
+            let entry = &bundled.files[name];
+            let metadata = fs::symlink_metadata(directory.join(name)).await?;
+            ensure!(
+                entry.sha256 == *expected
+                    && metadata.is_file()
+                    && !metadata.file_type().is_symlink()
+                    && metadata.len() == entry.size,
+                "bundled IPQuality auxiliary file differs from build identity"
+            );
+        }
+        bundled.bundle_sha256
+    } else {
+        let metadata: Value = serde_json::from_str(
+            &required(
+                &directory.join("release.json"),
+                32 * 1024,
+                owner,
+                false,
+                deadline,
+            )
+            .await?,
+        )?;
+        let candidates: Vec<_> = metadata
+            .get("artifacts")
+            .and_then(Value::as_array)
+            .context("signed release has no artifacts")?
+            .iter()
+            .filter(|entry| {
+                entry["name"] == BINARY && entry["version"] == VERSION && entry["arch"] == arch
+            })
+            .collect();
+        ensure!(
+            candidates.len() == 1,
+            "signed release must bind one IPQuality artifact for this architecture"
+        );
+        let entry = candidates[0];
+        ensure!(
+            entry["binary_name"] == BINARY && entry["format"] == "tar.gz",
+            "signed IPQuality binary name or format differs"
+        );
+        let auxiliary = entry
+            .get("auxiliary_files")
+            .and_then(Value::as_object)
+            .context("signed IPQuality auxiliary inventory is missing")?;
+        ensure!(
+            auxiliary.len() == AUXILIARY_FILES.len()
+                && AUXILIARY_FILES
+                    .iter()
+                    .all(|name| auxiliary.contains_key(*name)),
+            "signed IPQuality artifact has an incomplete or unexpected auxiliary inventory"
+        );
+        let build = validate_build_info(directory, arch, owner, deadline).await?;
+        for (name, expected) in [
+            ("rootfs.tar.gz", &build.rootfs_sha256),
+            ("rootfs-manifest.json", &build.rootfs_manifest_sha256),
+            ("source.tar.gz", &build.source_archive_sha256),
+        ] {
+            ensure!(
+                auxiliary[name]["sha256"].as_str() == Some(expected.as_str())
+                    && auxiliary[name]["size"]
+                        .as_u64()
+                        .is_some_and(|size| size > 0),
+                "IPQuality build identity differs from its signed auxiliary file"
+            );
+        }
+        let checksums = required(
+            &directory.join("SHA256SUMS"),
+            8 * 1024,
+            owner,
+            false,
+            deadline,
+        )
+        .await?;
+        let mut rows = BTreeMap::new();
+        for line in checksums.lines() {
+            let (hash, name) = line
+                .split_once("  ")
+                .context("invalid signed checksum row")?;
+            ensure!(
+                digest(hash) && !name.is_empty() && rows.insert(name, hash).is_none(),
+                "invalid or repeated signed checksum identity"
+            );
+        }
+        rows.get(format!("ipquality/{VERSION}/{arch}").as_str())
+            .map(|hash| (*hash).to_owned())
+            .context("signed IPQuality archive checksum is missing")?
+    };
+    if let Some(expected) = expected_component_digest(spec)? {
+        ensure!(
+            resolved_sha256 == expected,
+            "IPQuality component digest differs from frozen dispatch identity"
         );
     }
-    rows.get(format!("ipquality/{VERSION}/{arch}").as_str())
-        .map(|hash| (*hash).to_owned())
-        .context("signed IPQuality archive checksum is missing")
+    Ok(resolved_sha256)
 }
 
 async fn saved_context(
@@ -297,7 +435,9 @@ async fn saved_context(
             && context.job_id == spec.id
             && context.version == VERSION
             && context.ip_version == validate(spec)?
-            && digest(&context.artifact_sha256),
+            && digest(&context.artifact_sha256)
+            && expected_component_digest(spec)?
+                .is_none_or(|expected| context.artifact_sha256 == expected),
         "saved IPQuality execution identity differs from its task"
     );
     Ok(context)
@@ -330,7 +470,7 @@ async fn no_saved_output(spec: &DiagnosticSpec) -> Result<()> {
 impl DiagnosticAdapter for IpQualityAdapter {
     fn describe(&self) -> DiagnosticDescriptor {
         DiagnosticDescriptor {
-            plugin_name: BINARY.into(),
+            artifact_name: BINARY.into(),
             binary_name: BINARY.into(),
         }
     }

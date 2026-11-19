@@ -16,7 +16,7 @@ async function main() {
     await page.route('**/api/**', async route => {
       const path = new URL(route.request().url()).pathname
       let data = []
-      if (path === '/api/me') data = {}
+      if (path === '/api/dashboard/access') data = { authenticated: true, public_dashboard: false }
       else if (path === '/api/servers/1') data = {
         id: 1, name: '遥测隔离验收夹具', device_public_key: 'TEST_ONLY_device',
         static_info: { hostname: 'fixture-host', memory_total: 1024 ** 3 },
@@ -26,13 +26,22 @@ async function main() {
         metrics_sampled_at: mode === 'unknown' ? null : sampled,
         metrics_stale: mode === 'stale' || mode === 'offline',
       }
+      else if (path === '/api/traffic/servers/1') data = {
+        id: 1, name: '遥测隔离验收夹具', configured: false, online: mode !== 'offline',
+        agent_supported: true, read_only: false, source: null, runtime_version: null,
+        status: { state: 'unconfigured', reason: '', target_rev: 0, applied_rev: 0, current_healthy: false },
+      }
       else if (path.endsWith('/deployments')) data = { status: null, history: [] }
-      else if (path.endsWith('/node-quality')) data = { ip_addresses: [], quality: [], plugin_ready: false, plugin_reason: null, reports: [] }
+      else if (path.endsWith('/node-quality')) data = { ip_addresses: [], quality: [], tool_ready: false, tool_reason: null, full_ready: false, full_reason: null, reports: [] }
       else if (path.endsWith('/agent-settings')) data = { sample_interval_secs: 1, upload_interval_secs: 3, auto_update: false, discover_public_ips: false }
       await route.fulfill({ json: data })
     })
+    const { pathToFileURL } = require('node:url')
+    const { resolve } = require('node:path')
+    const { installControlCenterFixtures } = await import(pathToFileURL(resolve(__dirname, '../web/tests/control-center-fixtures.mjs')).href)
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/servers/1`)
-    const row = label => page.locator('.info-grid div').filter({ has: page.locator('dt', { hasText: label }) }).locator('dd')
+    const row = label => page.locator('[data-slot="info-group"] dl > div').filter({ has: page.locator('dt', { hasText: label }) }).locator('dd')
     await page.getByText('指标过期', { exact: true }).waitFor()
     assert.equal(await page.getByText('在线', { exact: true }).count(), 1)
     assert.equal(await page.getByText('7.5%', { exact: true }).count(), 1)
@@ -40,13 +49,13 @@ async function main() {
       sample: new Date(sampled).toLocaleString('zh-CN', { hour12: false }),
       heartbeat: new Date(heartbeat * 1000).toLocaleString('zh-CN', { hour12: false }),
     }), { sampled, heartbeat })
-    assert.equal(await row('最后指标').innerText(), expected.sample)
+    assert.equal(await row('最后采样').innerText(), expected.sample)
     assert.equal(await row('最后心跳').innerText(), expected.heartbeat)
     assert.notEqual(await row('最近设备消息').innerText(), expected.heartbeat)
-    assert((await page.getByText('指标过期，以下保留的是最后一次采集的历史数据。', { exact: false }).innerText()).includes('心跳独立更新'))
+    assert((await page.getByText('指标已过期；在线心跳不代表指标仍在采集。', { exact: false }).innerText()).includes('心跳不代表指标仍在采集'))
     mode = 'fresh'
     await page.reload()
-    await row('最后指标').waitFor()
+    await row('最后采样').waitFor()
     assert.equal(await page.getByText('指标过期', { exact: true }).count(), 0)
     assert.equal(await page.getByText('7.5%', { exact: true }).count(), 1)
     mode = 'offline'
@@ -56,8 +65,8 @@ async function main() {
     assert.equal(await page.getByText('7.5%', { exact: true }).count(), 1)
     mode = 'unknown'
     await page.reload()
-    await page.getByText('尚未记录', { exact: true }).waitFor()
-    assert.equal(await row('最后指标').innerText(), '时间未知')
+    await page.getByText('尚未上报', { exact: true }).waitFor()
+    assert.equal(await row('最后采样').innerText(), '时间未知')
     assert.equal(await page.getByText('指标过期', { exact: true }).count(), 0)
     assert.deepEqual(errors, [])
     console.log(JSON.stringify({ passed: ['online-stale-history', 'milliseconds-conversion', 'separate-heartbeat-message', 'fresh', 'offline-history', 'unknown-legacy-times'], browser_errors: 0 }))

@@ -120,6 +120,16 @@ impl Privileged for FakeResourceOps {
     fn remove_managed_directory<'a>(&'a self, path: &'a std::path::Path) -> BoxFuture<'a, ()> {
         self.inner.remove_managed_directory(path)
     }
+    fn remove_path<'a>(&'a self, path: &'a std::path::Path) -> BoxFuture<'a, ()> {
+        self.inner.remove_path(path)
+    }
+    fn publish_directory<'a>(
+        &'a self,
+        source: &'a std::path::Path,
+        destination: &'a std::path::Path,
+    ) -> BoxFuture<'a, ()> {
+        self.inner.publish_directory(source, destination)
+    }
     fn install_archive<'a>(
         &'a self,
         archive: &'a std::path::Path,
@@ -214,7 +224,7 @@ impl Adapter for FakeAdapter {
     fn describe(&self) -> Descriptor {
         Descriptor {
             module: "demo".into(),
-            plugin_name: "demo".into(),
+            artifact_name: "demo".into(),
             binary_name: "demo".into(),
             auxiliary_files: Vec::new(),
             service_unit: "demo@main".into(),
@@ -244,7 +254,10 @@ impl Adapter for FakeAdapter {
     ) -> BoxFuture<'a, Plan> {
         Box::pin(async move {
             Ok(match previous {
-                Some(previous) if previous.spec.kernel_version == target.spec.kernel_version => {
+                Some(previous)
+                    if previous.spec.kernel_version == target.spec.kernel_version
+                        && previous.spec.binary_path == target.spec.binary_path =>
+                {
                     if previous.spec.config_hash == target.spec.config_hash {
                         Plan::Noop
                     } else {

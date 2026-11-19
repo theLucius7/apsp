@@ -5,7 +5,7 @@ import { createServer } from 'node:http'
 import { mkdir, readFile } from 'node:fs/promises'
 import { resolve, extname, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { catalogNodeFixtures, proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
+import { catalogNodeFixtures, proxyResourceFixtures, runtimeServerFixture } from './proxy-resource-fixtures.mjs'
 import { sourceJobFixture, sourceNodeFixture, sourceNodePageFixture, sourcePreviewFixture, sourceRevisionFixture, sourceUuid, subscriptionSourceFixture } from './subscription-source-fixtures.mjs'
 
 // Exercise the built UI, with strict owned fixtures. No upstream requests or parser execution.
@@ -26,11 +26,9 @@ try {
   for (const width of [1440, 390, 320]) {
     const page = await browser.newPage({ viewport: { width, height: 1000 } })
     page.setDefaultTimeout(8000)
-    await page.clock.install()
-    // Dialogs finish closing on animation frames, which the page clock holds here; with reduced motion they close at once.
     await page.emulateMedia({ reducedMotion: 'reduce' })
     const errors = [], writes = [], receipts = new Map(), jobs = new Map()
-    const servers = [1, 2].map(id => ({ id, name: `受管服务器 ${id}`, enabled: true, online: false, agent_supported: true, read_only: false }))
+    const servers = [1, 2].map(id => runtimeServerFixture(id, { name: `受管服务器 ${id}`, online: false }))
     const nodes = [1, 2].map(id => ({ id, name: `受管监听 ${id}`, server_id: id, protocol: 'vless-reality', enabled: true, public_host: `managed${id}.example.com`, sni: 'www.example.com', port: 20000 + id }))
     const revision = sourceRevisionFixture(1, { counts: { supported: 2, unsupported: 1, ambiguous: 1, missing: 1 } }), olderRevision = sourceRevisionFixture(1, { id: sourceUuid(100), parsed_at: 1790860700 })
     const preview = [sourceNodeFixture(), sourceNodeFixture({ id: sourceUuid(302), version_id: sourceUuid(402), ordinal: 1, name: '不支持的示例', supported: false, selectable: false, identity_state: 'unresolved', parse_status: 'unsupported', protocol: null, server: null, server_port: null, sni: null, transport: null, capabilities: { tcp: false, udp: false }, unsupported_reasons: [{ code: 'unsupported_transport', message: '传输参数尚不支持' }] }), sourceNodeFixture({ id: sourceUuid(303), version_id: sourceUuid(403), ordinal: 2, name: '缺失的示例', present_in_latest: false, selectable: false, source_revision_id: olderRevision.id, reasons: ['当前成功批次缺失，保留历史版本'] }), sourceNodeFixture({ id: sourceUuid(304), version_id: sourceUuid(404), ordinal: 3, name: '不唯一的示例', identity_state: 'ambiguous', selectable: false, reasons: ['节点身份不唯一'] })]
@@ -231,7 +229,8 @@ try {
     await dialog.locator('[name=source_name]').fill('文件来源'); await dialog.getByRole('combobox', { name: '订阅输入方式', exact: true }).selectOption('inline')
     await dialog.locator('[name=source_file]').setInputFiles({ name: 'source.txt', mimeType: 'text/plain', buffer: Buffer.from('trojan://TEST_ONLY_FILE@exit.example.com:443#file') })
     await dialog.getByText('已读取：source.txt', { exact: true }).waitFor(); createMode = 'timeout'; await dialog.getByRole('button', { name: '保存来源', exact: true }).click(); await timeoutStarted
-    await page.clock.fastForward(30000); await dialog.getByRole('alert').filter({ hasText: '请求超时' }).waitFor(); timeoutRelease()
+    // Wait for the actual 30-second request deadline without changing the dialog animation clock.
+    await dialog.getByRole('alert').filter({ hasText: '请求超时' }).waitFor({ timeout: 40000 }); timeoutRelease()
     const fileFirst = writes.filter(write => write.path === sourceRoot && write.method === 'POST').at(-1)
     assert.equal(await dialog.locator('[name=source_content]').inputValue(), 'trojan://TEST_ONLY_FILE@exit.example.com:443#file')
     await enable(dialog.getByRole('button', { name: '重试原请求', exact: true })); await dialog.getByRole('button', { name: '重试原请求', exact: true }).click(); await dialog.waitFor({ state: 'hidden' })
@@ -267,7 +266,7 @@ try {
     await manager.locator('[data-source-id="1"]').getByRole('button', { name: '查看来源', exact: true }).click(); await enable(dialog.getByRole('button', { name: '取消来源任务', exact: true })); await dialog.getByRole('button', { name: '取消来源任务', exact: true }).click()
     await dialog.getByRole('button', { name: '等待取消确认', exact: true }).waitFor(); assert.equal(await dialog.getByRole('button', { name: '等待取消确认', exact: true }).isDisabled(), true)
     const running = sources[0].active_job; running.status = 'cancelled'; running.stage = 'done'; running.finished_at = 1790860810; sources[0].active_job = null
-    await page.clock.fastForward(1500); await dialog.getByText('已取消', { exact: true }).waitFor()
+    await dialog.getByText('已取消', { exact: true }).waitFor()
     await dialog.getByRole('button', { name: '关闭来源详情', exact: true }).click()
     await manager.locator('[data-source-id="1"]').getByRole('button', { name: '查看来源', exact: true }).click(); await enable(dialog.getByRole('button', { name: '更换来源', exact: true })); await dialog.getByRole('button', { name: '更换来源', exact: true }).click()
     assert.equal(await dialog.locator('[name=source_url]').inputValue(), '')

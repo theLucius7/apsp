@@ -1,53 +1,39 @@
 use crate::{
-    AppState, artifacts,
+    AppState,
     error::{ApiError, ApiResult},
 };
-use apsp_protocol::ModuleManifest;
+use apsp_protocol::{
+    ModuleManifest, SELF_CONTAINED_AGENT_CAPABILITY, bundled::valid_version_segment,
+};
 use serde_json::Value;
 use sqlx::Row;
 
-const MANIFEST_ERROR_PREFIX: &str = "清单准备失败：";
+/// Whether `capabilities` declares both the self-contained Agent contract and built-in sing-box.
+pub fn supports_self_contained_singbox(capabilities: &Value) -> bool {
+    capabilities.as_array().is_some_and(|values| {
+        let has = |expected: &str| values.iter().any(|item| item.as_str() == Some(expected));
+        has(SELF_CONTAINED_AGENT_CAPABILITY) && has("singbox")
+    })
+}
 
-async fn preparation_result(
-    state: &AppState,
-    server_id: i64,
-    revision: i64,
-    error: Option<&str>,
-) -> ApiResult<()> {
-    // Every successful manifest poll lands here; usually there is no recorded
-    // failure to clear, so skip the locked transaction.
-    if error.is_none() {
-        let recorded: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM singbox_installation WHERE server_id=$1 AND target_rev=$2)",
-        )
-        .bind(server_id)
-        .bind(revision)
-        .fetch_one(&state.pool)
-        .await?;
-        if !recorded {
-            return Ok(());
-        }
-    }
-    let mut tx = state.pool.begin().await?;
-    // Match the publisher's server-before-module order, including FK checks.
-    crate::servers::lock(&mut tx, server_id).await?;
-    let current: Option<i64> = sqlx::query_scalar("SELECT target_rev FROM server_module_status WHERE server_id=$1 AND module='singbox' FOR UPDATE")
-        .bind(server_id).fetch_optional(&mut *tx).await?;
-    if current == Some(revision) {
-        if let Some(error) = error {
-            sqlx::query("INSERT INTO singbox_installation(server_id,target_rev,error,checked_at) VALUES($1,$2,$3,$4) ON CONFLICT(server_id) DO UPDATE SET target_rev=EXCLUDED.target_rev,error=EXCLUDED.error,checked_at=EXCLUDED.checked_at")
-                .bind(server_id).bind(revision).bind(error).bind(apsp_protocol::now_timestamp())
-                .execute(&mut *tx).await?;
-        } else {
-            sqlx::query("DELETE FROM singbox_installation WHERE server_id=$1 AND target_rev=$2")
-                .bind(server_id)
-                .bind(revision)
-                .execute(&mut *tx)
-                .await?;
-        }
-    }
-    tx.commit().await?;
-    Ok(())
+/// Extracts the currently applied/running `sing-box` version reported by the Agent in `static_info`.
+/// Never falls back to `static_info.components["sing-box"]`, which remains unapplied before first start.
+pub fn reported_runtime_version(static_info: &Value) -> Option<String> {
+    static_info
+        .get("runtime_version")
+        .and_then(Value::as_str)
+        .filter(|value| valid_version_segment(value))
+        .map(str::to_owned)
+}
+
+/// Extracts the embedded `sing-box` payload version reported in `static_info.components["sing-box"]`.
+pub fn embedded_runtime_version(static_info: &Value) -> Option<String> {
+    static_info
+        .get("components")
+        .and_then(|components| components.get("sing-box"))
+        .and_then(Value::as_str)
+        .filter(|value| valid_version_segment(value))
+        .map(str::to_owned)
 }
 
 pub async fn manifest_module(
@@ -55,270 +41,143 @@ pub async fn manifest_module(
     server_id: i64,
     info: &Value,
 ) -> ApiResult<Option<ModuleManifest>> {
-    let held: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_nexus_runtime_hosts WHERE server_id=$1 AND state<>'active')").bind(server_id).fetch_one(&state.pool).await?;
-    if held {
+    let mut connection = state.pool.acquire().await?;
+    if !crate::settings::is_configured_on(&mut connection, server_id).await? {
         return Ok(None);
     }
-    let deployment=sqlx::query("SELECT rev,bundle_sha256 FROM deployments WHERE server_id=$1 AND module='singbox' ORDER BY rev DESC LIMIT 1").bind(server_id).fetch_optional(&state.pool).await?;
+    let deployment = sqlx::query(
+        "SELECT d.rev,d.bundle_sha256,s.capabilities \
+         FROM deployments d \
+         JOIN servers s ON s.id=d.server_id \
+         LEFT JOIN server_module_status m ON m.server_id=d.server_id AND m.module=d.module \
+         WHERE d.server_id=$1 \
+           AND d.module='singbox' \
+           AND d.rev>0 \
+           AND COALESCE(m.target_rev,d.rev)=d.rev \
+         ORDER BY d.rev DESC \
+         LIMIT 1",
+    )
+    .bind(server_id)
+    .fetch_optional(&mut *connection)
+    .await?;
     let Some(deployment) = deployment else {
         return Ok(None);
     };
-    let revision = deployment.get("rev");
-    match prepare_manifest(
-        state,
-        server_id,
-        info,
-        revision,
-        deployment.get("bundle_sha256"),
+    let revision: i64 = deployment.get("rev");
+    let bundle_sha256: String = deployment.get("bundle_sha256");
+    let capabilities: Value = deployment.get("capabilities");
+    let below_floor: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM singbox_path_deployment_dependencies d JOIN singbox_chains c ON c.id=d.chain_id WHERE d.server_id=$1 AND d.module='singbox' AND d.revision=$2 AND d.route_active AND d.generation<c.minimum_generation)",
     )
-    .await
-    {
-        Ok(module) => {
-            let mut tx = state.pool.begin().await?;
-            let path_deployment: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_path_deployment_dependencies WHERE server_id=$1 AND module='singbox' AND revision=$2)")
-                .bind(server_id).bind(revision).fetch_one(&mut *tx).await?;
-            let explicit_rollout:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_runtime_rollout_members m JOIN singbox_runtime_rollouts r ON r.id=m.rollout_id WHERE m.server_id=$1 AND m.baseline_revision<$2 AND r.completed_at IS NULL)").bind(server_id).bind(revision).fetch_one(&mut *tx).await?;
-            // Only immutable path deployments bind an artifact to this revision.
-            // Ordinary nodes retain ABI selection as legacy device facts improve.
-            // Explicit fixed candidates bind ordinary node revisions as well.
-            // Their artifact must remain the exact previewed platform payload.
-            if path_deployment || explicit_rollout {
-                sqlx::query("INSERT INTO singbox_runtime_manifest_facts(server_id,module,revision,runtime_version,artifact_sha256,artifact) VALUES($1,'singbox',$2,'1.14.4-apsp.2',$3,$4) ON CONFLICT DO NOTHING").bind(server_id).bind(revision).bind(&module.artifact.sha256).bind(serde_json::to_value(&module.artifact).map_err(anyhow::Error::from)?).execute(&mut *tx).await?;
-                let same:bool=sqlx::query_scalar("SELECT artifact_sha256=$3 FROM singbox_runtime_manifest_facts WHERE server_id=$1 AND module='singbox' AND revision=$2").bind(server_id).bind(revision).bind(&module.artifact.sha256).fetch_one(&mut *tx).await?;
-                if !same {
-                    return Err(ApiError::Conflict(
-                        "此配置版本的固定运行时制品已改变，需发布新的受控版本".into(),
-                    ));
-                }
-            }
-            tx.commit().await?;
-            // A stale fetch must not clear another target's preparation error or
-            // any error reported by the device itself.
-            preparation_result(state, server_id, revision, None).await?;
-            Ok(Some(module))
-        }
-        Err(error) => {
-            let reason = match &error {
-                ApiError::BadRequest(message) => message.clone(),
-                ApiError::NotFound => {
-                    format!(
-                        "缺少此平台的已验签 sing-box {} 制品，请先导入可信发布制品",
-                        crate::RUNTIME_VERSION
-                    )
-                }
-                ApiError::Conflict(_) => {
-                    "sing-box 制品验签或完整性检查失败，请检查已导入的发布制品".into()
-                }
-                _ => "无法读取已签 sing-box 制品，请检查面板制品存储".into(),
-            };
-            let message = format!("{MANIFEST_ERROR_PREFIX}目标版本 {revision}：{reason}");
-            // The panel knows this published target, not whether the device has
-            // applied it. Preserve all device revision and health evidence.
-            preparation_result(state, server_id, revision, Some(&message)).await?;
-            Err(if matches!(error, ApiError::BadRequest(_)) {
-                ApiError::BadRequest(message)
-            } else {
-                ApiError::Conflict(message)
-            })
-        }
-    }
-}
-
-async fn prepare_manifest(
-    state: &AppState,
-    server_id: i64,
-    info: &Value,
-    config_rev: i64,
-    bundle_sha256: String,
-) -> ApiResult<ModuleManifest> {
-    let below_floor:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_path_deployment_dependencies d JOIN singbox_chains c ON c.id=d.chain_id WHERE d.server_id=$1 AND d.module='singbox' AND d.revision=$2 AND d.route_active AND d.generation<c.minimum_generation)").bind(server_id).bind(config_rev).fetch_one(&state.pool).await?;
+    .bind(server_id)
+    .bind(revision)
+    .fetch_one(&mut *connection)
+    .await?;
     if below_floor {
         return Err(ApiError::BadRequest(
             "此配置含低于设备已确认恢复边界的路径代数，等待发布安全的较高代数".into(),
         ));
     }
-    let mut pinned:Vec<Value>=sqlx::query_scalar("SELECT DISTINCT r.artifact FROM singbox_path_deployment_dependencies d JOIN singbox_chain_runtime_requirements r ON r.chain_id=d.chain_id AND r.generation=d.generation AND r.server_id=d.server_id WHERE d.server_id=$1 AND d.module='singbox' AND d.revision=$2").bind(server_id).bind(config_rev).fetch_all(&state.pool).await?;
-    let recorded:Option<Value>=sqlx::query_scalar("SELECT artifact FROM singbox_runtime_manifest_facts WHERE server_id=$1 AND module='singbox' AND revision=$2").bind(server_id).bind(config_rev).fetch_optional(&state.pool).await?;
-    if let Some(recorded) = recorded {
-        let recorded_sha = recorded.get("sha256");
-        if pinned
-            .iter()
-            .any(|artifact| artifact.get("sha256") != recorded_sha)
-        {
-            return Err(ApiError::Conflict(
-                "当前配置的路径依赖与已记录运行时制品不一致，需要新的受控配置版本".into(),
-            ));
-        }
-        if pinned.is_empty() {
-            pinned.push(recorded);
-        }
-    }
-    if pinned.len() > 1 {
+    if !supports_self_contained_singbox(&capabilities) {
         return Err(ApiError::Conflict(
-            "此配置包含不一致的固定运行时制品，保留现有运行状态".into(),
+            "当前 Agent 尚未声明内置 sing-box 一体化能力，请先升级 Agent；已有运行配置保持不变"
+                .into(),
         ));
     }
-    let artifact = match pinned.into_iter().next() {
-        Some(artifact) => serde_json::from_value(artifact).map_err(anyhow::Error::from)?,
-        None => runtime_artifact(state, info).await?,
-    };
-    let capabilities: Value = sqlx::query_scalar("SELECT capabilities FROM servers WHERE id=$1")
-        .bind(server_id)
-        .fetch_one(&state.pool)
-        .await?;
-    artifact_capability(&artifact, &capabilities)?;
-    let selected:Option<String>=sqlx::query_scalar("SELECT m.artifact_sha256 FROM singbox_runtime_rollout_members m JOIN singbox_runtime_rollouts r ON r.id=m.rollout_id WHERE m.server_id=$1 AND m.baseline_revision<$2 AND r.completed_at IS NULL ORDER BY r.created_at DESC LIMIT 1").bind(server_id).bind(config_rev).fetch_optional(&state.pool).await?;
-    if selected.is_some_and(|expected| expected != artifact.sha256) {
-        return Err(ApiError::Conflict(
-            "当前配置的签名制品与显式发布候选不同；不会自动换成另一制品，请核对库存和平台".into(),
-        ));
+    if let Some(component_version) = info
+        .get("components")
+        .and_then(|components| components.get("sing-box"))
+        .and_then(Value::as_str)
+        .filter(|version| !version.is_empty())
+        && component_version != crate::RUNTIME_VERSION
+    {
+        return Err(ApiError::Conflict(format!(
+            "当前 Agent 内置 sing-box 版本（{component_version}）与面板要求版本（{}）不一致，请升级 Agent",
+            crate::RUNTIME_VERSION
+        )));
     }
-    Ok(ModuleManifest {
+    Ok(Some(ModuleManifest {
         kernel_version: crate::RUNTIME_VERSION.into(),
-        artifact,
-        config_rev: config_rev as u64,
+        artifact: None,
+        config_rev: revision as u64,
         bundle_url: format!(
-            "{}/api/agent/v1/bundles/{config_rev}",
+            "{}/api/agent/v1/bundles/{revision}",
             state.config.public_url
         ),
         bundle_sha256,
         stats_listen: "127.0.0.1:18085".into(),
-    })
-}
-
-// Artifact descriptors have already passed the independent signature and payload checks.
-pub(super) fn artifact_capability(
-    artifact: &apsp_protocol::Artifact,
-    capabilities: &Value,
-) -> ApiResult<()> {
-    let proof = artifact
-        .proof
-        .as_ref()
-        .ok_or_else(|| ApiError::BadRequest("运行时缺少签名证明".into()))?;
-    let metadata: apsp_protocol::release::ReleaseMetadata =
-        serde_json::from_str(&proof.metadata_json).map_err(anyhow::Error::from)?;
-    let has_files = metadata.artifacts.iter().any(|entry| {
-        entry.name == "sing-box"
-            && entry.version == crate::RUNTIME_VERSION
-            && !entry.auxiliary_files.is_empty()
-    });
-    if has_files
-        && !capabilities.as_array().is_some_and(|values| {
-            values
-                .iter()
-                .any(|value| value == apsp_protocol::release::VERSIONED_RUNTIME_FILES_CAPABILITY)
-        })
-    {
-        return Err(ApiError::BadRequest(
-            "此运行时包含版本化附件，请先升级到支持运行时附件校验的当前 Agent".into(),
-        ));
-    }
-    Ok(())
-}
-
-pub(super) async fn runtime_artifact(
-    state: &AppState,
-    info: &Value,
-) -> ApiResult<apsp_protocol::Artifact> {
-    let arch = match info["arch"].as_str() {
-        Some("aarch64" | "arm64") => "arm64",
-        Some("x86_64" | "amd64") => "amd64",
-        _ => return Err(ApiError::BadRequest("设备架构未知".into())),
-    };
-    let runtime_libc = match info.get("runtime_libc") {
-        Some(serde_json::Value::String(libc))
-            if info["os"] == "linux" && matches!(libc.as_str(), "gnu" | "glibc" | "musl") =>
-        {
-            Some(libc.as_str())
-        }
-        Some(_) => {
-            return Err(ApiError::BadRequest(
-                "设备运行时 libc 未知或未受支持".into(),
-            ));
-        }
-        None => info["libc"].as_str(),
-    };
-    let target = info["os"]
-        .as_str()
-        .and_then(|os| apsp_protocol::platform::artifact_target(os, runtime_libc, arch));
-    if info["os"].is_string() && target.is_none() {
-        return Err(ApiError::BadRequest("设备平台或 libc 未受支持".into()));
-    }
-    let mut targets = Vec::new();
-    if let Some(target) = target {
-        let gnu_host = info["os"] == "linux" && matches!(runtime_libc, Some("gnu" | "glibc"));
-        let compiled_target = info["os"].as_str().and_then(|os| {
-            apsp_protocol::platform::artifact_target(os, info["libc"].as_str(), arch)
-        });
-        let preserve_legacy =
-            info["os"] == "linux" && compiled_target.as_ref().is_some_and(|old| old != &target);
-        if preserve_legacy {
-            // Adding a target must not replace an existing architecture-only cache.
-            targets.push(arch.into());
-            targets.push(compiled_target.expect("checked compiled target"));
-        }
-        targets.push(target);
-        if gnu_host && !preserve_legacy {
-            targets.push(arch.into());
-        }
-    } else {
-        targets.push(arch.into());
-    }
-    let mut artifact = None;
-    for target in targets {
-        match artifacts::descriptor(state, "sing-box", crate::RUNTIME_VERSION, &target).await {
-            Ok(found) => {
-                artifact = Some(found);
-                break;
-            }
-            Err(ApiError::NotFound) => continue,
-            Err(error) => return Err(error),
-        }
-    }
-    artifact.ok_or(ApiError::NotFound)
+    }))
 }
 
 pub async fn bundle(state: &AppState, server_id: i64, rev: i64) -> ApiResult<String> {
-    sqlx::query_scalar(
-        "SELECT bundle FROM deployments WHERE server_id=$1 AND module='singbox' AND rev=$2",
+    let mut connection = state.pool.acquire().await?;
+    if !crate::settings::is_configured_on(&mut connection, server_id).await? {
+        return Err(ApiError::NotFound);
+    }
+    let below_floor: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM singbox_path_deployment_dependencies d JOIN singbox_chains c ON c.id=d.chain_id WHERE d.server_id=$1 AND d.module='singbox' AND d.revision=$2 AND d.route_active AND d.generation<c.minimum_generation)",
     )
     .bind(server_id)
     .bind(rev)
-    .fetch_optional(&state.pool)
+    .fetch_one(&mut *connection)
+    .await?;
+    if below_floor {
+        return Err(ApiError::BadRequest(
+            "此配置含低于设备已确认恢复边界的路径代数，等待发布安全的较高代数".into(),
+        ));
+    }
+    sqlx::query_scalar(
+        "SELECT d.bundle FROM deployments d LEFT JOIN server_module_status m ON m.server_id=d.server_id AND m.module=d.module WHERE d.server_id=$1 AND d.module='singbox' AND d.rev=$2 AND COALESCE(m.target_rev,d.rev)>0",
+    )
+    .bind(server_id)
+    .bind(rev)
+    .fetch_optional(&mut *connection)
     .await?
     .ok_or(ApiError::NotFound)
 }
 
 #[cfg(test)]
-mod artifact_capability_tests {
+mod tests {
     use super::*;
     use serde_json::json;
+
     #[test]
-    fn runtime_attachments_require_explicit_device_support() {
-        let metadata = json!({"schema":1,"source_repo":"theLucius7/apsp","tag":"agent-v0.3.7","protocol_min":1,"protocol_max":1,"artifacts":[{"name":"sing-box","version":crate::RUNTIME_VERSION,"arch":"amd64","format":"tar.gz","binary_name":"sing-box","archive_size":3,"binary_sha256":"a".repeat(64),"binary_size":3,"asset_name":"fixture.tar.gz","auxiliary_files":{"libcronet.so":{"sha256":"b".repeat(64),"size":3}}}]});
-        // Signature verification belongs to descriptor(); this tests its capability gate.
-        let artifact = apsp_protocol::Artifact {
-            url: "https://example.com/fixture".into(),
-            sha256: "a".repeat(64),
-            proof: Some(apsp_protocol::release::ReleaseProof {
-                metadata_json: metadata.to_string(),
-                checksums: String::new(),
-                signature: String::new(),
-            }),
-        };
-        assert!(
-            artifact_capability(
-                &artifact,
-                &json!([apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY])
-            )
-            .is_err()
+    fn self_contained_singbox_requires_both_capabilities() {
+        assert!(!supports_self_contained_singbox(&json!(["singbox"])));
+        assert!(!supports_self_contained_singbox(&json!([
+            SELF_CONTAINED_AGENT_CAPABILITY
+        ])));
+        assert!(supports_self_contained_singbox(&json!([
+            SELF_CONTAINED_AGENT_CAPABILITY,
+            "singbox"
+        ])));
+    }
+
+    #[test]
+    fn reported_and_embedded_runtime_versions_stay_distinct() {
+        assert_eq!(
+            reported_runtime_version(&json!({"runtime_version": "1.14.4-apsp.2"})),
+            Some("1.14.4-apsp.2".into())
         );
-        assert!(
-            artifact_capability(
-                &artifact,
-                &json!([apsp_protocol::release::VERSIONED_RUNTIME_FILES_CAPABILITY])
-            )
-            .is_ok()
+        assert_eq!(
+            reported_runtime_version(&json!({
+                "components": {"sing-box": "1.14.4-apsp.2"}
+            })),
+            None
+        );
+        assert_eq!(
+            embedded_runtime_version(&json!({
+                "components": {"sing-box": "1.14.4-apsp.2"}
+            })),
+            Some("1.14.4-apsp.2".into())
+        );
+        assert_eq!(
+            reported_runtime_version(&json!({"runtime_version": "../bad"})),
+            None
+        );
+        assert_eq!(
+            embedded_runtime_version(&json!({"components": {"sing-box": "../bad"}})),
+            None
         );
     }
 }

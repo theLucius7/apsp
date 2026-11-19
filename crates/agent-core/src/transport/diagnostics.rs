@@ -40,7 +40,9 @@ enum Checkpoint {
         spec: DiagnosticSpec,
         service: ServiceJob,
         started_at: u64,
-        plugin: String,
+        // Existing SQLite checkpoints must remain readable across Agent updates.
+        #[serde(rename = "plugin")]
+        tool: String,
         #[serde(default)]
         start_error: Option<String>,
         #[serde(default)]
@@ -60,6 +62,7 @@ pub struct DiagnosticWorker {
     config: Config,
     state: SharedState,
     adapters: BTreeMap<String, Arc<dyn DiagnosticAdapter>>,
+    bundled: BTreeMap<String, crate::bundled::BundledItem>,
     privileged: Arc<dyn Privileged>,
     services: Arc<dyn ServiceManager>,
     keys: std::result::Result<TrustedKeys, ReleaseError>,
@@ -79,24 +82,36 @@ impl DiagnosticWorker {
         for adapter in adapters {
             let descriptor = adapter.describe();
             ensure!(
-                safe_component(&descriptor.plugin_name) && safe_component(&descriptor.binary_name),
-                "invalid diagnostic plugin descriptor"
+                safe_component(&descriptor.artifact_name)
+                    && safe_component(&descriptor.binary_name),
+                "invalid diagnostic tool descriptor"
             );
             ensure!(
-                registered.insert(descriptor.plugin_name, adapter).is_none(),
-                "duplicate diagnostic plugin"
+                registered
+                    .insert(descriptor.artifact_name, adapter)
+                    .is_none(),
+                "duplicate diagnostic tool"
             );
         }
         Ok(Self {
             config,
             state,
             adapters: registered,
+            bundled: BTreeMap::new(),
             privileged,
             services,
             keys: TrustedKeys::compiled(),
             cancellations: None,
             retirement: None,
         })
+    }
+
+    pub fn with_bundled_tools(
+        mut self,
+        tools: BTreeMap<String, crate::bundled::BundledItem>,
+    ) -> Self {
+        self.bundled = tools;
+        self
     }
 
     pub fn with_cancellations(mut self, control: Arc<cancellation::CancellationControl>) -> Self {
@@ -244,15 +259,20 @@ impl DiagnosticWorker {
         if self.active()?.is_some() {
             return Ok(());
         }
-        for job in jobs {
+        for mut job in jobs {
             if self
                 .read::<bool>(&format!("diagnostics:done:{}", job.id))?
                 .unwrap_or(false)
             {
                 continue;
             }
-            if !self.adapters.contains_key(&job.plugin)
-                || !safe_component(&job.version)
+            if job.version.is_empty()
+                && let Some(item) = self.bundled.get(&job.tool)
+            {
+                job.version = item.version.clone();
+            }
+            if !self.adapters.contains_key(&job.tool)
+                || !apsp_protocol::bundled::valid_version_segment(&job.version)
                 || !(1..=3600).contains(&job.timeout_secs)
                 || job
                     .resource_budget
@@ -262,7 +282,7 @@ impl DiagnosticWorker {
             {
                 self.finish(failure(
                     job.id,
-                    "unsupported diagnostic plugin, invalid job, or expired task".into(),
+                    "unsupported diagnostic tool, invalid job, or expired task".into(),
                     None,
                 ))?;
                 continue;
@@ -273,37 +293,104 @@ impl DiagnosticWorker {
         Ok(())
     }
 
-    async fn prepare(&self, job: DiagnosticJob, client: &PanelClient) -> Result<()> {
+    async fn prepare(&self, job: DiagnosticJob, _client: &PanelClient) -> Result<()> {
         let id = job.id;
         let result: Result<()> = async {
             ensure!(!self.cancellation_requested(id)?, "diagnostic cancellation was requested");
             ensure!(!expired(&job), "diagnostic task has expired");
-            let adapter = self.adapters.get(&job.plugin).context("diagnostic plugin is not registered")?;
+            let adapter = self.adapters.get(&job.tool).context("diagnostic tool is not registered")?;
             let descriptor = adapter.describe();
             let auxiliary_files = adapter.auxiliary_files_for_version(&job.version);
             let signed_descriptor = Descriptor {
-                auxiliary_files: auxiliary_files.clone(),
-                module: "diagnostics".into(), plugin_name: descriptor.plugin_name.clone(),
-                binary_name: descriptor.binary_name.clone(), service_unit: String::new(), service_group: String::new(),
+                auxiliary_files,
+                module: "diagnostics".into(),
+                artifact_name: descriptor.artifact_name.clone(),
+                binary_name: descriptor.binary_name.clone(),
+                service_unit: String::new(),
+                service_group: String::new(),
             };
-            let binary = tokio::time::timeout(Duration::from_secs(300), client.ensure_artifact(&job.artifact, &job.version, &Descriptor {
-                module: "diagnostics".into(), plugin_name: descriptor.plugin_name,
-                binary_name: descriptor.binary_name, auxiliary_files, service_unit: String::new(), service_group: String::new(),
-            }, &self.config.install_root, self.privileged.as_ref())).await.context("diagnostic artifact installation timed out")??;
-            ensure!(!expired(&job), "diagnostic task expired during artifact installation");
-            let keys = self.keys.as_ref().map_err(|error| anyhow::anyhow!(error.to_string()))?;
-            crate::artifacts::verify_expected(&binary, &signed_descriptor, &job.version, keys).await?;
+            let bundled_item = self.bundled.get(&job.tool);
+            let spec_version = if job.version.is_empty() {
+                bundled_item
+                    .map(|item| item.version.clone())
+                    .context("diagnostic job has an empty version")?
+            } else {
+                job.version.clone()
+            };
+            let binary = if let Some(item) = bundled_item {
+                match &item.payload {
+                    crate::bundled::BundledPayload::AgentSubcommand { .. } => {
+                        crate::bundled::current_agent_binary()?
+                    }
+                    crate::bundled::BundledPayload::TarGz { .. } => {
+                        ensure!(
+                            spec_version == item.version || item.component_name == "nodequality",
+                            "diagnostic job version {} differs from built-in component version {}",
+                            spec_version,
+                            item.version
+                        );
+                        tokio::time::timeout(
+                            Duration::from_secs(300),
+                            crate::bundled::ensure_materialized(
+                                item,
+                                &self.config.install_root,
+                                self.privileged.as_ref(),
+                            ),
+                        )
+                        .await
+                        .context("built-in diagnostic extraction timed out")??
+                    }
+                }
+            } else if let Some(artifact) = &job.artifact {
+                let keys = self
+                    .keys
+                    .as_ref()
+                    .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+                crate::artifacts::verify_local_cached_artifact(
+                    artifact,
+                    &spec_version,
+                    &signed_descriptor,
+                    &self.config.install_root,
+                    keys,
+                )
+                .await?
+            } else {
+                anyhow::bail!("diagnostic job has no artifact and tool is not built into this Agent");
+            };
+            ensure!(!expired(&job), "diagnostic task expired during preparation");
+            let mut options = job.options;
+            if let Some(item) = bundled_item
+                && item.component_name == "ipquality"
+                && let Some(compiled_sha) = crate::bundled::bundle_digest(item)?
+            {
+                if let Some(dispatched_sha) = options.get("expected_component_sha256") {
+                    ensure!(
+                        dispatched_sha == &compiled_sha,
+                        "dispatched IPQuality component digest differs from running Agent bundle"
+                    );
+                } else {
+                    options.insert("expected_component_sha256".into(), compiled_sha);
+                }
+            }
             let mut spec = DiagnosticSpec {
-                id: id.to_string(), version: job.version,
+                id: id.to_string(),
+                version: spec_version,
                 binary_path: binary,
                 job_dir: self.config.runtime_root.join("diagnostics").join(id.to_string()),
-                timeout_secs: execution_timeout(job.timeout_secs, job.expires_at, unix_time())?, options: job.options,
+                timeout_secs: execution_timeout(job.timeout_secs, job.expires_at, unix_time())?,
+                options,
             };
             let mut service = self.bounded(adapter.prepare(&spec, self.privileged.as_ref())).await?;
-            ensure!(service.unit == format!("apsp-diagnostic-{id}.service")
-                && service.timeout_secs == spec.timeout_secs
-                && service.working_directory == spec.job_dir && service.program == spec.binary_path, "invalid prepared diagnostic service");
-            if let Some(budget)=&job.resource_budget { budget::apply(budget,&mut service)?; }
+            ensure!(
+                service.unit == format!("apsp-diagnostic-{id}.service")
+                    && service.timeout_secs == spec.timeout_secs
+                    && service.working_directory == spec.job_dir
+                    && service.program == spec.binary_path,
+                "invalid prepared diagnostic service"
+            );
+            if let Some(budget) = &job.resource_budget {
+                budget::apply(budget, &mut service)?;
+            }
             let resources = self.preflight(&service).await?;
             let started_at = unix_time();
             // Preparation can consume part of the remaining budget. Recompute immediately
@@ -311,12 +398,51 @@ impl DiagnosticWorker {
             let timeout_secs = execution_timeout(job.timeout_secs, job.expires_at, started_at)?;
             spec.timeout_secs = timeout_secs;
             service.timeout_secs = timeout_secs;
-            crate::artifacts::verify_expected(&spec.binary_path, &signed_descriptor, &spec.version, keys).await?;
+            if let Some(item) = bundled_item {
+                match &item.payload {
+                    crate::bundled::BundledPayload::AgentSubcommand { .. } => {
+                        ensure!(
+                            crate::bundled::current_agent_binary()? == spec.binary_path,
+                            "running Agent executable changed during diagnostic preparation"
+                        );
+                    }
+                    crate::bundled::BundledPayload::TarGz { .. } => {
+                        crate::bundled::verify_compiled_item(
+                            item,
+                            &self.config.install_root,
+                            &spec.binary_path,
+                        )
+                        .await?;
+                    }
+                }
+            } else {
+                let keys = self
+                    .keys
+                    .as_ref()
+                    .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+                crate::artifacts::verify_expected(
+                    &spec.binary_path,
+                    &signed_descriptor,
+                    &spec.version,
+                    keys,
+                )
+                .await?;
+            }
             // This checkpoint is durable before asking systemd to start anything. Recovery
             // only observes it; an uncertain start must never execute the task again.
             let mut checkpoint = Checkpoint::Started {
-                environment: Some(environment::ExecutionEnvironment::capture(&service, &resources, started_at)),
-                spec, service: service.clone(), started_at, plugin: job.plugin, start_error: None, expires_at: job.expires_at, protection_stop_reason: None, terminal_update: None, cleanup_error: None,
+                environment: Some(environment::ExecutionEnvironment::capture(
+                    &service, &resources, started_at,
+                )),
+                spec,
+                service: service.clone(),
+                started_at,
+                tool: job.tool,
+                start_error: None,
+                expires_at: job.expires_at,
+                protection_stop_reason: None,
+                terminal_update: None,
+                cleanup_error: None,
             };
             ensure!(!self.cancellation_requested(id)?, "diagnostic cancellation was requested before service start");
             self.save(&checkpoint)?;

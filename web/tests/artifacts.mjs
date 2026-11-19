@@ -5,7 +5,8 @@ import { readFile } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { resolve, extname, sep } from 'node:path'
 
-// Exercise the shipped bundle against loopback fixtures, never production Agents.
+// Exercise the shipped bundle against loopback fixtures for Agent releases (`/settings/agent-updates`),
+// per-server built-in component versions (`static_info.components`), and monitor-only service states.
 const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 const root = fileURLToPath(new URL('../dist/', import.meta.url))
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' }
@@ -19,127 +20,172 @@ const http = createServer(async (request, response) => {
 await new Promise(resolve => http.listen(0, '127.0.0.1', resolve))
 const origin = `http://127.0.0.1:${http.address().port}`
 const browser = await chromium.launch({ headless: true, ...(process.env.APSP_CHROME_PATH ? { executablePath: process.env.APSP_CHROME_PATH } : {}) })
-const packageFor = (name, version, arch) => ({ name, version, arch, bytes: 1024, sha256: 'a'.repeat(64) })
-const packages = [
-  packageFor('sing-box', '1.14.2', 'arm64'), packageFor('sing-box', '1.14.2', 'amd64'), packageFor('sing-box', '1.13.0', 'amd64'),
-  packageFor('nodequality', `${'a'.repeat(40)}-r12`, 'amd64'), packageFor('nodequality', `${'a'.repeat(40)}-r12`, 'arm64'),
-  packageFor('tcpquality', '0.3.0-TEST_ONLY-r1', 'amd64'), packageFor('tcpquality', '0.3.0-TEST_ONLY-r1', 'arm64'),
-  packageFor('agent', '0.3.0', 'amd64'), packageFor('agent', '0.3.0', 'arm64'),
-  packageFor('custom-component', '1', 'amd64'), packageFor('custom-component', '1', 'arm64'),
+const releasePolicy = {
+  default_version: '0.4.0',
+  selection: 'highest_stable_signed_protocol_compatible_for_target',
+  minimum_version: '0.4.0',
+}
+const signedReleases = [
+  { version: '0.4.0', tag: 'agent-v0.4.0', targets: ['linux-gnu-amd64', 'linux-musl-arm64', 'windows-amd64'], protocol_min: 1, protocol_max: 1 },
+  { version: '0.3.2', tag: 'agent-v0.3.2', targets: ['macos-arm64'], protocol_min: 1, protocol_max: 2 },
 ]
 
 try {
   for (const width of [1440, 390]) {
     const page = await browser.newPage({ viewport: { width, height: 1000 } })
     const errors = [], mutations = []
-    let inventory = packages, artifactFailure = false, metadataFailure = false
-    const metadata = { id: 2, name: '所选服务器', enabled: false, online: true, agent_supported: true, read_only: false, source: null, installation: { state: 'not_enabled', reason: '尚未安装 sing-box。', target_rev: 0, applied_rev: 0 } }
+    let versions = signedReleases, releaseFailure = false, metadataFailure = false
+    const metadata = {
+      id: 2,
+      name: '一体化验收服务器',
+      configured: false,
+      online: true,
+      agent_supported: true,
+      read_only: false,
+      source: null,
+      runtime_version: '1.14.4-apsp.2',
+      status: { state: 'unconfigured', reason: '', target_rev: 0, applied_rev: 0, current_healthy: false },
+    }
     const servers = [
-      { id: 1, name: '另一台服务器', online: false, device_public_key: null, static_info: {} },
-      { id: 2, name: metadata.name, online: true, device_public_key: 'TEST_ONLY', static_info: {} },
+      { id: 1, name: '旧版待升级服务器', online: false, device_public_key: 'LEGACY_KEY', capabilities: [], static_info: { agent_version: '0.2.9' }, latest_metrics: {}, manifest_rev: 0 },
+      {
+        id: 2,
+        name: metadata.name,
+        online: true,
+        device_public_key: 'TEST_ONLY',
+        capabilities: ['agent:self-contained:v1'],
+        static_info: {
+          agent_version: '0.4.0',
+          runtime_version: '1.14.4-apsp.2',
+          components: {
+            'sing-box': '1.14.4-apsp.2',
+            tcpquality: '0.1.0',
+            ipquality: '87397e2c3196-node-r1',
+            nodequality: 'a92fca6c0067-native-r2',
+          },
+        },
+        latest_metrics: {},
+        manifest_rev: 0,
+      },
     ]
     page.on('pageerror', error => errors.push(error.message))
     await page.route('**/api/**', async route => {
       const request = route.request(), path = new URL(request.url()).pathname
       let value
       if (request.method() !== 'GET') {
-        mutations.push({ path, method: request.method(), body: request.postDataJSON() })
-        if (path !== '/api/traffic/servers/2/enable' || request.method() !== 'POST') {
+        mutations.push({ path, method: request.method(), body: request.postData() ? request.postDataJSON() : null })
+        if (path === '/api/traffic/servers/2/deployments/check' && request.method() === 'POST') {
+          value = { ready: true, checks: [{ name: '内置运行时能力', passed: true, detail: '一体化 Agent 已内置 sing-box 1.14.4-apsp.2' }] }
+        } else {
           errors.push(`Unexpected mutation: ${path}`); await route.fulfill({ status: 400, json: { error: 'UNEXPECTED_MUTATION' } }); return
         }
-        Object.assign(metadata, { enabled: true, source: 'administrator', installation: { state: 'queued', reason: '安装请求已保存，正在生成初始运行配置', target_rev: 0, applied_rev: 0 } }); value = metadata
       } else if (path === '/api/dashboard/access') value = { authenticated: true, public_dashboard: false }
       else if (path === '/api/me') value = { authenticated: true }
-      else if (path === '/api/artifacts') {
-        if (artifactFailure) { await route.fulfill({ status: 403, json: { error: 'ARTIFACT_READ_FAILED' } }); return }
-        value = inventory
-      } else if (path === '/api/servers/2') value = servers[1]
+      else if (path === '/api/system/agent-releases') {
+        if (releaseFailure) { await route.fulfill({ status: 503, json: { error: 'AGENT_RELEASES_READ_FAILED' } }); return }
+        value = { policy: releasePolicy, versions }
+      } else if (path === '/api/servers/1') value = servers[0]
+      else if (path === '/api/servers/2') value = servers[1]
+      else if (/^\/api\/servers\/[12]\/(metrics|probes|probe-results|commands)$/.test(path)) value = []
+      else if (path === '/api/servers/1/agent-settings') value = { sample_interval_secs: 1, upload_interval_secs: 3, auto_update: false, discover_public_ips: false }
+      else if (path === '/api/servers/1/telemetry-settings') value = { persist_interval_secs: 60 }
       else if (path === '/api/traffic/servers/2') {
         if (metadataFailure) { await route.fulfill({ status: 403, json: { error: 'RUNTIME_STATE_UNKNOWN' } }); return }
         value = metadata
       }
-      // Once installed, the network services tab also reads this server's deployment and tools.
-      else if (path === '/api/traffic/servers/2/deployments') value = { status: null, history: [] }
       else if (path === '/api/traffic/servers/2/profile') value = { definition: { outbounds: [], endpoints: [], services: [], cloudflared: [], dns: null, route: null }, revision: 0 }
-      else if (path === '/api/traffic/servers/2/runtime-operations') value = { supported: false, online: false, retiring: false, operations: [] }
-      else if (path === '/api/traffic/servers/2/operations-view') value = {
-        runtime: { supported_versions: [], selected_version: 'TEST_ONLY', reason: 'TEST_ONLY 未读取真实运行时版本。', compatibility_metadata: { upstream_release: 'https://example.com/TEST_ONLY', upstream_commit: 'TEST_ONLY', protocols: [], acceptance: [] } },
-        preflight: { id: null, ready: false, confirmed: false, device_checks_pending: false, checks: [] },
-        drift: { state: 'unknown', target_revision: null, applied_revision: null, last_observed_at: null, reason: 'TEST_ONLY 无真实配置检查点。', checkpoint_supported: false, checkpoint: { state: 'unknown', observed_at: null, reason: 'TEST_ONLY 未取得检查点。' } },
-        changes: [], history: [], paths: [], hop_observations: [], path_diagnosis: 'TEST_ONLY 无真实路径证据。',
-      }
-      else if (path === '/api/traffic/nodes') value = []
       else { errors.push(`Unexpected read: ${path}`); await route.fulfill({ status: 404, json: {} }); return }
       await route.fulfill({ json: value })
     })
 
-    const runtime = page.locator('[data-artifact="sing-box"]')
-    const openArtifacts = async (path = '/settings/artifacts') => {
-      await installControlCenterFixtures(page)
-      await page.goto(`${origin}/#${path}`)
-      await page.getByRole('heading', { name: '制品与版本', exact: true }).waitFor()
-      await runtime.locator('summary').waitFor()
-    }
-    // The plugin centre's address opens the same page for one release.
-    for (const path of ['/settings/artifacts', '/settings/plugins']) {
-      await openArtifacts(path)
-      assert.equal(await page.title(), '制品与版本 · apsp')
-    }
-    assert.equal(await page.locator('[data-artifact-group]').count(), 4)
-    assert.equal(await page.locator('[data-artifact]').count(), 6)
+    await installControlCenterFixtures(page)
+    await page.goto(`${origin}/#/settings/agent-updates`)
+    await page.getByRole('heading', { name: 'Agent 版本', exact: true }).waitFor()
+    assert.equal(await page.title(), 'Agent 版本 · apsp')
+    const policyPanel = page.locator('[data-slot="agent-release-policy"]')
+    const releasesPanel = page.locator('[data-slot="agent-releases"]')
+    await policyPanel.getByRole('heading', { name: '发布与升级策略', exact: true }).waitFor()
+    await policyPanel.getByText('按目标平台选择最高已签名且协议兼容的稳定版本', { exact: false }).waitFor()
+    await policyPanel.getByText('0.4.0', { exact: true }).first().waitFor()
+    await releasesPanel.getByRole('heading', { name: '已收录签名版本', exact: true }).waitFor()
+    await releasesPanel.getByText('共 2 个版本', { exact: true }).waitFor()
+    assert.equal(await releasesPanel.locator('[data-slot="agent-release"]').count(), 2)
+    const v040 = releasesPanel.locator('[data-agent-version="0.4.0"]')
+    await v040.getByText('agent-v0.4.0', { exact: true }).waitFor()
+    await v040.getByText('Linux AMD64（GNU / glibc）', { exact: true }).waitFor()
+    await v040.getByText('Windows AMD64', { exact: true }).waitFor()
+    await v040.getByText('v1', { exact: true }).waitFor()
+    const v032 = releasesPanel.locator('[data-agent-version="0.3.2"]')
+    await v032.getByText('macOS ARM64', { exact: true }).waitFor()
+    await v032.getByText('v1–v2', { exact: true }).waitFor()
+    assert.equal(await page.getByRole('link', { name: '前往服务器列表', exact: true }).getAttribute('href'), '#/servers')
     assert.equal(await page.getByRole('button', { name: /导入|安装|启用|选择服务器/ }).count(), 0)
-    assert.equal(await page.locator('[data-slot=artifact-groups]').locator('form, input').count(), 0)
-    assert.equal(await page.locator('[data-slot=artifact-groups]').getByText('插件', { exact: false }).count(), 0)
-    assert.equal(await runtime.locator('[data-slot=artifact-architectures] [data-slot=badge]').count(), 2)
-    await runtime.locator('summary').click()
-    assert.equal(await runtime.locator('[data-slot=artifact-version]').count(), 2)
-    const oldVersion = runtime.getByRole('region', { name: '版本 1.13.0' })
-    assert.equal(await oldVersion.locator('tbody tr').count(), 1)
-    assert.equal((await oldVersion.innerText()).includes('arm64'), false)
+    assert.equal(await releasesPanel.locator('form, input').count(), 0)
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
-    if (process.env.APSP_UI_SCREENSHOT_DIR) await page.screenshot({ path: resolve(process.env.APSP_UI_SCREENSHOT_DIR, `artifacts-${width}.png`), fullPage: true })
+    if (process.env.APSP_UI_SCREENSHOT_DIR) await page.screenshot({ path: resolve(process.env.APSP_UI_SCREENSHOT_DIR, `agent-updates-${width}.png`), fullPage: true })
 
-    // A failed refresh keeps the versions it read before and says so.
-    artifactFailure = true
+    // A failed refresh surfaces the error while retaining previously read signed releases.
+    releaseFailure = true
     await page.getByRole('button', { name: '刷新', exact: true }).click()
-    await page.getByText('ARTIFACT_READ_FAILED', { exact: true }).waitFor()
-    assert.equal(await runtime.getByText('以下是上次读取的版本信息，当前状态未知。', { exact: true }).count(), 1)
-    artifactFailure = false
+    await page.getByText('AGENT_RELEASES_READ_FAILED', { exact: true }).waitFor()
+    assert.equal(await releasesPanel.locator('[data-slot="agent-release"]').count(), 2)
+    releaseFailure = false
     await page.getByRole('button', { name: '重试', exact: true }).click()
-    await page.getByText('ARTIFACT_READ_FAILED', { exact: true }).waitFor({ state: 'hidden' })
+    await page.getByText('AGENT_RELEASES_READ_FAILED', { exact: true }).waitFor({ state: 'hidden' })
 
-    // Known components stay listed when nothing has been imported.
-    inventory = []
+    // Empty signed release catalogue shows clear guidance and links to servers.
+    versions = []
     await page.getByRole('button', { name: '刷新', exact: true }).click()
-    await page.getByText('暂无已验证的版本。', { exact: true }).first().waitFor()
-    assert.equal(await page.locator('[data-artifact]').count(), 5)
-    inventory = packages
+    await releasesPanel.getByText('暂无已收录的签名版本', { exact: true }).waitFor()
+    assert.equal(await releasesPanel.getByRole('link', { name: '查看服务器', exact: true }).getAttribute('href'), '#/servers')
+    versions = signedReleases
     assert.deepEqual(mutations, [])
 
-    // The runtime is installed in the server's network services tab, under the old address too.
-    for (const path of ['/servers/2/plugins', '/servers/2/services']) {
-      await page.goto(`${origin}/#${path}`)
-      await page.getByRole('heading', { name: metadata.name, exact: true }).waitFor()
-      await page.getByRole('button', { name: '安装 sing-box', exact: true }).waitFor()
-      assert.equal(await page.getByRole('navigation', { name: '服务器导航' }).getByRole('link', { name: '网络服务', exact: true }).getAttribute('aria-current'), 'page')
+    // Retired artifact and plugin addresses render not-found without requesting removed APIs.
+    for (const retired of ['/settings/artifacts', '/artifacts', '/settings/plugins', '/servers/2/plugins']) {
+      await page.goto(`${origin}/#${retired}`)
+      await page.getByRole('heading', { name: '这个页面不存在', exact: true }).waitFor()
     }
+
+    // Built-in component versions reported via `static_info.components` appear on the server detail page.
+    await page.goto(`${origin}/#/servers/2`)
+    await page.getByRole('heading', { name: metadata.name, exact: true }).waitFor()
+    const components = page.locator('[data-slot="agent-components"]')
+    await components.getByText('一体化 Agent', { exact: true }).waitFor()
+    await components.getByText('Agent v0.4.0', { exact: true }).waitFor()
+    await components.getByText('sing-box 运行时', { exact: true }).waitFor()
+    await components.getByText('1.14.4-apsp.2', { exact: true }).waitFor()
+    await components.getByText('TCP 连接诊断', { exact: true }).waitFor()
+    await components.getByText('IP 质量检测', { exact: true }).waitFor()
+    await components.getByText('节点验机', { exact: true }).waitFor()
+
+    await page.goto(`${origin}/#/servers/1/agent`)
+    const emptyComponents = page.locator('[data-slot="agent-components"]')
+    await emptyComponents.getByText('当前设备尚未上报内置组件版本；升级到一体化 Agent 并连接后将在此显示内置运行时与诊断能力版本。', { exact: true }).waitFor()
+    assert.equal(await emptyComponents.getByText('一体化 Agent', { exact: true }).count(), 0)
+
+    // Network services tab on a monitor-only server has no install button and guards readiness checks on fresh state.
+    await page.goto(`${origin}/#/servers/2/services`)
+    const card = page.locator('section').filter({ has: page.getByRole('heading', { name: /^sing-box/ }) })
+    await card.getByText('未配置服务', { exact: true }).waitFor()
+    assert.equal(await card.getByRole('button', { name: '安装 sing-box', exact: true }).count(), 0)
+    assert.equal(await card.getByRole('link', { name: '添加节点', exact: true }).getAttribute('href'), '#/nodes?server=2')
     metadataFailure = true
-    await page.locator('section').filter({ has: page.getByRole('heading', { name: /^sing-box/ }) }).getByRole('button', { name: '刷新', exact: true }).click()
+    await card.getByRole('button', { name: '刷新', exact: true }).click()
     await page.getByText('RUNTIME_STATE_UNKNOWN', { exact: true }).waitFor()
-    assert.equal(await page.getByRole('button', { name: '安装 sing-box', exact: true }).isDisabled(), true)
+    assert.equal(await card.getByRole('button', { name: '检查运行条件', exact: true }).isDisabled(), true)
     metadataFailure = false
     await page.getByRole('button', { name: '重试', exact: true }).click()
     await page.getByText('RUNTIME_STATE_UNKNOWN', { exact: true }).waitFor({ state: 'hidden' })
-    await page.getByRole('button', { name: '安装 sing-box', exact: true }).click()
-    await page.getByText('安装已安排', { exact: true }).waitFor()
-    assert.equal(await page.getByText('已安装并运行', { exact: true }).count(), 0)
-    assert.deepEqual(mutations, [{ path: '/api/traffic/servers/2/enable', method: 'POST', body: {} }])
+    await card.getByRole('button', { name: '检查运行条件', exact: true }).click()
+    await card.getByText('一体化 Agent 已内置 sing-box 1.14.4-apsp.2', { exact: true }).waitFor()
+    assert.deepEqual(mutations, [{ path: '/api/traffic/servers/2/deployments/check', method: 'POST', body: null }])
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     assert.deepEqual(errors, [])
     await page.close()
-    console.log(`PASS: ${width}px artifact groups, old address, failure and empty states, and runtime installation in the server's network services tab`)
+    console.log(`PASS: ${width}px Agent release policy/versions, retired artifact/plugin addresses, static_info.components, and monitor-only runtime readiness`)
 
-    // A public dashboard must not make the artifact page or server controls public.
+    // A public dashboard must not expose Agent release policies or server runtime controls.
     const anonymous = await browser.newPage({ viewport: { width, height: 1000 } })
     const privateReads = []
     await anonymous.route('**/api/**', async route => {
@@ -147,13 +193,13 @@ try {
       if (path === '/api/dashboard/access') await route.fulfill({ json: { authenticated: false, public_dashboard: true } })
       else { privateReads.push(path); await route.fulfill({ status: 403, json: {} }) }
     })
-    for (const path of ['/settings/artifacts', '/settings/plugins', '/servers/2/services']) {
+    for (const path of ['/settings/agent-updates', '/settings/artifacts', '/servers/2/services']) {
       await anonymous.goto(`${origin}/#${path}`)
       await anonymous.getByRole('heading', { name: '欢迎回来', exact: true }).waitFor()
-      assert.equal(await anonymous.locator('[data-artifact]').count(), 0)
+      assert.equal(await anonymous.locator('[data-slot="agent-releases"], [data-slot="agent-components"]').count(), 0)
     }
     assert.deepEqual(privateReads, [])
     await anonymous.close()
-    console.log(`PASS: ${width}px public dashboard does not expose artifacts or server runtime controls`)
+    console.log(`PASS: ${width}px public dashboard does not expose Agent release settings or server runtime controls`)
   }
 } finally { await browser.close(); await new Promise(resolve => http.close(resolve)) }

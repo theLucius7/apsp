@@ -27,7 +27,7 @@ impl DiagnosticWorker {
             spec,
             service,
             started_at,
-            plugin,
+            tool,
             start_error,
             expires_at,
             protection_stop_reason,
@@ -94,7 +94,7 @@ impl DiagnosticWorker {
         if status == Some(JobStatus::Running) && stop_reason.is_none() {
             // Reading a damaged output filesystem must not delay resource protection.
             if let Err(error) =
-                tokio::time::timeout(Duration::from_secs(2), self.capture_sections(spec, plugin))
+                tokio::time::timeout(Duration::from_secs(2), self.capture_sections(spec, tool))
                     .await
                     .context("diagnostic chapter capture timed out")
                     .and_then(|result| result)
@@ -117,17 +117,17 @@ impl DiagnosticWorker {
             );
         }
         if let Err(error) =
-            tokio::time::timeout(Duration::from_secs(2), self.capture_sections(spec, plugin))
+            tokio::time::timeout(Duration::from_secs(2), self.capture_sections(spec, tool))
                 .await
                 .context("final diagnostic chapter capture timed out")
                 .and_then(|result| result)
         {
             tracing::warn!(%id, %error, "final diagnostic chapter capture failed; saved chapters are retained");
         }
-        let collected = if let Some(adapter) = self.adapters.get(plugin) {
+        let collected = if let Some(adapter) = self.adapters.get(tool) {
             self.bounded(adapter.collect(spec)).await
         } else {
-            Err(anyhow::anyhow!("diagnostic plugin is no longer registered"))
+            Err(anyhow::anyhow!("diagnostic tool is no longer registered"))
         };
         let report = collected
             .as_ref()
