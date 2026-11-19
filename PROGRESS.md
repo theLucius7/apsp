@@ -25,14 +25,14 @@
 
 ## 当前生产基线
 
-2026-11-17 只读核对与 2026-11-18 `origin/main`（[`e78bfcad`](https://github.com/theLucius7/apsp/commit/e78bfcad1f1777e138388f020a4fd5e5be862b6c)）运维更新：Agent 0.3.9 从 `bf71ea39` 签名发布，运行时为 `1.14.4-apsp.2`；四个项目工作流仍停用，0.3.9 发版例外已关闭。
+根据 2026-11-18 已合入 main 的逐台升级记录（[`e60eeec7`](https://github.com/theLucius7/apsp/commit/e60eeec7)）：Agent 0.3.9 从 `bf71ea39` 签名发布，运行时为 `1.14.4-apsp.2`；四个项目工作流仍停用，0.3.9 发版例外已关闭。
 
 | 范围 | 已知状态 |
 | --- | --- |
 | hk1/hk2 | Agent 0.3.9，加固运行时摘要正确，conntrack 参数已生效；2026-11-18 因原第三方目标站香港节点拒连，已改为每台自建 `nginx` + Let's Encrypt 站点（Cloudflare 仅 DNS `hk1.solve.ac` / `hk2.solve.ac`，本机 `127.0.0.1:8443` 提供 TLS 1.3 + h2 + `X25519MLKEM768`），台湾线路 `extend --revise`（修订 7 / 15）改 SNI 为各自域名、握手目标为本机 `127.0.0.1:8443`，`nodes.sni`、旧面板与用户订阅已同步，真实客户端（`sing-box`、Mihomo 带 MLKEM）台湾出口正常，握手额外延迟 +0.6 ms / +2 ms，国内 TCP 443 均 6/6；**换 IP 必须同步改对应 DNS 记录** |
-| hk4 | 新接入 `aliyun-hk4`（server 22），Agent 0.3.9 在线，尚无节点；待用户确定出口后再建节点、`hk4.solve.ac` 与本机自建站点 |
-| 其余在线运行时 | 14 台清单准备失败，13 台缺附件能力，1 台缺平台制品；现有配置仍运行 |
-| 仅监控设备 | server 21 在线，Agent 0.3.7，单独按监控职责验收 |
+| hk4 | 新接入 `aliyun-hk4`（server 22），Agent 0.3.9 在线，尚无节点；账号欠费锁定 EIP，解锁后再配置 IPv6 与台湾线路 |
+| 其余在线运行时 | 逐台升级后，全部 16 台运行时主机均为 `1.14.4-apsp.2`，修订一致，17 条模块状态均健康；升级前后真实客户端出口一致 |
+| 仅监控设备 | server 21 已升级 Agent 0.3.9，单独按监控职责验收 |
 | hk3 与其他被封云 | `aliyun-hk3`（server 20）CDT 关机至 12-01，Agent 0.3.7，恢复开机后单独处理；与被封的 `oracle-sg1/2/3`、`azure-in1`、`azure-kr1`、`huawei-sg1` 后续一律按每台自建站点（`solve.ac`）方式处理，不再挑选第三方目标站 |
 | 成员订阅 | 仍有旧系统渲染与兼容桥依赖，不能因新源码存在就视为已退出 |
 
