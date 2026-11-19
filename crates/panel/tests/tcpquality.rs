@@ -35,6 +35,7 @@ async fn ready(panel: &TestPanel, server: i64) -> Result<()> {
         "nodequality".into(),
         EmbeddedComponentRecord {
             format: "tar.gz".into(),
+            inventory_sha256: None,
             sha256: Some(nodequality_sha.clone()),
             subcommand: None,
             version: node_ver.into(),
@@ -44,6 +45,7 @@ async fn ready(panel: &TestPanel, server: i64) -> Result<()> {
         "tcpquality".into(),
         EmbeddedComponentRecord {
             format: "agent_subcommand".into(),
+            inventory_sha256: None,
             sha256: None,
             subcommand: Some("tcp-probe".into()),
             version: TOOL_VERSION.into(),

@@ -469,6 +469,7 @@ fn extract_subprocess_nodequality(
                 binary_name: "nodequality".into(),
                 version: record.version.clone(),
                 payload: BundledPayload::TarGz {
+                    inventory_sha256: None,
                     archive_sha256: expected_sha,
                     bytes: std::borrow::Cow::Owned(tar_gz),
                 },

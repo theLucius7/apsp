@@ -41,6 +41,7 @@ fn signed_nodequality_agent() -> Result<SignedNodeQualityFixture> {
         "nodequality".into(),
         EmbeddedComponentRecord {
             format: "tar.gz".into(),
+            inventory_sha256: None,
             sha256: Some(nodequality_sha.clone()),
             subcommand: None,
             version: diagnostics::TOOL_VERSION.into(),

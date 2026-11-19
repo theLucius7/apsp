@@ -1015,6 +1015,7 @@ mod tests {
                     "sing-box".into(),
                     EmbeddedComponentRecord {
                         format: "tar.gz".into(),
+                        inventory_sha256: None,
                         sha256: Some("1".repeat(64)),
                         subcommand: None,
                         version: "1.14.4-apsp.2".into(),
@@ -1024,6 +1025,7 @@ mod tests {
                     "ipquality".into(),
                     EmbeddedComponentRecord {
                         format: "tar.gz".into(),
+                        inventory_sha256: None,
                         sha256: Some("2".repeat(64)),
                         subcommand: None,
                         version: "87397e2c3196ec796f5477c83343c2354df601ea-node-r1".into(),
@@ -1033,6 +1035,7 @@ mod tests {
                     "tcpquality".into(),
                     EmbeddedComponentRecord {
                         format: "agent_subcommand".into(),
+                        inventory_sha256: None,
                         sha256: None,
                         subcommand: Some("tcp-probe".into()),
                         version: format!("0.3.0-{}-r1", "a".repeat(40)),

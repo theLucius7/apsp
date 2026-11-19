@@ -1703,6 +1703,15 @@ def cmd_package_singbox_sources(args: argparse.Namespace) -> None:
     print(json.dumps({"artifact": str(out_file), "version": version, "sha256": sha, "upstream_commit": commit}, indent=2, sort_keys=True))
 
 
+def pinned_ipquality_image(image: str, builder_sha: str) -> str:
+    name, separator, digest = image.partition("@")
+    ensure(
+        name and not name.startswith("-") and (not separator or digest == f"sha256:{builder_sha}"),
+        "IPQuality builder image does not match its approved digest",
+    )
+    return f"{name}@sha256:{builder_sha}"
+
+
 def is_native_debian12_root(arch: str) -> bool:
     if os.geteuid() != 0 or host_linux_arch() != arch:
         return False
@@ -1824,6 +1833,13 @@ def cmd_prepare_ipquality(args: argparse.Namespace) -> None:
             os.chown(path, owner.st_uid, owner.st_gid, follow_symlinks=False)
         return
 
+    image_override = (
+        args.builder_image
+        or os.environ.get(f"APSP_IPQUALITY_BUILDER_IMAGE_{arch.upper()}", "").strip()
+        or os.environ.get("APSP_IPQUALITY_BUILDER_IMAGE", "").strip()
+    )
+    image = pinned_ipquality_image(image_override or "debian", builder_sha)
+
     if args.source_bundle is not None:
         source_bundle = args.source_bundle.resolve()
         ensure(source_bundle.is_file() and not source_bundle.is_symlink(), f"invalid --source-bundle: {source_bundle}")
@@ -1852,7 +1868,7 @@ def cmd_prepare_ipquality(args: argparse.Namespace) -> None:
 
     pub_stage = work_dir / "published-stage"
     shutil.rmtree(pub_stage, ignore_errors=True)
-    if is_native_debian12_root(arch):
+    if not image_override and is_native_debian12_root(arch):
         keyring = args.keyring_file.resolve() if args.keyring_file else Path("/usr/share/keyrings/debian-archive-keyring.gpg")
         ensure(keyring.is_file(), f"missing Debian archive keyring: {keyring}")
         run_ipquality_factory_native(
@@ -1877,12 +1893,6 @@ def cmd_prepare_ipquality(args: argparse.Namespace) -> None:
         if args.keyring_file is not None:
             shutil.copyfile(args.keyring_file, staged / "debian-archive-keyring.gpg")
             kr_args = ["--keyring-file", "/work/staged-governance/debian-archive-keyring.gpg"]
-        image = (
-            args.builder_image
-            or os.environ.get(f"APSP_IPQUALITY_BUILDER_IMAGE_{arch.upper()}", "").strip()
-            or os.environ.get("APSP_IPQUALITY_BUILDER_IMAGE", "").strip()
-            or f"debian@sha256:{builder_sha}"
-        )
         subprocess.run(
             [
                 "docker", "run", "--rm", "--privileged", "--user", "0:0", f"--platform=linux/{arch}",

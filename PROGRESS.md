@@ -1,13 +1,21 @@
 # 当前交付与验证
 
-## 2026-11-18 一体化自带能力 Agent 重构与待集中验收
+## 2026-11-19 PR #278 隔离验收
+
+- PostgreSQL 16 上分别使用合成数据和生产库纯结构副本演练了基线接入。两者均达到新装库结构指纹 `3809eb993072dab6903cdcacf2bbfc3f`，重复执行按预期拒绝。
+- 核对了 Linux Agent 第四个组件 IPQuality 的依赖来源。从经签名索引取得 Debian `debian-archive-keyring 2023.3+deb12u2`，核对软件包后提取的 bookworm 密钥环 SHA-256 为 `506b815cbb32d9b6066b4a2aa524071e071761e7e7f68c3ac74f3061ba852017`，成功验证固定快照主仓库和安全仓库的 InRelease 签名。现有材料中没有双架构构建镜像的独立批准记录，也没有与实际打包库存对应的逐包许可审查记录，四组件正式发布仍待这两项。
+- 修正旧订阅入口在路径令牌中处理 `+`、`&` 的方式。镜像站或带标签的 IPQuality 构建镜像仍由审核记录里的摘要锁定，显式摘要不符会终止构建。
+- 从编进 Agent 的归档派生逐文件清单摘要，缓存复用和旧版本回退均核对签名来源与磁盘文件。对旧版 0.3.9 Supervisor 增补试用期运行时验证及可恢复的配置日志，旧版真实 systemd 验证器拒绝首次启动内置运行时的问题已在隔离环境复现。
+- 已通过 Rust 格式、领域与路由守卫（497 条路由）、Web 生产构建和 241 项单元测试、Python 发布与安装测试（256 通过，1 项缺独立跨架构 TCP 制品跳过）及 10 项构建脚本测试。隔离 Linux 试用与 Rust 全量结果另行回填。
+
+## 2026-11-18 一体化自带能力 Agent 重构
 
 延续本次领域整合交付，按用户“去掉独立制品与手工安装层、由单一 APSP Agent 自带能力并连接面板接配置”的要求完成重构，决定见 [ADR 0141](docs/adr/0141-self-contained-agent-and-desired-service-config.md)，操作说明对齐见 [成员原生采用与设备升级](docs/native-adoption.md)。
 
 - `apsp-agent`（`0.4.0`，单文件已签 `raw` 二进制 `<= 128 MiB`）编译期内嵌同 ABI `sing-box`（`1.14.4-apsp.2`）与受控诊断载荷：Linux 正式发布构建（`APSP_RELEASE_EMBED_REQUIRED=1`）强制内嵌 `sing-box`、`-r22` `nodequality`、`ipquality`、`network-workbench` 四组件闭环及内置 `apsp-agent tcp-probe`；macOS、FreeBSD、Windows 内嵌原生 `sing-box` 并如实省略 Linux 专用诊断适配器；NodeQuality 完整验机（`mode="full"`）与第三方商业/分发工具许可门禁保持关闭，OpenRC 无 `systemd`/cgroup v2 硬保护时继续拒绝启动诊断负载。
 - 移除面板独立制品目录与设备制品下载（`/api/artifacts`、`/#/settings/artifacts`、`/api/agent/v1/artifacts/...`）、运行时库存/灰度及手工启用（`runtime_enablements`、预检手工确认流），收敛为 `/api/system/agent-releases*` 与 `StaticInfo` 组件身份校验；有效服务配置（启用节点、受管链路跳或 `active` 切流主机）作为唯一运行期望（`configured`），补齐 Supervisor 整包试用回退与同修订不健康自动恢复；面板端 Cloudflare DNS-01 内置只读校验的官方 `lego` `5.6.0`。
 - 配套数据库基线接入脚本 `scripts/baseline-adoption-native-control-plane-20261117.sql`（含隔离演练驱动 `scripts/rehearse-native-control-plane-baseline.py`）；`tools/fleet-upgrade.py` 与操作文档对齐为只传 `--agent-version`，从已签一体化 Agent 发布清单与设备上报摘要自动派生核验内置运行时并发起实时 `checkpoint` 及外部客户端检查。
-- 待集中验收：当前处于整步修改阶段，尚未运行冻结后的集中本地验证（`cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test`、核心与领域边界及路由权限守卫、前端构建与测试夹具、隔离 PG16 基线接入演练均待全部修改冻结后统一执行补记）；四个 GitHub Actions 工作流保持暂停，记为未验证。
+- 11 月 19 日的集中验收见上方 PR #278 记录。四个 GitHub Actions 工作流保持暂停。
 - 未发布与未上线边界：包含四组件闭环的 `agent-v0.4.0` 正式签名 Release 尚未构建发布，macOS/FreeBSD/Windows 正式签名制品与实机服务验收未执行；生产库基线接入、存量服务器整包升级、Nexus 成员原生采用、公开原订阅入口反代切换与兼容桥退役均未执行，不凭源码实现记为已通过或已上线。
 
 ## 2026-11-17 领域整合与历史资料清理
@@ -20,7 +28,7 @@
 - 代理用量统计的账本读取与聚合迁入服务权益，观测保留鉴权、时间窗口和呈现组合；查询快照、统计口径与接口保持。
 - 迁移成员的原生订阅与用量采用在同一变更实现，按预览与事务核对保留既有身份、地址和周期用量；生产采用状态单独记录。
 - 移除 14 份已被替代的旧任务书、执行草案与逐小时日志，历史引用转到删除前的 Git 版本。架构、路线图、当前问题与文档入口只描述现行状态。
-- 验证：集中实现期间尚未运行；完成冻结后统一补记最终结果。
+- 本次整合与 Agent 变更共用上方 PR #278 验收记录。
 - 生产：本次整合尚未部署；未执行成员采用、Agent 升级、云资源或 DNS 变更，不把源码准备记为生产完成。
 
 ## 当前生产基线

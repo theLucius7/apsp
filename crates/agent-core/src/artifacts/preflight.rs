@@ -181,8 +181,14 @@ async fn verify_reference(
     if reference.artifact_name.as_deref() == Some("agent")
         && reference.binary.starts_with(&config.agent_root)
     {
-        return verification::verify_binary_with_keys(&reference.binary, "agent", "raw", keys)
-            .await;
+        return verification::verify_binary_with_keys(
+            &reference.binary,
+            "agent",
+            "raw",
+            keys,
+            None,
+        )
+        .await;
     }
     let version_dir = reference
         .binary
@@ -216,7 +222,13 @@ async fn verify_reference(
                     .is_none_or(|expected| expected == artifact_name),
             "cached bundled component path differs from its saved identity"
         );
-        return crate::bundled::verify_manifest_files(version_dir, &manifest).await;
+        return verification::verify_installed_bundle(
+            &config.agent_root,
+            version_dir,
+            &manifest,
+            keys,
+        )
+        .await;
     }
     ensure!(
         reference.binary.is_absolute()

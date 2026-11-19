@@ -63,6 +63,7 @@ pub fn component_record(name: &str, version: &str) -> (String, EmbeddedComponent
             name.to_owned(),
             EmbeddedComponentRecord {
                 format: "agent_subcommand".into(),
+                inventory_sha256: None,
                 sha256: None,
                 subcommand: Some("tcp-probe".into()),
                 version: version.to_owned(),
@@ -74,6 +75,7 @@ pub fn component_record(name: &str, version: &str) -> (String, EmbeddedComponent
             name.to_owned(),
             EmbeddedComponentRecord {
                 format: "tar.gz".into(),
+                inventory_sha256: None,
                 sha256: Some(sha256),
                 subcommand: None,
                 version: version.to_owned(),

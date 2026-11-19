@@ -19,9 +19,10 @@ if not FIXTURES.is_dir():
     FIXTURES = ROOT / "fixtures"
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
+import ipquality_artifact
 import publish
 import release
-from test_release import build_embedded_agent_manifest, encode_embedded_agent_manifest_frame
+from test_release import build_embedded_agent_manifest, encode_embedded_agent_manifest_frame, ipquality_fixture_data
 
 COMMIT = "a" * 40
 VERSION = "0.4.0"
@@ -30,10 +31,18 @@ LINUX_TARGETS = ("amd64", "arm64", "linux-gnu-amd64", "linux-gnu-arm64")
 
 
 def encode_embedded_frame(agent_version, target, commit=COMMIT, **kwargs):
+    archive = b""
+    if target in LINUX_TARGETS and kwargs.get("omit_component") != "ipquality":
+        files, _, _ = ipquality_fixture_data(target.split("-")[-1])
+        archive = ipquality_artifact.pack(files)
+        kwargs["extra_components"] = {"ipquality": {
+            "format": "tar.gz", "version": release.IPQUALITY_DEFAULT_VERSION, "sha256": release.digest(archive),
+        }}
     manifest = build_embedded_agent_manifest(agent_version, target, commit=commit, **kwargs)
     return (
         b"TEST ONLY raw apsp-agent executable "
         + target.encode("ascii")
+        + archive
         + encode_embedded_agent_manifest_frame(manifest)
     )
 
@@ -183,10 +192,14 @@ class PublicationTests(unittest.TestCase):
             b"TEST ONLY corresponding sing-box source archive"
         )
         for arch in ("amd64", "arm64"):
+            files, _, paired = ipquality_fixture_data(arch)
+            ipq_dir = self.source / "ipquality" / release.IPQUALITY_DEFAULT_VERSION
+            ipq_dir.mkdir(parents=True, exist_ok=True)
+            (ipq_dir / arch).write_bytes(ipquality_artifact.pack(files))
+            (ipq_dir / f"{arch}.sources.tar.gz").write_bytes(paired)
             for component, ver in (
                 ("nodequality", release.NODEQUALITY_VERSION),
                 ("network-workbench", release.WORKBENCH_VERSION),
-                ("ipquality", release.IPQUALITY_DEFAULT_VERSION),
             ):
                 comp_dir = self.source / component / ver
                 comp_dir.mkdir(parents=True, exist_ok=True)
@@ -227,7 +240,15 @@ class PublicationTests(unittest.TestCase):
             no_auto_paired_sources=False,
             require_paired_sources=require_paired,
         )
-        release.assemble(arguments)
+        # Use inert source instead of a Debian rootfs in publication fixtures.
+        # Assembly still checks the Agent digest, notice, and all paired archive bytes.
+        def fixture_inventory(files):
+            source = files["source.tar.gz"]
+            return {"apsp-source.tar.gz": {"size": len(source), "sha256": release.digest(source)}}
+
+        with patch.object(ipquality_artifact, "validate_files"), \
+                patch.object(ipquality_artifact, "source_inventory", side_effect=fixture_inventory):
+            release.assemble(arguments)
         self.sign(output)
         return output
 

@@ -3,6 +3,7 @@ mod apply;
 mod checkpoint;
 mod constraints;
 mod inspection;
+mod legacy_trial;
 mod operations;
 mod path_probe;
 
@@ -219,6 +220,32 @@ impl Reconciler {
             && error.downcast_ref::<RecoveryBlocked>().is_some()
     }
 
+    async fn verify_runtime_inventory(
+        &self,
+        binary: &std::path::Path,
+        manifest: &crate::bundled::BundledManifest,
+    ) -> Result<()> {
+        if let Some(item) = &self.bundled
+            && item.component_name == manifest.component_name
+            && item.version == manifest.version
+            && crate::bundled::bundle_digest(item)?.as_ref() == Some(&manifest.bundle_sha256)
+        {
+            crate::bundled::verify_compiled_item(item, &self.config.install_root, binary).await?;
+            return Ok(());
+        }
+        let keys = self
+            .keys
+            .as_ref()
+            .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+        crate::artifacts::verify_installed_bundle(
+            &self.config.agent_root,
+            binary.parent().context("runtime binary has no parent")?,
+            manifest,
+            keys,
+        )
+        .await
+    }
+
     async fn verify_runtime(&self, runtime: &Prepared) -> Result<()> {
         let descriptor = self.adapter.describe();
         let result: Result<()> = async {
@@ -256,7 +283,9 @@ impl Reconciler {
                         && manifest.version == runtime.spec.kernel_version,
                     "installed bundled runtime identity mismatch"
                 );
-                return crate::bundled::verify_manifest_files(version_dir, &manifest).await;
+                return self
+                    .verify_runtime_inventory(&runtime.spec.binary_path, &manifest)
+                    .await;
             }
             let keys = self
                 .keys
@@ -308,6 +337,9 @@ impl Reconciler {
         let module = self.adapter.describe().module;
         let pending = self.state.locked()?.pending_intents()?;
         for record in pending.into_iter().filter(|record| record.module == module) {
+            if self.preserve_trial_intent(&record)? {
+                continue;
+            }
             let intent: ApplyIntent = serde_json::from_value(record.payload)?;
             tracing::warn!(%module, op_id = %record.op_id, "recovering unfinished operation");
             if let Err(error) = self.rollback(&intent, record.op_id).await {
@@ -421,16 +453,15 @@ impl Reconciler {
         let _guard = self.gate.lock().await;
         self.recover_locked().await?;
         let descriptor = self.adapter.describe();
-        let desired_key = format!("desired:{}", descriptor.module);
-        let desired = self.state.locked()?.get_json::<bool>(&desired_key)?;
+        let desired = self.desired(&descriptor.module)?;
         let previous = self.previous()?;
         if previous.is_none() {
             if desired == Some(false) {
                 return Ok(false);
             }
+            self.set_desired(&descriptor.module, false)?;
             let mut state = self.state.locked()?;
             state.remove_json(&format!("apply_receipt:{}", descriptor.module))?;
-            state.set_json(&desired_key, &false)?;
             state.set_json(
                 &format!("runtime_activation:{}", descriptor.module),
                 &Option::<checkpoint::Activation>::None,
@@ -438,8 +469,11 @@ impl Reconciler {
             state.set_json(&format!("health:{}", descriptor.module), &false)?;
             return Ok(false);
         }
+        if let Some(previous) = previous.as_ref() {
+            self.guard_trial(Some(previous), previous)?;
+        }
         // Persist explicit panel deactivation before stopping so an interrupted stop never revives.
-        self.state.locked()?.set_json(&desired_key, &false)?;
+        self.set_desired(&descriptor.module, false)?;
         if let Some(previous) = &previous {
             if let Err(error) = self.sample_runtime(previous).await {
                 tracing::warn!(
@@ -469,7 +503,6 @@ impl Reconciler {
             let mut state = self.state.locked()?;
             state.remove_json(&format!("applied:{}", descriptor.module))?;
             state.remove_json(&format!("apply_receipt:{}", descriptor.module))?;
-            state.set_json(&desired_key, &false)?;
             state.set_json(
                 &format!("runtime_activation:{}", descriptor.module),
                 &Option::<checkpoint::Activation>::None,
@@ -486,8 +519,7 @@ impl Reconciler {
     ///   live service without waking stopped history, awaiting authenticated panel manifest.
     pub(crate) async fn startup_readiness_plan(&self) -> Result<StartupPlan> {
         let descriptor = self.adapter.describe();
-        let desired_key = format!("desired:{}", descriptor.module);
-        let desired = self.state.locked()?.get_json::<bool>(&desired_key)?;
+        let desired = self.desired(&descriptor.module)?;
         let previous = self.previous()?;
         match desired {
             Some(false) => {
@@ -554,8 +586,7 @@ impl Reconciler {
     pub(crate) async fn satisfies_trial_readiness(&self) -> Result<bool> {
         let _guard = self.gate.lock().await;
         let descriptor = self.adapter.describe();
-        let desired_key = format!("desired:{}", descriptor.module);
-        let desired = self.state.locked()?.get_json::<bool>(&desired_key)?;
+        let desired = self.desired(&descriptor.module)?;
         let previous = self.previous()?;
         match desired {
             Some(false) => Ok(previous.is_none()),
@@ -607,8 +638,7 @@ impl Reconciler {
     pub async fn ensure_startup_desired_runtime(&self) -> Result<()> {
         let _guard = self.gate.lock().await;
         let descriptor = self.adapter.describe();
-        let desired_key = format!("desired:{}", descriptor.module);
-        let desired = self.state.locked()?.get_json::<bool>(&desired_key)?;
+        let desired = self.desired(&descriptor.module)?;
         if desired != Some(true) {
             return Ok(());
         }
@@ -740,9 +770,7 @@ impl Reconciler {
         self.recover_locked().await?;
         self.require_revision_floor(manifest.config_rev)?;
         let base_descriptor = self.adapter.describe();
-        self.state
-            .locked()?
-            .set_json(&format!("desired:{}", base_descriptor.module), &true)?;
+        self.set_desired(&base_descriptor.module, true)?;
 
         let (descriptor, effective_kernel_version) = if let Some(bundled_item) = &self.bundled {
             anyhow::ensure!(

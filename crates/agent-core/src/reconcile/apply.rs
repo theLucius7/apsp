@@ -164,7 +164,12 @@ impl Reconciler {
             .unwrap_or(true);
         let preserved_activation = if plan == Plan::Noop {
             let prior = previous.as_ref().context("no runtime to preserve")?;
-            if !prior_active || !prior_healthy_state {
+            // The current links still name the prior revision until switch() commits
+            // the target. An identical configuration may have a new revision path.
+            if !prior_active
+                || !prior_healthy_state
+                || prior.spec.binary_path != target.spec.binary_path
+            {
                 plan = Plan::Restart;
                 None
             } else if self.services.supports_runtime_checkpoint() {
@@ -207,11 +212,13 @@ impl Reconciler {
             target,
             plan,
         };
-        self.state.locked()?.begin_intent(&IntentRecord {
-            op_id,
-            module: descriptor.module.clone(),
-            payload: serde_json::to_value(&intent)?,
-        })?;
+        if !self.guard_trial(intent.previous.as_ref(), &intent.target)? {
+            self.state.locked()?.begin_intent(&IntentRecord {
+                op_id,
+                module: descriptor.module.clone(),
+                payload: serde_json::to_value(&intent)?,
+            })?;
+        }
         if plan != Plan::Noop
             && let Some(previous) = &intent.previous
             && let Err(error) = self.sample_runtime(previous).await

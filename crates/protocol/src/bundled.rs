@@ -47,6 +47,8 @@ pub struct EmbeddedComponentRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sha256: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inventory_sha256: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subcommand: Option<String>,
     pub version: String,
 }
@@ -76,6 +78,10 @@ impl EmbeddedAgentManifest {
                 "tar.gz" => {
                     if name == "tcpquality"
                         || entry.subcommand.is_some()
+                        || entry
+                            .inventory_sha256
+                            .as_deref()
+                            .is_some_and(|value| !valid_sha256(value))
                         || !entry.sha256.as_deref().is_some_and(valid_sha256)
                     {
                         return Err(format!(
@@ -87,6 +93,7 @@ impl EmbeddedAgentManifest {
                     if name != "tcpquality"
                         || entry.subcommand.as_deref() != Some("tcp-probe")
                         || entry.sha256.is_some()
+                        || entry.inventory_sha256.is_some()
                     {
                         return Err(format!(
                             "embedded agent_subcommand component '{name}' must bind tcp-probe without self-digest"
@@ -370,6 +377,13 @@ pub fn normalize_bundled_relative_path(path: &Path) -> Result<String, String> {
 }
 
 impl BundledManifest {
+    /// Hashes the canonical file inventory carried by a signed Agent build.
+    pub fn inventory_sha256(&self) -> Result<String, String> {
+        self.validate()?;
+        let bytes = serde_json::to_vec(self).map_err(|error| error.to_string())?;
+        Ok(format!("{:x}", Sha256::digest(bytes)))
+    }
+
     pub fn validate(&self) -> Result<(), String> {
         if self.schema != 1 {
             return Err("bundled manifest schema must equal 1".into());
@@ -761,6 +775,7 @@ mod tests {
                     "sing-box".into(),
                     EmbeddedComponentRecord {
                         format: "tar.gz".into(),
+                        inventory_sha256: None,
                         sha256: Some(singbox_sha.clone()),
                         subcommand: None,
                         version: "1.14.4-apsp.2".into(),
@@ -770,6 +785,7 @@ mod tests {
                     "ipquality".into(),
                     EmbeddedComponentRecord {
                         format: "tar.gz".into(),
+                        inventory_sha256: None,
                         sha256: Some(ipquality_sha.clone()),
                         subcommand: None,
                         version: "87397e2c3196ec796f5477c83343c2354df601ea-node-r1".into(),
@@ -779,6 +795,7 @@ mod tests {
                     "tcpquality".into(),
                     EmbeddedComponentRecord {
                         format: "agent_subcommand".into(),
+                        inventory_sha256: None,
                         sha256: None,
                         subcommand: Some("tcp-probe".into()),
                         version: format!("0.3.0-{}-r1", "b".repeat(40)),

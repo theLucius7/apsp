@@ -23,6 +23,7 @@ pub enum BundledPayload {
     /// Compressed `.tar.gz` archive containing `binary_name` (and optional auxiliary files).
     TarGz {
         archive_sha256: String,
+        inventory_sha256: Option<String>,
         bytes: Cow<'static, [u8]>,
     },
     /// Executed via the running verified Agent binary (`<current_exe> <subcommand> ...`).
@@ -71,6 +72,7 @@ pub(crate) fn bundle_digest(item: &BundledItem) -> Result<Option<String>> {
         BundledPayload::TarGz {
             archive_sha256,
             bytes,
+            ..
         } => {
             ensure!(
                 bytes.len() >= 18 && bytes[0] == 0x1f && bytes[1] == 0x8b,
@@ -320,35 +322,65 @@ pub(crate) async fn verify_manifest_files(
 ) -> Result<()> {
     manifest.validate().map_err(anyhow::Error::msg)?;
     ensure_ordinary_directory_if_present(directory).await?;
-    for (name, record) in &manifest.files {
-        let relative = Path::new(name);
-        let mut cursor = directory.to_path_buf();
-        if let Some(parent_rel) = relative.parent() {
-            for part in parent_rel.components() {
-                cursor.push(part);
-                ensure_ordinary_directory_if_present(&cursor).await?;
+    // Dynamic loaders can consume auxiliary files by name. Validate the entire
+    // directory, including unexpected entries, before trusting any executable.
+    let mut directories = BTreeSet::new();
+    for name in manifest.files.keys() {
+        directories.extend(Path::new(name).ancestors().skip(1));
+    }
+    for relative in directories {
+        let parent = directory.join(relative);
+        ensure_ordinary_directory_if_present(&parent).await?;
+        let mut entries = tokio::fs::read_dir(parent).await?;
+        while let Some(entry) = entries.next_entry().await? {
+            let path = relative.join(entry.file_name());
+            if path == Path::new(BUNDLED_MARKER) {
+                continue;
+            }
+            let name = path
+                .iter()
+                .map(|part| part.to_str().context("non-UTF8 bundled file"))
+                .collect::<Result<Vec<_>>>()?
+                .join("/");
+            let kind = entry.file_type().await?;
+            if kind.is_dir() {
+                let prefix = format!("{name}/");
+                ensure!(
+                    manifest
+                        .files
+                        .range(prefix.clone()..)
+                        .next()
+                        .is_some_and(|(key, _)| key.starts_with(&prefix)),
+                    "unexpected directory in bundled component"
+                );
+            } else {
+                ensure!(
+                    kind.is_file() && manifest.files.contains_key(&name),
+                    "unexpected file in bundled component"
+                );
             }
         }
-        let file_path = directory.join(relative);
+    }
+    for (name, record) in &manifest.files {
+        let file_path = directory.join(name);
         crate::artifacts::verify_file_digest(&file_path, record.size, &record.sha256).await?;
         #[cfg(unix)]
-        if record.executable {
+        {
             use std::os::unix::fs::PermissionsExt;
             let mode = tokio::fs::symlink_metadata(&file_path)
                 .await?
                 .permissions()
                 .mode();
             ensure!(
-                mode & 0o111 != 0 && mode & 0o002 == 0,
-                "bundled executable permissions are invalid"
+                mode & 0o6022 == 0 && (mode & 0o111 != 0) == record.executable,
+                "bundled file permissions differ from the inventory"
             );
         }
     }
     Ok(())
 }
 
-/// Verifies an on-disk binary against the compiled `BundledItem` identity without decompressing
-/// the archive when `.bundled.json` already matches `bundle_sha256`.
+/// Check the installed files against the inventory generated from the embedded archive.
 pub async fn verify_compiled_item(
     item: &BundledItem,
     install_root: &Path,
@@ -384,6 +416,28 @@ pub async fn verify_compiled_item(
             && saved.bundle_sha256 == expected_digest,
         "installed bundled manifest differs from compiled component"
     );
+    let BundledPayload::TarGz {
+        inventory_sha256,
+        bytes,
+        ..
+    } = &item.payload
+    else {
+        bail!("bundled executable must have an archive payload");
+    };
+    if let Some(digest) = inventory_sha256 {
+        ensure!(
+            saved.inventory_sha256().map_err(anyhow::Error::msg)? == *digest,
+            "cached inventory differs from compiled archive"
+        );
+    } else {
+        // Embedding callers may supply archive bytes without the build-time
+        // inventory. Derive the inventory with the same reader as extraction.
+        let expected = inspect_tar_gz(item, &expected_digest, bytes, None).await?;
+        ensure!(
+            saved == expected,
+            "cached inventory differs from embedded archive"
+        );
+    }
     verify_manifest_files(directory, &saved).await?;
     Ok(saved)
 }
@@ -393,9 +447,6 @@ pub(crate) async fn current_matches_compiled(
     item: &BundledItem,
     install_root: &Path,
 ) -> Result<Option<BundledManifest>> {
-    let Some(expected_digest) = bundle_digest(item)? else {
-        return Ok(None);
-    };
     let component_dir = install_root.join(&item.component_name);
     let current = component_dir.join("current");
     let Ok(target) = crate::system::deploy::reference(&current) else {
@@ -410,20 +461,11 @@ pub(crate) async fn current_matches_compiled(
     if resolved.parent() != Some(canonical_component.as_path()) {
         return Ok(None);
     }
-    let Ok(Some(saved)) = read_bundled_manifest(&resolved).await else {
-        return Ok(None);
-    };
-    if saved.component_name != item.component_name
-        || saved.binary_name != item.binary_name
-        || saved.version != item.version
-        || saved.bundle_sha256 != expected_digest
-    {
-        return Ok(None);
-    }
-    if verify_manifest_files(&resolved, &saved).await.is_err() {
-        return Ok(None);
-    }
-    Ok(Some(saved))
+    Ok(
+        verify_compiled_item(item, install_root, &resolved.join(&item.binary_name))
+            .await
+            .ok(),
+    )
 }
 
 /// Materializes `item` on demand into `<install_root>/<component_name>/<version>/` (or
@@ -489,7 +531,8 @@ pub async fn ensure_materialized(
             BundledPayload::TarGz {
                 archive_sha256,
                 bytes,
-            } => stage_tar_gz(item, archive_sha256, bytes.as_ref(), &staging, privileged).await?,
+                ..
+            } => inspect_tar_gz(item, archive_sha256, bytes, Some((&staging, privileged))).await?,
             BundledPayload::AgentSubcommand { .. } => {
                 bail!("Agent subcommand payload cannot be materialized")
             }
@@ -538,12 +581,11 @@ async fn ensure_staging_parents(
     Ok(())
 }
 
-async fn stage_tar_gz(
+async fn inspect_tar_gz(
     item: &BundledItem,
     archive_sha256: &str,
     bytes: &[u8],
-    staging: &Path,
-    privileged: &dyn Privileged,
+    destination: Option<(&Path, &dyn Privileged)>,
 ) -> Result<BundledManifest> {
     let expected_archive = normalized_sha256(archive_sha256)?;
     let actual_archive = format!("{:x}", Sha256::digest(bytes));
@@ -624,15 +666,17 @@ async fn stage_tar_gz(
     let mut records = BTreeMap::new();
     let mut created_dirs = BTreeSet::new();
     for (name, content, size, sha256, executable) in extracted {
-        ensure_staging_parents(staging, &name, &mut created_dirs, privileged).await?;
-        privileged
-            .write_file(
-                &staging.join(&name),
-                &content,
-                if executable { 0o755 } else { 0o644 },
-                None,
-            )
-            .await?;
+        if let Some((staging, privileged)) = destination {
+            ensure_staging_parents(staging, &name, &mut created_dirs, privileged).await?;
+            privileged
+                .write_file(
+                    &staging.join(&name),
+                    &content,
+                    if executable { 0o755 } else { 0o644 },
+                    None,
+                )
+                .await?;
+        }
         records.insert(
             name,
             BundledFileRecord {

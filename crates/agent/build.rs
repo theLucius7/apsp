@@ -29,6 +29,7 @@ const DEFAULT_TCPQUALITY_ENGINE_VERSION: &str = "0.3.0";
 struct EmbeddedArchive {
     version: String,
     sha256: String,
+    inventory_sha256: String,
     staged_filename: String,
 }
 
@@ -292,7 +293,7 @@ fn validate_component_archive(
     target: &BuildTarget<'_>,
     archive_sha256: &str,
     bytes: &[u8],
-) -> Result<(), String> {
+) -> Result<BundledManifest, String> {
     let (manifest, files) =
         inspect_component_tar_gz(component, version, target.os, archive_sha256, bytes)?;
     validate_bundled_component_contents(&manifest, target.os, target.arch, target.env, |name| {
@@ -461,7 +462,7 @@ fn validate_component_archive(
         }
         other => return Err(format!("unsupported embedded component '{other}'")),
     }
-    Ok(())
+    Ok(manifest)
 }
 
 fn stage_archive(
@@ -527,7 +528,8 @@ fn stage_archive(
         );
     }
     let sha256 = format!("{:x}", Sha256::digest(&bytes));
-    validate_component_archive(component, &version, target, &sha256, &bytes)
+    let inventory_sha256 = validate_component_archive(component, &version, target, &sha256, &bytes)
+        .and_then(|manifest| manifest.inventory_sha256())
         .unwrap_or_else(|error| panic!("invalid embedded {component} archive: {error}"));
 
     let staged_filename = format!("embedded-{component}.tar.gz");
@@ -542,6 +544,7 @@ fn stage_archive(
     Some(EmbeddedArchive {
         version,
         sha256,
+        inventory_sha256,
         staged_filename,
     })
 }
@@ -549,10 +552,10 @@ fn stage_archive(
 fn render_constant(name: &str, entry: Option<&EmbeddedArchive>) -> String {
     match entry {
         Some(archive) => format!(
-            "pub const {name}: Option<(&str, &str, &[u8])> = Some(({:?}, {:?}, include_bytes!(concat!(env!(\"OUT_DIR\"), \"/{}\"))));\n",
-            archive.version, archive.sha256, archive.staged_filename
+            "pub const {name}: Option<(&str, &str, &str, &[u8])> = Some(({:?}, {:?}, {:?}, include_bytes!(concat!(env!(\"OUT_DIR\"), \"/{}\"))));\n",
+            archive.version, archive.sha256, archive.inventory_sha256, archive.staged_filename
         ),
-        None => format!("pub const {name}: Option<(&str, &str, &[u8])> = None;\n"),
+        None => format!("pub const {name}: Option<(&str, &str, &str, &[u8])> = None;\n"),
     }
 }
 
@@ -658,6 +661,7 @@ fn main() {
                 name.to_owned(),
                 EmbeddedComponentRecord {
                     format: "tar.gz".to_owned(),
+                    inventory_sha256: Some(archive.inventory_sha256.clone()),
                     sha256: Some(archive.sha256.clone()),
                     subcommand: None,
                     version: archive.version.clone(),
@@ -670,6 +674,7 @@ fn main() {
             "tcpquality".to_owned(),
             EmbeddedComponentRecord {
                 format: "agent_subcommand".to_owned(),
+                inventory_sha256: None,
                 sha256: None,
                 subcommand: Some("tcp-probe".to_owned()),
                 version: tcpquality_version.clone(),

@@ -80,12 +80,36 @@ impl UpgradeState {
 }
 
 pub fn state(config: &Config) -> Result<Option<UpgradeState>> {
-    let path = core_root(config)?.join("update-state.json");
+    state_in(&config.agent_root)
+}
+
+pub(crate) fn state_in(root: &Path) -> Result<Option<UpgradeState>> {
+    let path = root.join("update-state.json");
     if path.try_exists()? {
         Ok(Some(read_json(&path)?))
     } else {
         Ok(None)
     }
+}
+
+/// The service still invokes the incumbent verifier while its supervisor tests this executable.
+pub(crate) fn installed_trial(root: &Path) -> Result<Option<(UpgradeState, String)>> {
+    let Some(state) = state_in(root)? else {
+        return Ok(None);
+    };
+    let Some(pending) = &state.trial else {
+        return Ok(None);
+    };
+    ensure!(
+        release_version(&pending.version).is_some() && release_version(&state.current).is_some(),
+        "invalid installed trial version"
+    );
+    let candidate = root.join(&pending.version).join(executable_name());
+    if std::env::current_exe()?.canonicalize()? != candidate.canonicalize()? {
+        return Ok(None);
+    }
+    let version = pending.version.clone();
+    Ok(Some((state, version)))
 }
 
 pub async fn run(

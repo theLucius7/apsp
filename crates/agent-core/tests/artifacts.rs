@@ -227,6 +227,7 @@ async fn bundled_materialization_verifies_contents_preserves_rollback_dirs_and_r
         binary_name: "runtime".into(),
         version: "1.2.3+build1".into(),
         payload: BundledPayload::TarGz {
+            inventory_sha256: None,
             archive_sha256: checksum(&packed_a),
             bytes: Cow::Owned(packed_a.clone()),
         },
@@ -248,6 +249,29 @@ async fn bundled_materialization_verifies_contents_preserves_rollback_dirs_and_r
         bin_a
     );
 
+    let version_dir = bin_a.parent().unwrap();
+    let marker = version_dir.join(apsp_agent_core::bundled::BUNDLED_MARKER);
+    let original_marker = std::fs::read(&marker)?;
+    let mut incomplete: apsp_agent_core::bundled::BundledManifest =
+        serde_json::from_slice(&original_marker)?;
+    incomplete.files.remove("lib/helper.so");
+    std::fs::write(&marker, serde_json::to_vec(&incomplete)?)?;
+    assert!(
+        verify_compiled_item(&item_a, &temporary.0, &bin_a)
+            .await
+            .is_err()
+    );
+    std::fs::write(&marker, original_marker)?;
+    let extra = version_dir.join("unexpected-file");
+    std::fs::write(&extra, b"test")?;
+    assert!(
+        verify_compiled_item(&item_a, &temporary.0, &bin_a)
+            .await
+            .is_err()
+    );
+    std::fs::remove_file(extra)?;
+    verify_compiled_item(&item_a, &temporary.0, &bin_a).await?;
+
     // A newer Agent rebuild carrying the same semantic version string materializes into
     // `<version>-<hash12>` without overwriting `<version>`, keeping rollback intact.
     let packed_b = archive(&[("runtime", tar::EntryType::Regular, b"bundled-runtime-b")])?;
@@ -257,6 +281,7 @@ async fn bundled_materialization_verifies_contents_preserves_rollback_dirs_and_r
         binary_name: "runtime".into(),
         version: "1.2.3+build1".into(),
         payload: BundledPayload::TarGz {
+            inventory_sha256: None,
             archive_sha256: sha_b.clone(),
             bytes: Cow::Owned(packed_b),
         },
@@ -285,6 +310,7 @@ async fn bundled_materialization_verifies_contents_preserves_rollback_dirs_and_r
         binary_name: "runtime".into(),
         version: "1.0.0".into(),
         payload: BundledPayload::TarGz {
+            inventory_sha256: None,
             archive_sha256: "0".repeat(64),
             bytes: Cow::Owned(packed_a.clone()),
         },
@@ -303,6 +329,7 @@ async fn bundled_materialization_verifies_contents_preserves_rollback_dirs_and_r
         binary_name: "runtime".into(),
         version: "1.0.0".into(),
         payload: BundledPayload::TarGz {
+            inventory_sha256: None,
             archive_sha256: checksum(&packed_a),
             bytes: Cow::Owned(packed_a),
         },

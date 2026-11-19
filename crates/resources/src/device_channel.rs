@@ -789,6 +789,7 @@ mod tests {
                         "sing-box".into(),
                         EmbeddedComponentRecord {
                             format: "tar.gz".into(),
+                            inventory_sha256: None,
                             sha256: Some(SINGBOX_SHA256.into()),
                             subcommand: None,
                             version: SINGBOX_VERSION.into(),
@@ -798,6 +799,7 @@ mod tests {
                         "ipquality".into(),
                         EmbeddedComponentRecord {
                             format: "tar.gz".into(),
+                            inventory_sha256: None,
                             sha256: Some(IPQUALITY_SHA256.into()),
                             subcommand: None,
                             version: IPQUALITY_VERSION.into(),

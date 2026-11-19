@@ -23,14 +23,15 @@ fn tcp_probe_binary_name() -> &'static str {
 fn tar_gz_item(
     component: &str,
     binary_name: &str,
-    embedded: Option<(&'static str, &'static str, &'static [u8])>,
+    embedded: Option<(&'static str, &'static str, &'static str, &'static [u8])>,
 ) -> Option<BundledItem> {
-    let (version, sha256, bytes) = embedded?;
+    let (version, sha256, inventory_sha256, bytes) = embedded?;
     Some(BundledItem {
         component_name: component.to_owned(),
         binary_name: binary_name.to_owned(),
         version: version.to_owned(),
         payload: BundledPayload::TarGz {
+            inventory_sha256: Some(inventory_sha256.to_owned()),
             archive_sha256: sha256.to_owned(),
             bytes: Cow::Borrowed(bytes),
         },

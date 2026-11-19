@@ -29,6 +29,22 @@ sys.path.insert(0, str(ROOT / "tools"))
 import release
 
 
+def ipquality_fixture_data(arch, mutate_notice=None):
+    import ipquality_artifact
+    files = {name: b"TEST ONLY unapproved IPQuality profile " + name.encode()
+             for name in ipquality_artifact.FILES}
+    files["source.tar.gz"] = ipquality_artifact.pack({"README": b"TEST ONLY IPQuality source " + arch.encode()})
+    paired = ipquality_artifact.pack({"apsp-source.tar.gz": files["source.tar.gz"]})
+    asset = f"ipquality-{ipquality_artifact.VERSION}-linux-{arch}-sources.tar.gz"
+    notice = {"source_offer": {"asset": asset, "size": len(paired), "sha256": release.digest(paired)},
+              "notice": "TEST ONLY unapproved source closure", "license": "AGPL-3.0-only"}
+    if mutate_notice is not None:
+        mutate_notice(notice)
+    files["THIRD_PARTY_NOTICES.txt"] = (b"Apsp IPQuality node self-query\n"
+        + (json.dumps(notice, sort_keys=True, ensure_ascii=False, separators=(",", ":")) + "\n").encode())
+    return files, asset, paired
+
+
 def build_embedded_agent_manifest(agent_version, target, *, commit="a" * 40, abi_override=None,
                                   singbox_sha=None, omit_component=None, component_versions=None,
                                   extra_components=None):
@@ -66,6 +82,9 @@ def build_embedded_agent_manifest(agent_version, target, *, commit="a" * 40, abi
             raw["tcpquality"] = {"format": "agent_subcommand", "subcommand": "tcp-probe", "version": tcp_ver}
     if extra_components:
         raw.update(extra_components)
+    for record in raw.values():
+        if record["format"] == "tar.gz":
+            record.setdefault("inventory_sha256", release.digest(b"TEST ONLY inventory " + record["sha256"].encode()))
     return {
         "schema": 1,
         "agent_version": agent_version,
@@ -306,25 +325,9 @@ class ReleaseTests(unittest.TestCase):
     def append_ipquality_fixture(self, arch="amd64", mutate_notice=None):
         """Signing alone does not authenticate the fixture's intentionally fake profile."""
         import ipquality_artifact
-        files = {name: b"TEST ONLY unapproved IPQuality profile " + name.encode()
-                 for name in ipquality_artifact.FILES}
-        paired = b"TEST ONLY unapproved corresponding Debian and Apsp sources " + arch.encode()
-        asset = f"ipquality-{ipquality_artifact.VERSION}-linux-{arch}-sources.tar.gz"
-        notice = {"source_offer": {"asset": asset, "size": len(paired), "sha256": release.digest(paired)},
-                  "notice": "TEST ONLY unapproved source closure", "license": "AGPL-3.0-only"}
-        if mutate_notice is not None:
-            mutate_notice(notice)
-        files["THIRD_PARTY_NOTICES.txt"] = (b"Apsp IPQuality node self-query\n"
-            + (json.dumps(notice, sort_keys=True, ensure_ascii=False, separators=(",", ":")) + "\n").encode())
+        files, asset, paired = ipquality_fixture_data(arch, mutate_notice)
         (self.bundle / asset).write_bytes(paired)
-        output = io.BytesIO()
-        with tarfile.open(fileobj=output, mode="w") as archive:
-            for name in sorted(files):
-                member = tarfile.TarInfo(name)
-                member.size = len(files[name])
-                member.mode = 0o755 if name == "ipquality" else 0o644
-                archive.addfile(member, io.BytesIO(files[name]))
-        data = gzip.compress(output.getvalue(), mtime=0)
+        data = ipquality_artifact.pack(files)
         entry = {"name": "ipquality", "version": ipquality_artifact.VERSION,
                  "arch": arch, "format": "tar.gz", "binary_name": "ipquality",
                  "archive_size": len(data), "binary_size": len(files["ipquality"]),
@@ -414,19 +417,31 @@ class ReleaseTests(unittest.TestCase):
                                         if "  ipquality/" not in line))
                 self.sign()
 
+    def stage_ipquality_pair(self, source, targets, arch):
+        import ipquality_artifact
+        files = self.append_ipquality_fixture(arch)
+        version = ipquality_artifact.VERSION
+        offer = ipquality_artifact.source_offer(files, version, arch)
+        entries = json.loads((self.bundle / "release.json").read_text())["artifacts"]
+        entry = next(item for item in entries if item["name"] == "ipquality" and item["arch"] == arch)
+        archive = (self.bundle / entry["asset_name"]).read_bytes()
+        ipq_dir = source / "ipquality" / version
+        (ipq_dir / arch).write_bytes(archive)
+        paired = ipq_dir / f"{arch}.sources.tar.gz"
+        paired.write_bytes((self.bundle / offer["asset"]).read_bytes())
+        for target in targets:
+            if target in (arch, f"linux-gnu-{arch}", f"linux-musl-{arch}"):
+                record = {"format": "tar.gz", "version": version, "sha256": release.digest(archive)}
+                (source / "agent/0.4.0" / target).write_bytes(
+                    self.self_contained_agent_bytes(target, extra_components={"ipquality": record})
+                )
+        return files, offer, paired
+
     def test_ipquality_paired_source_validation_during_self_contained_assembly(self):
         import ipquality_artifact
-        files = self.append_ipquality_fixture()
-        offer = ipquality_artifact.source_offer(files, ipquality_artifact.VERSION, "amd64")
-        original = (self.bundle / offer["asset"]).read_bytes()
-        entry = next(item for item in json.loads((self.bundle / "release.json").read_text())["artifacts"]
-                     if item["name"] == "ipquality")
         src, installer = self.write_self_contained_source("sc-ipq-source", targets=("amd64",))
-        ipq_dir = src / "ipquality" / ipquality_artifact.VERSION
-        ipq_dir.mkdir(parents=True, exist_ok=True)
-        (ipq_dir / "amd64").write_bytes((self.bundle / entry["asset_name"]).read_bytes())
-        paired = ipq_dir / "amd64.sources.tar.gz"
-        paired.write_bytes(original)
+        files, offer, paired = self.stage_ipquality_pair(src, ("amd64",), "amd64")
+        original = paired.read_bytes()
         with patch.object(ipquality_artifact, "validate_files"), \
                 patch.object(ipquality_artifact, "validate_source_offer") as validate:
             out = self.assemble_self_contained(
@@ -449,6 +464,14 @@ class ReleaseTests(unittest.TestCase):
                     "unapproved-ipquality-release", src, installer, targets=("amd64",), require_paired=True
                 )
             self.assertFalse((self.directory / "unapproved-ipquality-release").exists())
+
+        archive = paired.with_name("amd64")
+        archive.write_bytes(b"different component")
+        with self.assertRaisesRegex(ValueError, "differs from the embedded component"):
+            self.assemble_self_contained("wrong-component", src, installer, targets=("amd64",), require_paired=True)
+        archive.unlink()
+        with self.assertRaisesRegex(ValueError, "ordinary file"):
+            self.assemble_self_contained("missing-component", src, installer, targets=("amd64",), require_paired=True)
 
     def test_paired_source_assets_are_streamed_and_reject_unsafe_or_oversized_files(self):
         paired = self.directory / "paired.tar.gz"
@@ -903,7 +926,13 @@ class ReleaseTests(unittest.TestCase):
         self.verify()
         targets = ("amd64", "arm64", "linux-gnu-amd64", "linux-gnu-arm64", "macos-arm64", "windows-amd64")
         src, installer = self.write_self_contained_source("sc-full", targets=targets)
-        out = self.assemble_self_contained("sc-full-bundle", src, installer, targets=targets, require_paired=True)
+        import ipquality_artifact
+        for arch in ("amd64", "arm64"):
+            self.stage_ipquality_pair(src, targets, arch)
+        # These TEST_ONLY archives exercise source identity; the focused tests
+        # cover profile and source-inventory rejection.
+        with patch.object(ipquality_artifact, "validate_files"), patch.object(ipquality_artifact, "validate_source_offer"):
+            out = self.assemble_self_contained("sc-full-bundle", src, installer, targets=targets, require_paired=True)
         self.sign(out)
         metadata = release.verify_bundle(out, self.roots, "minisign", "agent-v0.4.0")
         self.assertEqual({entry["arch"] for entry in metadata["artifacts"]}, set(targets))
@@ -952,7 +981,13 @@ class ReleaseTests(unittest.TestCase):
         dup_sha["components"]["ipquality"]["sha256"] = dup_sha["components"]["sing-box"]["sha256"]
         bad_record = build_embedded_agent_manifest("0.4.0", "amd64")
         bad_record["components"]["sing-box"]["extra"] = "unexpected"
+        no_inventory = build_embedded_agent_manifest("0.4.0", "amd64")
+        del no_inventory["components"]["sing-box"]["inventory_sha256"]
+        historical = encode_embedded_agent_manifest_frame(no_inventory)
+        self.assertEqual(release.verify_embedded_agent_manifest(
+            historical, "0.4.0", "amd64", require_release_closure=False), no_inventory)
         bad_manifests = [
+            ("missing_inventory_sha256", no_inventory),
             ("wrong_agent_version", build_embedded_agent_manifest("0.3.9", "amd64")),
             ("wrong_abi_env", build_embedded_agent_manifest("0.4.0", "amd64", abi_override=("linux", "x86_64", "gnu"))),
             ("wrong_abi_arch", build_embedded_agent_manifest("0.4.0", "amd64", abi_override=("linux", "aarch64", "musl"))),

@@ -767,6 +767,7 @@ async fn startup_desired_runtime_respects_three_state_panel_intent_and_bundled_i
         binary_name: "demo".into(),
         version: "2.0.0".into(),
         payload: BundledPayload::TarGz {
+            inventory_sha256: None,
             archive_sha256,
             bytes: Cow::Owned(archive_bytes),
         },
@@ -829,4 +830,60 @@ async fn startup_desired_runtime_respects_three_state_panel_intent_and_bundled_i
         test.services.actions.lock().unwrap().len(),
         actions_after_stop
     );
+}
+
+#[tokio::test]
+async fn legacy_supervisor_keeps_original_intent_until_promotion_or_rollback() {
+    for promoted in [false, true] {
+        let test = Fixture::new();
+        let previous = test.target(1, "1", "a");
+        let candidate = test.target(2, "2", "b");
+        test.reconciler
+            .apply_prepared(previous.clone())
+            .await
+            .unwrap();
+        let root = &test.config.agent_root;
+        fs::create_dir_all(root.join("0.4.0")).unwrap();
+        std::os::unix::fs::symlink(
+            std::env::current_exe().unwrap(),
+            root.join("0.4.0/apsp-agent"),
+        )
+        .unwrap();
+        let mut upgrade = serde_json::json!({
+            "current": "0.3.9", "previous": "0.3.9", "failed_versions": [],
+            "last_error": null, "trial": {"version": "0.4.0", "sha256": "a".repeat(64)}
+        });
+        let path = root.join("update-state.json");
+        fs::write(&path, upgrade.to_string()).unwrap();
+        let applied = test
+            .reconciler
+            .apply_prepared(candidate.clone())
+            .await
+            .unwrap();
+        assert_eq!(applied.status, ApplyStatus::Applied);
+        test.reconciler.recover().await.unwrap();
+        assert_eq!(test.applied(), Some(candidate.clone()));
+        let pending = test.state.lock().unwrap().pending_intents().unwrap();
+        assert_eq!(pending.len(), 1);
+        let legacy: ApplyIntent = serde_json::from_value(pending[0].payload.clone()).unwrap();
+        assert_eq!(legacy.previous.as_ref(), Some(&previous));
+        upgrade["trial"] = serde_json::Value::Null;
+        if promoted {
+            upgrade["current"] = "0.4.0".into();
+        }
+        fs::write(path, upgrade.to_string()).unwrap();
+        test.reconciler.recover().await.unwrap();
+        assert_eq!(
+            test.applied(),
+            Some(if promoted { candidate } else { previous })
+        );
+        assert!(
+            test.state
+                .lock()
+                .unwrap()
+                .pending_intents()
+                .unwrap()
+                .is_empty()
+        );
+    }
 }

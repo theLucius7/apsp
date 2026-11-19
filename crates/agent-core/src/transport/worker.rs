@@ -20,6 +20,12 @@ pub(super) async fn run(
     operations.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     sample.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut legacy_trial = reconcilers
+        .first()
+        .map(|(_, r)| r.legacy_trial())
+        .transpose()?
+        .flatten()
+        .is_some();
     let mut reported = apsp_protocol::AppliedRevisions::new();
     let mut cleanup_storage = StorageRetry::default();
     loop {
@@ -29,6 +35,12 @@ pub(super) async fn run(
                     Some(retirement.gate.read().await)
                 } else { None };
                 if runtime.retirement.as_ref().is_some_and(|retirement| retirement.requested()) { continue; }
+                if legacy_trial && reconcilers[0].1.legacy_trial()?.is_none() {
+                    for (_, reconciler) in &reconcilers {
+                        reconciler.finish_confirmed_trial().await?;
+                    }
+                    legacy_trial = false;
+                }
                 let active_client = { client.borrow().clone() };
                 if let Some(active_client) = active_client
                 {

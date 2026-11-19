@@ -4,7 +4,7 @@
 
 ## 领域整合
 
-2026-11-17 用户要求一次性完成、不再按插件维护、删除历史冗余。按 ADR 0140，内部使用领域模型、制品描述 `artifact_name`、诊断工具 `tool`（控制台呈现边界投影 `ReportRecord.job.tool`）与公开端点 `runtime_enabled`；已发布 Agent wire 字段、数据库任务记录、持久化检查点和签名格式只留在序列化边界。普通 `/api/plugins/*` 控制台过渡期改写已移除，仅永久保留外部续费日历订阅契约 `/api/plugins/expenses/calendar.ics` → `/api/costs/calendar.ics` 与外部代理用户链接 `#/plugins/sing-box/{account,member,join}` → `#/{account,member,join}`。旧任务书与执行计划退出当前工作树，不增加别名文件。
+2026-11-17 用户要求一次性完成、不再按插件维护、删除历史冗余。按 ADR 0140，内部使用领域模型、制品描述 `artifact_name`、诊断工具 `tool`（控制台呈现边界投影 `ReportRecord.job.tool`），公开端点按节点与链路的实际配置表达可用性；已发布 Agent wire 字段、数据库任务记录、持久化检查点和签名格式只留在序列化边界。普通 `/api/plugins/*` 控制台过渡期改写已移除，仅永久保留外部续费日历订阅契约 `/api/plugins/expenses/calendar.ics` → `/api/costs/calendar.ics` 与外部代理用户链接 `#/plugins/sing-box/{account,member,join}` → `#/{account,member,join}`。旧任务书与执行计划退出当前工作树，不增加别名文件。
 
 ## 生产采用与既发地址
 
@@ -20,7 +20,7 @@
 
 ## 名称与诊断
 
-lego 尚无固定构建配方，名称功能转正时需解决并迁回所属文档存储。NodeQuality 完整执行继续拒绝新任务，许可、rootfs、资源保护和实机矩阵按[整改条件](acceptance/ordered-remediation.md)完成后才能签收。
+面板 DNS-01 使用的 lego 版本、镜像与二进制校验已在 [ADR 0141](adr/0141-self-contained-agent-and-desired-service-config.md) 固定。NodeQuality 完整执行继续拒绝新任务，许可、rootfs、资源保护和实机矩阵按[整改条件](acceptance/ordered-remediation.md)完成后才能签收。
 
 ## CI
 

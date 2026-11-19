@@ -306,6 +306,7 @@ async fn run_cli(cli: Cli) -> anyhow::Result<()> {
                 &absolute_path(&binary)?,
                 &name,
                 &format,
+                Some(embedded::manifest_frame()),
             )
             .await
         }

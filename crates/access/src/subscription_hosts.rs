@@ -253,12 +253,11 @@ pub async fn gate(State(state): State<AppState>, mut request: Request, next: Nex
         return next.run(request).await;
     };
     let path = request.uri().path().to_owned();
-    if matches!(*request.method(), Method::GET | Method::HEAD) {
-        let uri = request.uri().clone();
-        let headers = request.headers().clone();
-        if let Some(response) = adopted_old_route(&state, &uri, &headers, &host).await {
-            return response;
-        }
+    if matches!(*request.method(), Method::GET | Method::HEAD)
+        && let Some(response) =
+            adopted_old_route(&state, request.uri(), request.headers(), &host).await
+    {
+        return response;
     }
     if host == panel_host(&state.config.public_url) {
         if let Some(rest) = path.strip_prefix(PORTAL_API)
@@ -381,7 +380,8 @@ fn old_route_token(base: &reqwest::Url, uri: &Uri) -> Option<String> {
     let encoded = if query_token {
         encoded.to_owned()
     } else {
-        encoded.replace('+', "%2B")
+        // A path segment treats both characters literally; the form decoder does not.
+        encoded.replace('+', "%2B").replace('&', "%26")
     };
     decoder.set_query(Some(&format!("token={encoded}")));
     let (_, token) = decoder.query_pairs().next()?;
@@ -961,6 +961,20 @@ mod scope_tests {
             legacy_paths: true,
             revision: 1,
         }
+    }
+
+    #[test]
+    fn adopted_renderer_preserves_the_whole_path_token_and_decodes_query_tokens() {
+        let path_base = reqwest::Url::parse("https://legacy.example/sub/").unwrap();
+        let uri = Uri::from_static("/sub/a+b&c%20d?format=clash");
+        assert_eq!(
+            old_route_token(&path_base, &uri).as_deref(),
+            Some("a+b&c d")
+        );
+
+        let query_base = reqwest::Url::parse("https://legacy.example/sub?token=").unwrap();
+        let uri = Uri::from_static("/sub?token=a+b%26c&format=clash");
+        assert_eq!(old_route_token(&query_base, &uri).as_deref(), Some("a b&c"));
     }
 
     #[test]

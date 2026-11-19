@@ -20,7 +20,8 @@ use std::{
     time::Duration,
 };
 pub(crate) use verification::{
-    installed_descriptor, verify_expected, verify_file_digest, verify_local_cached_artifact,
+    installed_descriptor, verify_expected, verify_file_digest, verify_installed_bundle,
+    verify_local_cached_artifact,
 };
 pub use verification::{verify_installed_binary, verify_release_directory};
 
@@ -435,5 +436,5 @@ pub(crate) async fn verify_expected_agent(
             == Some(version),
         "Agent update version directory mismatch"
     );
-    verification::verify_binary_with_keys(binary, "agent", "raw", keys).await
+    verification::verify_binary_with_keys(binary, "agent", "raw", keys, None).await
 }

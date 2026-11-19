@@ -287,9 +287,14 @@ def verify_embedded_agent_manifest(payload, expected_version, expected_target, *
                 ensure(tcp_ver == TCPQUALITY_ENGINE_VERSION or re.fullmatch(pinned_tcp_re, tcp_ver),
                        "invalid embedded 'tcpquality' version")
         else:
-            ensure(name in LINUX_ARCHIVE_COMPONENTS and set(record) == {"format", "sha256", "version"},
+            ensure(name in LINUX_ARCHIVE_COMPONENTS and set(record) in (
+                {"format", "sha256", "version"}, {"format", "sha256", "version", "inventory_sha256"}),
                    f"unexpected or missing fields in embedded '{name}' record")
             ensure(record["format"] == "tar.gz", f"embedded '{name}' record must use 'tar.gz' format")
+            if require_release_closure or "inventory_sha256" in record:
+                inventory = record.get("inventory_sha256")
+                ensure(isinstance(inventory, str) and re.fullmatch(r"[0-9a-f]{64}", inventory),
+                       f"invalid inventory_sha256 in embedded '{name}' record")
             ver, sha = record["version"], record["sha256"]
             ensure(isinstance(ver, str) and SEGMENT.fullmatch(ver),
                    f"invalid version segment in embedded '{name}' record")
@@ -465,6 +470,7 @@ def assemble(args):
     try:
         paths, artifacts, paired_offers, seen_assets = {}, [], [], set()
         component_versions = {}
+        ipquality_digests = {}
         for arch in targets:
             binary_name = "apsp-agent.exe" if arch.startswith("windows-") else "apsp-agent"
             entry = {"name": "agent", "version": args.agent_version, "arch": arch,
@@ -477,6 +483,11 @@ def assemble(args):
                     previous = component_versions.setdefault(comp_name, comp_record["version"])
                     ensure(previous == comp_record["version"],
                            f"all targets in one release must embed the same '{comp_name}' version")
+            if "ipquality" in manifest["components"]:
+                linux_arch = arch.rsplit("-", 1)[-1]
+                ipq_digest = manifest["components"]["ipquality"]["sha256"]
+                previous = ipquality_digests.setdefault(linux_arch, ipq_digest)
+                ensure(previous == ipq_digest, f"IPQuality archive differs across {linux_arch} Agent targets")
             binary = binary_bytes(data, "raw", binary_name)
             entry.update(archive_size=len(data), binary_sha256=digest(binary),
                          binary_size=len(binary), asset_name=asset_name(entry))
@@ -496,19 +507,19 @@ def assemble(args):
             if ipq_match is not None:
                 ver, arch = ipq_match.groups()
                 ipq_archive = source / "ipquality" / ver / arch
-                if ipq_archive.is_file() and not ipq_archive.is_symlink():
-                    from ipquality_artifact import archive_files, source_offer, validate_files, validate_source_offer
-                    files = archive_files(read_regular(ipq_archive))
-                    validate_files(files, ver, arch)
-                    offer = source_offer(files, ver, arch)
-                    validate_source_offer(paired_path, files, ver, arch)
-                    proof = regular_file_proof(paired_path, limit, output / asset)
-                    ensure(proof == {k: offer[k] for k in ("sha256", "size")},
-                           "paired source archive differs from the signed declaration")
-                    paired_offers.append({"asset": asset, "sha256": proof["sha256"], "size": proof["size"]})
-                    continue
+                from ipquality_artifact import archive_files, source_offer, validate_files, validate_source_offer
+                archive = read_regular(ipq_archive)
+                ensure(digest(archive) == ipquality_digests.get(arch),
+                       "paired IPQuality archive differs from the embedded component")
+                files = archive_files(archive)
+                validate_files(files, ver, arch)
+                offer = source_offer(files, ver, arch)
+                validate_source_offer(paired_path, files, ver, arch)
             proof = regular_file_proof(paired_path, limit, output / asset)
-            paired_offers.append({"asset": asset, "sha256": proof["sha256"], "size": proof["size"]})
+            if ipq_match is not None:
+                ensure(proof == {k: offer[k] for k in ("sha256", "size")},
+                       "paired source archive differs from the signed declaration")
+            paired_offers.append({"asset": asset, **proof})
 
         artifacts.sort(key=canonical_path)
         metadata = {"schema": 1, "source_repo": REPOSITORY, "tag": args.tag,

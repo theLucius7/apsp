@@ -1,5 +1,7 @@
 #[path = "deploy/native.rs"]
 mod native;
+#[path = "deploy/trial.rs"]
+mod trial;
 use crate::{
     Config,
     system::{ServiceBackend, SystemOps, SystemServiceManager},
@@ -196,7 +198,7 @@ pub(crate) async fn ensure_runtime_registered(
         }
         ServiceBackend::Unmanaged => unreachable!(),
     }
-    Ok(())
+    trial::configure(ops, backend, spec).await
 }
 
 pub async fn install_services(
@@ -223,7 +225,7 @@ pub async fn install_services(
     // Reject untrusted executables and existing runtime state before changing
     // accounts, service definitions, or the currently selected Agent.
     let source_binary = std::env::current_exe()?;
-    crate::artifacts::verify_installed_binary(&source_binary, "agent", "raw").await?;
+    crate::artifacts::verify_installed_binary(&source_binary, "agent", "raw", None).await?;
     crate::artifacts::verify_cache(config).await?;
     let proof_directory = source_binary
         .parent()
@@ -268,7 +270,7 @@ pub async fn install_services(
             ops.write_file(&proof_path, &proof, 0o644, None).await?;
         }
     }
-    crate::artifacts::verify_installed_binary(&binary, "agent", "raw").await?;
+    crate::artifacts::verify_installed_binary(&binary, "agent", "raw", None).await?;
     if let Some(descriptor) = descriptor {
         ops.create_dir(&config.install_root, 0o755, None).await?;
         ops.create_dir(&config.runtime_root, 0o750, Some(&descriptor.service_group))

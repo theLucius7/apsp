@@ -26,6 +26,16 @@ NATIVE_AGENT = runpy.run_path(str(TOOLS / "build-agent.py"))
 
 
 class BuildScriptTests(unittest.TestCase):
+    def test_ipquality_builder_uses_the_approved_image_at_mirrors(self):
+        pin = runpy.run_path(str(TOOLS / "prepare-agent-linux-inputs.py"))["pinned_ipquality_image"]
+        digest = "a" * 64
+        name = "mirror.example:5000/apsp/debian:bookworm"
+        approved = f"{name}@sha256:{digest}"
+        self.assertEqual(pin(name, digest), approved)
+        self.assertEqual(pin(approved, digest), approved)
+        with self.assertRaisesRegex(SystemExit, "approved digest"):
+            pin(f"{name}@sha256:{'b' * 64}", digest)
+
     @contextlib.contextmanager
     def independent_prebuilt_agent(
         self,

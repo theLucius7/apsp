@@ -21,6 +21,7 @@ pub async fn prepare(panel: &TestPanel, server: i64) -> Result<()> {
         "nodequality".into(),
         EmbeddedComponentRecord {
             format: "tar.gz".into(),
+            inventory_sha256: None,
             sha256: Some(nodequality_sha.clone()),
             subcommand: None,
             version: VERSION.into(),

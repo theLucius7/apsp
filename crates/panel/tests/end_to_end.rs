@@ -50,6 +50,7 @@ fn bundled_singbox() -> Result<(Vec<u8>, BundledComponents)> {
             binary_name: "demo".into(),
             version: apsp_traffic::RUNTIME_VERSION.into(),
             payload: BundledPayload::TarGz {
+                inventory_sha256: None,
                 archive_sha256,
                 bytes: Cow::Owned(archive),
             },

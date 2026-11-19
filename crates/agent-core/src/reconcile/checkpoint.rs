@@ -58,7 +58,8 @@ impl Reconciler {
         if let Some(directory) = runtime.spec.binary_path.parent()
             && let Some(manifest) = crate::bundled::read_bundled_manifest(directory).await?
         {
-            crate::bundled::verify_manifest_files(directory, &manifest).await?;
+            self.verify_runtime_inventory(&runtime.spec.binary_path, &manifest)
+                .await?;
             return Ok(manifest.binary_sha256);
         }
         let metadata = tokio::fs::symlink_metadata(&runtime.spec.binary_path).await?;
